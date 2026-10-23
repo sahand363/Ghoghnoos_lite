@@ -1,7 +1,7 @@
 package main
 
 import (
-	"embed"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
 //go:embed index.html
-var ui embed.FS
+var indexHTML []byte
 
 type Tunnel struct {
 	ID         string `json:"id"`
@@ -23,9 +24,14 @@ type Tunnel struct {
 	Status     string `json:"status"`
 }
 
+type ConfigReq struct {
+	Port string `json:"port"`
+	Path string `json:"path"`
+}
+
 var (
 	tunnels = []Tunnel{}
-	logs    = []string{"[SYSTEM] Ghoghnoos Lite initialized successfully."}
+	logs    = []string{"[SYSTEM] LiteTun Panel running smoothly."}
 	mu      sync.Mutex
 )
 
@@ -42,10 +48,10 @@ func addLog(msg string) {
 func startTCPTunnel(t Tunnel) {
 	listener, err := net.Listen("tcp", ":"+t.ListenPort)
 	if err != nil {
-		addLog(fmt.Sprintf("ERR: Failed to bind port %s: %v", t.ListenPort, err))
+		addLog(fmt.Sprintf("ERR: Cannot bind port %s: %v", t.ListenPort, err))
 		return
 	}
-	addLog(fmt.Sprintf("TUNNEL: Listening on :%s -> Forwarding to %s", t.ListenPort, t.TargetAddr))
+	addLog(fmt.Sprintf("ACTIVE: Local :%s -> Remote %s", t.ListenPort, t.TargetAddr))
 
 	for {
 		client, err := listener.Accept()
@@ -65,38 +71,61 @@ func startTCPTunnel(t Tunnel) {
 	}
 }
 
+func updateConfigFile(newPort, newPath string) error {
+	confPath := "/opt/litetun/config.env"
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "PANEL_PORT=") {
+			lines[i] = "PANEL_PORT=" + newPort
+		}
+		if strings.HasPrefix(line, "PANEL_PATH=") {
+			lines[i] = "PANEL_PATH=" + strings.Trim(newPath, "/")
+		}
+	}
+	return os.WriteFile(confPath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
 func main() {
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
-		port = "8080"
+		port = "8880"
 	}
 
-	panelPath := os.Getenv("PANEL_PATH")
-	prefix := "/"
-	if panelPath != "" {
-		prefix = "/" + panelPath + "/"
-	}
+	panelPath := strings.Trim(os.Getenv("PANEL_PATH"), "/")
 
-	// Serve the embedded HTML file both at root and at the secret PANEL_PATH
-	http.Handle("/", http.FileServer(http.FS(ui)))
-	if prefix != "/" {
-		http.Handle(prefix, http.StripPrefix(prefix, http.FileServer(http.FS(ui))))
-	}
+	// Web UI Handler
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		reqPath := strings.Trim(r.URL.Path, "/")
+		if panelPath != "" && reqPath != "" && reqPath != panelPath {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(indexHTML)
+	})
 
-	// API: Server Stats & Logs
+	// State API
 	http.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		mu.Lock()
 		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ram_mb":  m.Alloc / 1024 / 1024,
-			"tunnels": tunnels,
-			"logs":    logs,
+			"ram_mb":     m.Alloc / 1024 / 1024,
+			"tunnels":    tunnels,
+			"logs":       logs,
+			"panel_port": port,
+			"panel_path": panelPath,
 		})
 	})
 
-	// API: Create a new Tunnel
+	// Tunnel Creator API
 	http.HandleFunc("/api/tunnel", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			return
@@ -114,11 +143,34 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	fmt.Printf("Ghoghnoos Panel running on port %s (Path: %s)\n", port, prefix)
+	// Panel Port & URL Config API
+	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		var req ConfigReq
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Port == "" {
+			req.Port = port
+		}
+		if err := updateConfigFile(req.Port, req.Path); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		addLog(fmt.Sprintf("SYSTEM: Config updated (Port: %s, Path: /%s/). Restarting...", req.Port, req.Path))
+		w.WriteHeader(http.StatusOK)
 
-	// Automatically use SSL if enabled via Menu Option 8
-	if _, err := os.Stat("server.crt"); err == nil {
-		http.ListenAndServeTLS(":"+port, "server.crt", "server.key", nil)
+		// Exit smoothly; systemd will restart the service with the new config immediately
+		go func() {
+			time.Sleep(1 * time.Second)
+			os.Exit(0)
+		}()
+	})
+
+	fmt.Printf("LiteTun running on port %s (Path: /%s/)\n", port, panelPath)
+
+	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
+		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
 	} else {
 		http.ListenAndServe(":"+port, nil)
 	}

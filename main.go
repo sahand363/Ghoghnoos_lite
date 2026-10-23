@@ -99,6 +99,10 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	fmt.Println("Panel running on http://0.0.0.0:8080")
-	http.ListenAndServe(":8080", nil)
+port := os.Getenv("PANEL_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	fmt.Println("Panel running on port " + port)
+	http.ListenAndServe(":"+port, nil)
 }

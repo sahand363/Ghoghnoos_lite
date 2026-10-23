@@ -29,13 +29,14 @@ type ServerNode struct {
 type Tunnel struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
-	Role         string `json:"role"`
-	Method       string `json:"method"`
-	SourceServer string `json:"source_server"`
-	TargetServer string `json:"target_server"`
-	ListenPort   string `json:"listen_port"`
-	WSSPort      string `json:"wss_port"`
-	TargetAddr   string `json:"target_addr"`
+	Role         string `json:"role"`          // "client" or "server"
+	Method       string `json:"method"`        // "wss"
+	SourceServer string `json:"source_server"` // Entry Server ID
+	TargetServer string `json:"target_server"` // Exit Server ID
+	ListenPort   string `json:"listen_port"`   // Comma-separated Entry ports (e.g. "10101, 10102")
+	WSSPort      string `json:"wss_port"`      // Exit WSS bridge port (e.g. "10201")
+	XUIPort      string `json:"xui_port"`      // Comma-separated X-UI ports (e.g. "2053, 7788")
+	RemoteAddr   string `json:"remote_addr"`   // Exit Server Public IP:WSSPort
 	SNI          string `json:"sni"`
 	WSPath       string `json:"ws_path"`
 	CertPin      string `json:"cert_pin"`
@@ -92,7 +93,7 @@ func loadLogsFromDisk() {
 			}
 		}
 	}
-	addLog("SYS: LiteTun Multi-Server Controller initialized.")
+	addLog("SYS: Ghoghnoos-lite (LiteTun) initialized.")
 }
 
 func saveDBLocked() {
@@ -135,7 +136,7 @@ func loadDBFromDisk(port string) {
 	if !hasLocal {
 		master := ServerNode{
 			ID:        "local",
-			Name:      "Master Server (This Node)",
+			Name:      "Master",
 			IP:        localIP,
 			SSHPort:   "22",
 			SSHUser:   "root",
@@ -187,7 +188,6 @@ func deploySentinelSSH(s ServerNode) {
 		detectedPort = "8880"
 	}
 
-	// First check if Sentinel is already running on the remote server!
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
 		defer resp.Body.Close()
@@ -202,35 +202,22 @@ func deploySentinelSSH(s ServerNode) {
 				saveDBLocked()
 			}
 			mu.Unlock()
-			addLog(fmt.Sprintf("CONNECTED [%s]: Linked directly to running Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
+			addLog(fmt.Sprintf("CONNECTED [%s]: Linked directly to Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
 			return
 		}
 	}
 
-	if s.SSHPass == "" {
-		addLog(fmt.Sprintf("ERR [%s]: Sentinel not running on %s:%s and no SSH password given.", s.Name, s.IP, detectedPort))
-		mu.Lock()
-		if srv := findServerByID(s.ID); srv != nil {
-			srv.Status = "Offline"
-			saveDBLocked()
-		}
-		mu.Unlock()
-		return
-	}
-
-	// Connect using Native Go SSH Client (Zero external dependencies, no sshpass needed!)
-	addLog(fmt.Sprintf("SSH [%s]: Native Go SSH connecting to %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
-
+	addLog(fmt.Sprintf("SSH [%s]: Connecting to %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
 	sshConfig := &ssh.ClientConfig{
 		User: s.SSHUser,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(s.SSHPass),
 			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-				answers := make([]string, len(questions))
-				for i := range answers {
-					answers[i] = s.SSHPass
+				ans := make([]string, len(questions))
+				for i := range ans {
+					ans[i] = s.SSHPass
 				}
-				return answers, nil
+				return ans, nil
 			}),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -239,7 +226,7 @@ func deploySentinelSSH(s ServerNode) {
 
 	sshClient, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshConfig)
 	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Connection failed -> %v", s.Name, err))
+		addLog(fmt.Sprintf("SSH-ERR [%s]: %v", s.Name, err))
 		mu.Lock()
 		if srv := findServerByID(s.ID); srv != nil {
 			srv.Status = "SSH Error"
@@ -252,61 +239,39 @@ func deploySentinelSSH(s ServerNode) {
 
 	session, err := sshClient.NewSession()
 	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Session error -> %v", s.Name, err))
 		return
 	}
 	defer session.Close()
 
-	addLog(fmt.Sprintf("SSH-OK [%s]: Authenticated! Installing Sentinel agent...", s.Name))
-
-	remoteCmd := "export DEBIAN_FRONTEND=noninteractive; " +
-		"mkdir -p /opt/litetun; " +
+	addLog(fmt.Sprintf("SSH-OK [%s]: Installing Sentinel agent...", s.Name))
+	remoteCmd := "export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/litetun; " +
 		"if [ ! -f /opt/litetun/config.env ]; then echo -e 'PANEL_PORT=8880\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin' > /opt/litetun/config.env; fi; " +
 		"systemctl stop litetun 2>/dev/null || true; " +
 		"curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.tmp && " +
-		"mv -f /opt/litetun/ghoghnoos_lite.tmp /opt/litetun/ghoghnoos_lite && " +
-		"chmod +x /opt/litetun/ghoghnoos_lite && " +
+		"mv -f /opt/litetun/ghoghnoos_lite.tmp /opt/litetun/ghoghnoos_lite && chmod +x /opt/litetun/ghoghnoos_lite && " +
 		"curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | tr -d '\\r' > /usr/local/bin/litetun && " +
-		"chmod +x /usr/local/bin/litetun && " +
-		"/usr/local/bin/litetun --sentinel && " +
-		"systemctl restart litetun && " +
+		"chmod +x /usr/local/bin/litetun && /usr/local/bin/litetun --sentinel && systemctl restart litetun && " +
 		"grep '^PANEL_PORT=' /opt/litetun/config.env | cut -d= -f2"
 
 	out, err := session.CombinedOutput(remoteCmd)
 	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Install command failed -> %v (%s)", s.Name, err, strings.TrimSpace(string(out))))
-		mu.Lock()
-		if srv := findServerByID(s.ID); srv != nil {
-			srv.Status = "Deploy Error"
-			saveDBLocked()
-		}
-		mu.Unlock()
+		addLog(fmt.Sprintf("SSH-ERR [%s]: Install failed -> %v", s.Name, err))
 		return
 	}
-
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) > 0 && lines[len(lines)-1] != "" {
 		detectedPort = strings.TrimSpace(lines[len(lines)-1])
 	}
-
-	addLog(fmt.Sprintf("SENTINEL [%s]: Deployed on %s:%s! Syncing SHA-256 Pin...", s.Name, s.IP, detectedPort))
 	time.Sleep(2 * time.Second)
 
-	resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort))
 	remotePin := ""
-	if err == nil {
+	if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
 		defer resp.Body.Close()
 		var st map[string]interface{}
 		if json.NewDecoder(resp.Body).Decode(&st) == nil {
-			if p, ok := st["cert_pin"].(string); ok {
-				remotePin = p
-			}
+			remotePin, _ = st["cert_pin"].(string)
 		}
-		addLog(fmt.Sprintf("CONNECTED [%s]: Sentinel Online! SHA-256 Pin synced.", s.Name))
-	} else {
-		addLog(fmt.Sprintf("WARN [%s]: Sentinel installed, but port %s blocked by firewall (%v)", s.Name, detectedPort, err))
 	}
-
 	mu.Lock()
 	if srv := findServerByID(s.ID); srv != nil {
 		srv.PanelPort = detectedPort
@@ -315,4 +280,5 @@ func deploySentinelSSH(s ServerNode) {
 		saveDBLocked()
 	}
 	mu.Unlock()
+	addLog(fmt.Sprintf("CONNECTED [%s]: Sentinel Online! SHA-256 Pin synced.", s.Name))
 }

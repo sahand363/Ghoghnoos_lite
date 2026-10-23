@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -31,12 +32,11 @@ type Tunnel struct {
 	Name         string `json:"name"`
 	Role         string `json:"role"`          // "client" or "server"
 	Method       string `json:"method"`        // "wss"
-	SourceServer string `json:"source_server"` // Entry Server ID
-	TargetServer string `json:"target_server"` // Exit Server ID
-	ListenPort   string `json:"listen_port"`   // Comma-separated Entry ports (e.g. "10101, 10102")
-	WSSPort      string `json:"wss_port"`      // Exit WSS bridge port (e.g. "10201")
-	XUIPort      string `json:"xui_port"`      // Comma-separated X-UI ports (e.g. "2053, 7788")
-	RemoteAddr   string `json:"remote_addr"`   // Exit Server Public IP:WSSPort
+	SourceServer string `json:"source_server"` // Iran Entry
+	TargetServer string `json:"target_server"` // US Exit
+	TunnelPort   string `json:"tunnel_port"`   // The WSS highway port (e.g. 10201)
+	InboundPorts string `json:"inbound_ports"` // Comma separated X-UI ports (e.g. 45454, 2053)
+	RemoteAddr   string `json:"remote_addr"`   // US Public IP:TunnelPort
 	SNI          string `json:"sni"`
 	WSPath       string `json:"ws_path"`
 	CertPin      string `json:"cert_pin"`
@@ -202,9 +202,20 @@ func deploySentinelSSH(s ServerNode) {
 				saveDBLocked()
 			}
 			mu.Unlock()
-			addLog(fmt.Sprintf("CONNECTED [%s]: Linked directly to Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
+			addLog(fmt.Sprintf("VERIFIED [%s]: Sentinel verified at %s:%s!", s.Name, s.IP, detectedPort))
 			return
 		}
+	}
+
+	if s.SSHPass == "" {
+		addLog(fmt.Sprintf("ERR [%s]: Sentinel unreachable and no SSH password provided.", s.Name))
+		mu.Lock()
+		if srv := findServerByID(s.ID); srv != nil {
+			srv.Status = "Offline"
+			saveDBLocked()
+		}
+		mu.Unlock()
+		return
 	}
 
 	addLog(fmt.Sprintf("SSH [%s]: Connecting to %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
@@ -243,7 +254,7 @@ func deploySentinelSSH(s ServerNode) {
 	}
 	defer session.Close()
 
-	addLog(fmt.Sprintf("SSH-OK [%s]: Installing Sentinel agent...", s.Name))
+	addLog(fmt.Sprintf("SSH-OK [%s]: Deploying Sentinel agent...", s.Name))
 	remoteCmd := "export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/litetun; " +
 		"if [ ! -f /opt/litetun/config.env ]; then echo -e 'PANEL_PORT=8880\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin' > /opt/litetun/config.env; fi; " +
 		"systemctl stop litetun 2>/dev/null || true; " +
@@ -256,6 +267,12 @@ func deploySentinelSSH(s ServerNode) {
 	out, err := session.CombinedOutput(remoteCmd)
 	if err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Install failed -> %v", s.Name, err))
+		mu.Lock()
+		if srv := findServerByID(s.ID); srv != nil {
+			srv.Status = "Deploy Error"
+			saveDBLocked()
+		}
+		mu.Unlock()
 		return
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -280,5 +297,11 @@ func deploySentinelSSH(s ServerNode) {
 		saveDBLocked()
 	}
 	mu.Unlock()
-	addLog(fmt.Sprintf("CONNECTED [%s]: Sentinel Online! SHA-256 Pin synced.", s.Name))
+	addLog(fmt.Sprintf("DEPLOY-OK [%s]: Sentinel deployed & verified on port %s!", s.Name, detectedPort))
+}
+
+func getMemoryStats() (uint64, int) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.Alloc / 1024 / 1024, runtime.NumGoroutine()
 }

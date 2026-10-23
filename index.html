@@ -2,107 +2,145 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>Tunnel Panel</title>
+  <title>LiteTun Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Vazirmatn', sans-serif; background-color: #0b111a; color: #e2e8f0; }
-    .card { background-color: #111a27; border: 1px solid #1e293b; }
-    .active-tab { border: 1px solid #d4af37; color: #facc15; background: rgba(250, 204, 21, 0.08); }
+    :root {
+      --bg: #0b111a;
+      --card: #111a27;
+      --border: #1e293b;
+      --accent: #facc15;
+      --accent-glow: rgba(250, 204, 21, 0.12);
+    }
+    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.3s; }
+    .card { background-color: var(--card); border: 1px solid var(--border); }
+    .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
   </style>
 </head>
-<body class="flex h-screen overflow-hidden">
+<body class="flex flex-col min-h-screen">
 
-  <!-- Sidebar -->
-  <aside class="w-24 bg-[#080d14] border-l border-r border-slate-800 flex flex-col items-center py-6 justify-between">
-    <div class="text-amber-400 font-bold text-xl">⚡</div>
-    <nav class="flex flex-col gap-4 w-full px-2">
-      <button onclick="setTab('servers')" id="tab-servers" class="active-tab flex flex-col items-center py-3 rounded-xl text-xs gap-1">
+  <!-- TOP MENU BAR -->
+  <header class="w-full bg-[#080d14]/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg" style="background: var(--accent-glow); color: var(--accent);">⚡</div>
+      <span class="font-bold tracking-wide text-sm hidden sm:inline">LiteTun</span>
+    </div>
+
+    <!-- Centered Navigation Tabs -->
+    <nav class="flex items-center gap-1 sm:gap-2">
+      <button onclick="setTab('servers')" id="tab-servers" class="tab-btn active-tab px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>🖥️</span><span data-i18n="servers">سرورها</span>
       </button>
-      <button onclick="setTab('tunnels')" id="tab-tunnels" class="flex flex-col items-center py-3 rounded-xl text-xs gap-1 text-slate-400">
+      <button onclick="setTab('tunnels')" id="tab-tunnels" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>🚇</span><span data-i18n="tunnels">تانل‌ها</span>
       </button>
-      <button onclick="setTab('config')" id="tab-config" class="flex flex-col items-center py-3 rounded-xl text-xs gap-1 text-slate-400">
+      <button onclick="setTab('config')" id="tab-config" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>⚙️</span><span data-i18n="config">تنظیمات</span>
       </button>
-      <button onclick="setTab('logs')" id="tab-logs" class="flex flex-col items-center py-3 rounded-xl text-xs gap-1 text-slate-400">
+      <button onclick="setTab('logs')" id="tab-logs" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>📋</span><span data-i18n="logs">لاگ</span>
       </button>
     </nav>
-    <div></div>
-  </aside>
 
-  <!-- Main Content -->
-  <main class="flex-1 p-8 overflow-y-auto">
-    <!-- Top Bar -->
-    <header class="flex justify-between items-center mb-8">
-      <div>
-        <h1 class="text-2xl font-bold" id="page-title" data-i18n="servers">سرورها</h1>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="px-3 py-1 rounded-full bg-teal-950 text-teal-400 border border-teal-800 text-xs">● <span data-i18n="live">زنده</span></span>
-        <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold">EN</button>
-      </div>
-    </header>
+    <!-- Language & Status -->
+    <div class="flex items-center gap-2">
+      <span class="px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 text-xs">● <span data-i18n="live">زنده</span></span>
+      <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">EN</button>
+    </div>
+  </header>
 
+  <!-- MAIN BODY -->
+  <main class="flex-1 max-w-6xl w-full mx-auto p-6">
     <!-- TAB 1: SERVERS -->
     <section id="view-servers" class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="card rounded-2xl p-6">
         <div class="flex justify-between items-center mb-4">
-          <span class="px-3 py-1 rounded-full bg-teal-950 text-teal-400 text-xs">● <span data-i18n="online">آنلاین</span></span>
+          <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs">● <span data-i18n="online">آنلاین</span></span>
           <div class="flex items-center gap-2">
-            <span class="text-xs bg-amber-950 text-amber-400 px-2 py-0.5 rounded" data-i18n="panel">پنل</span>
+            <span class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);" data-i18n="panel">پنل</span>
             <h3 class="font-bold text-lg">Master Relay</h3>
           </div>
         </div>
         <div class="text-xs text-slate-400 mb-2"><span data-i18n="memory">حافظه مصرفی</span>: <span id="ram-val">0</span> MB</div>
         <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-6">
-          <div class="bg-teal-400 h-full w-1/4"></div>
+          <div class="h-full w-1/4 rounded-full" style="background: var(--accent)"></div>
         </div>
-        <div class="flex justify-between items-center text-xs text-slate-400 pt-4 border-t border-slate-800">
-          <span>IPv4: <code>127.0.0.1</code></span>
-          <span class="bg-amber-950 text-amber-400 px-2.5 py-1 rounded-full" id="tun-count">0 Tunnel</span>
+        <div class="flex justify-between items-center text-xs text-slate-400 pt-4 border-t border-slate-800/70">
+          <span>Port: <code id="lbl-port">8880</code></span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);" id="tun-count">0 Tunnel</span>
         </div>
       </div>
 
-      <div onclick="setTab('tunnels')" class="border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500/50 transition">
-        <div class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-2xl mb-3">+</div>
-        <div class="font-bold" data-i18n="add_server">افزودن تانل / سرور</div>
-        <div class="text-xs text-slate-500 mt-1" data-i18n="add_sub">پورت سرور ایران را به پورت X-UI خارج متصل کنید</div>
+      <div onclick="setTab('tunnels')" class="border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-slate-600 transition">
+        <div class="w-12 h-12 rounded-xl bg-slate-800/60 flex items-center justify-center text-2xl mb-3">+</div>
+        <div class="font-bold" data-i18n="add_server">افزودن تانل جدید</div>
+        <div class="text-xs text-slate-500 mt-1" data-i18n="add_sub">متصل کردن پورت ورودی به پورت X-UI سرور خارج</div>
       </div>
     </section>
 
     <!-- TAB 2: TUNNELS -->
     <section id="view-tunnels" class="hidden space-y-6">
       <div class="card rounded-2xl p-6 max-w-xl">
-        <h3 class="font-bold mb-4" data-i18n="new_tunnel">ساخت تانل جدید (پورت فورواردینگ)</h3>
+        <h3 class="font-bold mb-4" data-i18n="new_tunnel">ساخت پورت فوروارد جدید</h3>
         <div class="grid grid-cols-2 gap-4 mb-4">
-          <input id="listen-port" placeholder="Local Port (e.g. 2053)" class="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-          <input id="target-addr" placeholder="Target X-UI IP:Port (e.g. 31.56.48.160:2053)" class="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
+          <input id="listen-port" placeholder="Local Listen Port (e.g. 2053)" class="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm outline-none focus:border-slate-500">
+          <input id="target-addr" placeholder="Remote X-UI IP:Port (e.g. 1.2.3.4:2053)" class="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm outline-none focus:border-slate-500">
         </div>
-        <button onclick="createTunnel()" class="bg-amber-500 hover:bg-amber-400 text-black font-bold px-5 py-2 rounded-lg text-sm" data-i18n="create">ایجاد تانل</button>
+        <button onclick="createTunnel()" class="text-black font-bold px-5 py-2 rounded-lg text-sm transition" style="background: var(--accent);" data-i18n="create">ایجاد تانل</button>
       </div>
       <div id="tunnel-list" class="space-y-3"></div>
     </section>
 
-    <!-- TAB 3: CONFIG -->
-    <section id="view-config" class="hidden card rounded-2xl p-6 max-w-xl space-y-4">
-      <h3 class="font-bold" data-i18n="config">تنظیمات</h3>
-      <p class="text-sm text-slate-400">Panel Port: <code>8080</code> | Protocol: <code>TCP Raw / Multiplex</code></p>
+    <!-- TAB 3: CONFIG & THEMES -->
+    <section id="view-config" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Change Port and URL -->
+      <div class="card rounded-2xl p-6 space-y-4">
+        <h3 class="font-bold text-base" data-i18n="network_settings">تنظیمات پورت و آدرس پنل</h3>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Panel Port</label>
+          <input id="cfg-port" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm outline-none">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Secret URL Path (بدون اسلش)</label>
+          <input id="cfg-path" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm outline-none">
+        </div>
+        <button onclick="saveConfig()" class="text-black font-bold px-5 py-2.5 rounded-lg text-xs transition" style="background: var(--accent);" data-i18n="save_restart">ذخیره و ری‌استارت پنل</button>
+      </div>
+
+      <!-- Change Theme / Calm Colors -->
+      <div class="card rounded-2xl p-6 space-y-4">
+        <h3 class="font-bold text-base" data-i18n="theme_select">انتخاب تم و رنگ آرامش‌بخش</h3>
+        <p class="text-xs text-slate-400" data-i18n="theme_sub">تم مورد علاقه خود را برای رابط کاربری انتخاب کنید:</p>
+        <div class="grid grid-cols-2 gap-3 pt-2">
+          <button onclick="applyTheme('amber')" class="p-3 rounded-xl border border-amber-500/30 bg-[#111a27] text-amber-400 text-xs font-bold flex items-center justify-between">
+            <span>Midnight Amber</span><span class="w-3 h-3 rounded-full bg-amber-400"></span>
+          </button>
+          <button onclick="applyTheme('cyan')" class="p-3 rounded-xl border border-sky-500/30 bg-[#131e2f] text-sky-400 text-xs font-bold flex items-center justify-between">
+            <span>Nordic Cyan</span><span class="w-3 h-3 rounded-full bg-sky-400"></span>
+          </button>
+          <button onclick="applyTheme('emerald')" class="p-3 rounded-xl border border-emerald-500/30 bg-[#12201e] text-emerald-400 text-xs font-bold flex items-center justify-between">
+            <span>Emerald Slate</span><span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+          </button>
+          <button onclick="applyTheme('indigo')" class="p-3 rounded-xl border border-indigo-500/30 bg-[#161b22] text-indigo-400 text-xs font-bold flex items-center justify-between">
+            <span>OLED Indigo</span><span class="w-3 h-3 rounded-full bg-indigo-400"></span>
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- TAB 4: LOGS -->
     <section id="view-logs" class="hidden card rounded-2xl p-6">
-      <pre id="log-box" dir="ltr" class="text-xs font-mono text-teal-400 space-y-1 overflow-x-auto"></pre>
+      <pre id="log-box" dir="ltr" class="text-xs font-mono text-emerald-400 space-y-1 overflow-x-auto"></pre>
     </section>
   </main>
 
   <script>
     let lang = 'fa';
     const dict = {
-      fa: { servers: 'سرورها', tunnels: 'تانل‌ها', config: 'تنظیمات', logs: 'لاگ', live: 'زنده', online: 'آنلاین', panel: 'پنل', memory: 'حافظه', add_server: 'افزودن تانل جدید', add_sub: 'اتصال به پورت اینباند X-UI در سرور خارج', new_tunnel: 'ساخت تانل جدید', create: 'ایجاد تانل' },
-      en: { servers: 'Servers', tunnels: 'Tunnels', config: 'Config', logs: 'Logs', live: 'Live', online: 'Online', panel: 'Panel', memory: 'Memory', add_server: 'Add New Tunnel', add_sub: 'Bridge local port to remote X-UI inbound port', new_tunnel: 'Create Port Tunnel', create: 'Create Tunnel' }
+      fa: { servers: 'سرورها', tunnels: 'تانل‌ها', config: 'تنظیمات', logs: 'لاگ', live: 'زنده', online: 'آنلاین', panel: 'پنل', memory: 'حافظه', add_server: 'افزودن تانل جدید', add_sub: 'متصل کردن پورت ورودی به پورت X-UI سرور خارج', new_tunnel: 'ساخت پورت فوروارد جدید', create: 'ایجاد تانل', network_settings: 'تنظیمات پورت و آدرس پنل', save_restart: 'ذخیره و ری‌استارت پنل', theme_select: 'انتخاب تم و رنگ آرامش‌بخش', theme_sub: 'تم مورد علاقه خود را انتخاب کنید:' },
+      en: { servers: 'Servers', tunnels: 'Tunnels', config: 'Config', logs: 'Logs', live: 'Live', online: 'Online', panel: 'Panel', memory: 'Memory', add_server: 'Add New Tunnel', add_sub: 'Bridge local port to remote X-UI inbound', new_tunnel: 'Create Port Tunnel', create: 'Create Tunnel', network_settings: 'Port & URL Settings', save_restart: 'Save & Restart Panel', theme_select: 'Calm Color Palette', theme_sub: 'Choose your preferred dashboard tone:' }
     };
 
     function toggleLang() {
@@ -123,6 +161,33 @@
       document.getElementById('tab-' + t).classList.add('active-tab');
     }
 
+    function applyTheme(name) {
+      const themes = {
+        amber: { bg: '#0b111a', card: '#111a27', border: '#1e293b', accent: '#facc15', glow: 'rgba(250, 204, 21, 0.12)' },
+        cyan: { bg: '#0c131f', card: '#131e2f', border: '#1e2e46', accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.12)' },
+        emerald: { bg: '#0b1312', card: '#12201e', border: '#1a332f', accent: '#10b981', glow: 'rgba(16, 185, 129, 0.12)' },
+        indigo: { bg: '#0d1117', card: '#161b22', border: '#30363d', accent: '#818cf8', glow: 'rgba(129, 140, 248, 0.12)' }
+      };
+      const t = themes[name] || themes.amber;
+      document.documentElement.style.setProperty('--bg', t.bg);
+      document.documentElement.style.setProperty('--card', t.card);
+      document.documentElement.style.setProperty('--border', t.border);
+      document.documentElement.style.setProperty('--accent', t.accent);
+      document.documentElement.style.setProperty('--accent-glow', t.glow);
+      localStorage.setItem('lt_theme', name);
+    }
+
+    async function saveConfig() {
+      const port = document.getElementById('cfg-port').value;
+      const path = document.getElementById('cfg-path').value;
+      if (!confirm('Panel will restart with new settings. Continue?')) return;
+      await fetch('/api/config', { method: 'POST', body: JSON.stringify({ port, path }) });
+      alert('Updated! Please allow 2 seconds, then redirecting...');
+      setTimeout(() => {
+        window.location.href = `http://${window.location.hostname}:${port}/${path}/`;
+      }, 2500);
+    }
+
     async function createTunnel() {
       const listen_port = document.getElementById('listen-port').value;
       const target_addr = document.getElementById('target-addr').value;
@@ -135,12 +200,20 @@
       const res = await fetch('/api/state');
       const data = await res.json();
       document.getElementById('ram-val').innerText = data.ram_mb;
+      document.getElementById('lbl-port').innerText = data.panel_port;
       document.getElementById('tun-count').innerText = (data.tunnels?.length || 0) + ' Tunnels';
       document.getElementById('log-box').innerText = (data.logs || []).join('\n');
+      if (!document.getElementById('cfg-port').value) {
+        document.getElementById('cfg-port').value = data.panel_port;
+        document.getElementById('cfg-path').value = data.panel_path;
+      }
       document.getElementById('tunnel-list').innerHTML = (data.tunnels || []).map(t =>
-        `<div class="card p-4 rounded-xl flex justify-between text-sm"><span>Port <b>:${t.listen_port}</b> ➔ <b>${t.target_addr}</b></span><span class="text-teal-400">● ${t.status}</span></div>`
+        `<div class="card p-4 rounded-xl flex justify-between text-sm"><span>Port <b>:${t.listen_port}</b> ➔ <b>${t.target_addr}</b></span><span class="text-emerald-400">● ${t.status}</span></div>`
       ).join('');
     }
+
+    const savedTheme = localStorage.getItem('lt_theme') || 'amber';
+    applyTheme(savedTheme);
     setInterval(fetchState, 2000);
     fetchState();
   </script>

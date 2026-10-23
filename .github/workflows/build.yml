@@ -1,8 +1,11 @@
-name: Build Tunnel Binary
+name: Build and Release
 
 on:
   push:
     branches: [ "main" ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -12,10 +15,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - name: Build Linux AMD64 Binary
+
+      - name: Compile Binary
         run: GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ghoghnoos_lite main.go
-      - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
+
+      - name: Publish to Latest GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: go-tunnel-linux
-          path: go-tunnel
+          tag_name: latest
+          name: Latest Automatic Build
+          files: ghoghnoos_lite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

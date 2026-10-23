@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -18,13 +19,13 @@ var ui embed.FS
 type Tunnel struct {
 	ID         string `json:"id"`
 	ListenPort string `json:"listen_port"`
-	TargetAddr string `json:"target_addr"` // e.g., "France_IP:443"
+	TargetAddr string `json:"target_addr"`
 	Status     string `json:"status"`
 }
 
 var (
 	tunnels = []Tunnel{}
-	logs    = []string{"[SYSTEM] Panel initialized successfully."}
+	logs    = []string{"[SYSTEM] Ghoghnoos Lite initialized successfully."}
 	mu      sync.Mutex
 )
 
@@ -65,8 +66,22 @@ func startTCPTunnel(t Tunnel) {
 }
 
 func main() {
-	// Serve the embedded HTML file
+	port := os.Getenv("PANEL_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	panelPath := os.Getenv("PANEL_PATH")
+	prefix := "/"
+	if panelPath != "" {
+		prefix = "/" + panelPath + "/"
+	}
+
+	// Serve the embedded HTML file both at root and at the secret PANEL_PATH
 	http.Handle("/", http.FileServer(http.FS(ui)))
+	if prefix != "/" {
+		http.Handle(prefix, http.StripPrefix(prefix, http.FileServer(http.FS(ui))))
+	}
 
 	// API: Server Stats & Logs
 	http.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
@@ -99,10 +114,12 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-port := os.Getenv("PANEL_PORT")
-	if port == "" {
-		port = "8080"
+	fmt.Printf("Ghoghnoos Panel running on port %s (Path: %s)\n", port, prefix)
+
+	// Automatically use SSL if enabled via Menu Option 8
+	if _, err := os.Stat("server.crt"); err == nil {
+		http.ListenAndServeTLS(":"+port, "server.crt", "server.key", nil)
+	} else {
+		http.ListenAndServe(":"+port, nil)
 	}
-	fmt.Println("Panel running on port " + port)
-	http.ListenAndServe(":"+port, nil)
 }

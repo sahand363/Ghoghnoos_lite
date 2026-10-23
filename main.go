@@ -29,19 +29,35 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
-const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+const (
+	wsGUID   = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	dbPath   = "/opt/litetun/panel_db.json"
+	logPath  = "/opt/litetun/panel.log"
+	confPath = "/opt/litetun/config.env"
+)
 
 type Tunnel struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
-	Role       string `json:"role"`        // "client" (Iran Relay -> WSS) or "server" (Kharej WSS -> X-UI)
-	Method     string `json:"method"`      // "wss" or "tcp"
-	ListenPort string `json:"listen_port"` // Port to listen on locally
-	TargetAddr string `json:"target_addr"` // Remote WSS IP:Port (for client) OR Local X-UI 127.0.0.1:Port (for server)
-	SNI        string `json:"sni"`         // TLS ServerName / Host header (e.g. speedtest.net)
-	WSPath     string `json:"ws_path"`     // WebSocket path (e.g. /ws or /cdn-cgi/trace)
-	CertPin    string `json:"cert_pin"`    // Optional SHA-256 Pin (hex)
+	Role       string `json:"role"`        // "client" or "server"
+	Method     string `json:"method"`      // "wss"
+	ListenPort string `json:"listen_port"` // Local listen port
+	TargetAddr string `json:"target_addr"` // Remote WSS IP:Port or Local X-UI IP:Port
+	SNI        string `json:"sni"`
+	WSPath     string `json:"ws_path"`
+	CertPin    string `json:"cert_pin"`
 	Status     string `json:"status"`
+}
+
+type UIPrefs struct {
+	Theme     string `json:"theme"`
+	Lang      string `json:"lang"`
+	ActiveTab string `json:"active_tab"`
+}
+
+type Database struct {
+	Tunnels []Tunnel `json:"tunnels"`
+	Prefs   UIPrefs  `json:"prefs"`
 }
 
 type ConfigReq struct {
@@ -50,25 +66,80 @@ type ConfigReq struct {
 }
 
 var (
-	tunnels     = []Tunnel{}
+	db = Database{
+		Tunnels: []Tunnel{},
+		Prefs: UIPrefs{
+			Theme:     "amber",
+			Lang:      "en",
+			ActiveTab: "servers",
+		},
+	}
 	activeListeners = make(map[string]net.Listener)
-	logs        = []string{"[SYSTEM] LiteTun WSS Engine initialized."}
-	localCert   tls.Certificate
-	localPinHex string
-	mu          sync.Mutex
+	logs            = []string{}
+	localCert       tls.Certificate
+	localPinHex     string
+	mu              sync.Mutex
 )
 
 func addLog(msg string) {
 	mu.Lock()
 	defer mu.Unlock()
-	timestamp := time.Now().Format("15:04:05")
-	logs = append([]string{fmt.Sprintf("[%s] %s", timestamp, msg)}, logs...)
-	if len(logs) > 80 {
-		logs = logs[:80]
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	line := fmt.Sprintf("[%s] %s", timestamp, msg)
+	logs = append(logs, line)
+	if len(logs) > 250 {
+		logs = logs[len(logs)-250:]
+	}
+	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.WriteFile(logPath, []byte(strings.Join(logs, "\n")+"\n"), 0644)
+}
+
+func loadLogsFromDisk() {
+	data, err := os.ReadFile(logPath)
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			logs = lines
+			if len(logs) > 250 {
+				logs = logs[len(logs)-250:]
+			}
+		}
+	}
+	addLog("SYS: LiteTun daemon started and ready.")
+}
+
+func saveDBLocked() {
+	_ = os.MkdirAll("/opt/litetun", 0755)
+	data, _ := json.MarshalIndent(db, "", "  ")
+	_ = os.WriteFile(dbPath, data, 0644)
+}
+
+func loadDBFromDisk() {
+	// Migrate old tunnels.json if present
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if old, err := os.ReadFile("/opt/litetun/tunnels.json"); err == nil {
+			_ = json.Unmarshal(old, &db.Tunnels)
+			saveDBLocked()
+		}
+	}
+	data, err := os.ReadFile(dbPath)
+	if err == nil {
+		_ = json.Unmarshal(data, &db)
+	}
+	if db.Prefs.Theme == "" {
+		db.Prefs.Theme = "amber"
+	}
+	if db.Prefs.Lang == "" {
+		db.Prefs.Lang = "en"
+	}
+	if db.Prefs.ActiveTab == "" {
+		db.Prefs.ActiveTab = "servers"
+	}
+	for _, t := range db.Tunnels {
+		go startTunnelEngine(t)
 	}
 }
 
-// Generate an in-memory TLS certificate and compute its SHA-256 Pin for WSS Server mode
 func initSelfSignedCert() {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -93,7 +164,7 @@ func initSelfSignedCert() {
 		Certificate: [][]byte{derBytes},
 		PrivateKey:  priv,
 	}
-	addLog(fmt.Sprintf("WSS Local Cert SHA-256 Pin: %s", localPinHex))
+	addLog(fmt.Sprintf("TLS: Generated ECDSA P-256 cert | SHA256 Pin: %s", localPinHex[:24]+"..."))
 }
 
 func computeWSAccept(key string) string {
@@ -114,28 +185,31 @@ func startTunnelEngine(t Tunnel) {
 	stopTunnelIfRunning(t.ID)
 	mu.Unlock()
 
-	if t.WSPath == "" || !strings.HasPrefix(t.WSPath, "/") {
+	t.WSPath = strings.TrimSpace(t.WSPath)
+	if t.WSPath == "" {
+		t.WSPath = "/ws"
+	}
+	if !strings.HasPrefix(t.WSPath, "/") {
 		t.WSPath = "/" + t.WSPath
 	}
 	if t.SNI == "" {
 		t.SNI = "www.speedtest.net"
 	}
 
-	// MODE 1: WSS SERVER (Runs on Foreign/X-UI Server: Terminates WSS & forwards to local X-UI port)
-	if t.Method == "wss" && t.Role == "server" {
+	if t.Role == "server" {
 		tlsCfg := &tls.Config{
 			Certificates: []tls.Certificate{localCert},
-			MinVersion:   tls.VersionTLS13,
+			MinVersion:   tls.VersionTLS12,
 		}
 		ln, err := tls.Listen("tcp", ":"+t.ListenPort, tlsCfg)
 		if err != nil {
-			addLog(fmt.Sprintf("ERR [WSS-Server %s]: Failed bind :%s -> %v", t.Name, t.ListenPort, err))
+			addLog(fmt.Sprintf("ERR [WSS-Server %s]: Cannot bind :%s -> %v", t.Name, t.ListenPort, err))
 			return
 		}
 		mu.Lock()
 		activeListeners[t.ID] = ln
 		mu.Unlock()
-		addLog(fmt.Sprintf("WSS-SERVER [%s] Listening on TLS :%s (Path: %s) -> X-UI %s", t.Name, t.ListenPort, t.WSPath, t.TargetAddr))
+		addLog(fmt.Sprintf("LISTEN [WSS-Server %s]: TLS :%s (Path %s) -> %s", t.Name, t.ListenPort, t.WSPath, t.TargetAddr))
 
 		for {
 			conn, err := ln.Accept()
@@ -146,51 +220,45 @@ func startTunnelEngine(t Tunnel) {
 		}
 	}
 
-	// MODE 2: WSS CLIENT (Runs on Iran Relay Server: Listens TCP -> Wraps in TLS+WSS -> Sends to Foreign WSS Server)
 	ln, err := net.Listen("tcp", ":"+t.ListenPort)
 	if err != nil {
-		addLog(fmt.Sprintf("ERR [%s]: Failed bind :%s -> %v", t.Name, t.ListenPort, err))
+		addLog(fmt.Sprintf("ERR [WSS-Client %s]: Cannot bind :%s -> %v", t.Name, t.ListenPort, err))
 		return
 	}
 	mu.Lock()
 	activeListeners[t.ID] = ln
 	mu.Unlock()
-
-	addLog(fmt.Sprintf("WSS-CLIENT [%s] Listening :%s -> wss://%s%s (SNI: %s)", t.Name, t.ListenPort, t.TargetAddr, t.WSPath, t.SNI))
+	addLog(fmt.Sprintf("LISTEN [WSS-Client %s]: TCP :%s -> wss://%s%s (SNI: %s)", t.Name, t.ListenPort, t.TargetAddr, t.WSPath, t.SNI))
 
 	for {
 		client, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		if t.Method == "wss" {
-			go handleWSSClientConn(client, t)
-		} else {
-			go handleRawTCPConn(client, t)
-		}
+		go handleWSSClientConn(client, t)
 	}
 }
 
 func handleWSSClientConn(client net.Conn, t Tunnel) {
 	defer client.Close()
+	addLog(fmt.Sprintf("CONN [%s]: Incoming client %s -> dialing WSS %s", t.Name, client.RemoteAddr().String(), t.TargetAddr))
 
 	pinClean := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(t.CertPin, ":", "")))
-
 	tlsCfg := &tls.Config{
 		ServerName:         t.SNI,
-		InsecureSkipVerify: true, // Verified manually via VerifyPeerCertificate if pin is set
+		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS12,
 	}
 
 	if pinClean != "" {
 		tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
-				return fmt.Errorf("no server certificate presented")
+				return fmt.Errorf("no peer certificate")
 			}
 			sum := sha256.Sum256(rawCerts[0])
-			actualPin := hex.EncodeToString(sum[:])
-			if actualPin != pinClean {
-				addLog(fmt.Sprintf("PIN MISMATCH [%s]: Expected %s, Got %s", t.Name, pinClean, actualPin))
+			actual := hex.EncodeToString(sum[:])
+			if actual != pinClean {
+				addLog(fmt.Sprintf("SEC-ALERT [%s]: Cert Pin mismatch! Expected %s", t.Name, pinClean[:16]+"..."))
 				return fmt.Errorf("certificate pin mismatch")
 			}
 			return nil
@@ -200,12 +268,11 @@ func handleWSSClientConn(client net.Conn, t Tunnel) {
 	dialer := &net.Dialer{Timeout: 6 * time.Second}
 	remoteTLS, err := tls.DialWithDialer(dialer, "tcp", t.TargetAddr, tlsCfg)
 	if err != nil {
-		addLog(fmt.Sprintf("WSS Dial Err [%s]: %v", t.Name, err))
+		addLog(fmt.Sprintf("ERR [%s]: TLS Dial failed -> %v", t.Name, err))
 		return
 	}
 	defer remoteTLS.Close()
 
-	// Perform RFC 6455 WebSocket Upgrade Handshake over TLS
 	keyBytes := make([]byte, 16)
 	rand.Read(keyBytes)
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
@@ -226,10 +293,9 @@ func handleWSSClientConn(client net.Conn, t Tunnel) {
 	br := bufio.NewReader(remoteTLS)
 	statusLine, err := br.ReadString('\n')
 	if err != nil || !strings.Contains(statusLine, "101") {
-		addLog(fmt.Sprintf("WSS Handshake Rejected [%s]: %s", t.Name, strings.TrimSpace(statusLine)))
+		addLog(fmt.Sprintf("ERR [%s]: WSS Upgrade rejected -> %s", t.Name, strings.TrimSpace(statusLine)))
 		return
 	}
-	// Consume remaining HTTP response headers
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil || line == "\r\n" || line == "\n" {
@@ -237,7 +303,8 @@ func handleWSSClientConn(client net.Conn, t Tunnel) {
 		}
 	}
 
-	// Flush any buffered bytes after HTTP header
+	addLog(fmt.Sprintf("OK [%s]: 101 Switching Protocols established with %s", t.Name, t.TargetAddr))
+
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
 		br.Read(buf)
@@ -258,8 +325,8 @@ func handleWSSServerConn(conn net.Conn, t Tunnel) {
 	}
 	parts := strings.Fields(reqLine)
 	if len(parts) < 2 || parts[1] != t.WSPath {
-		// Return realistic decoy response against active probing / DPI inspectors
-		decoy := "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<html><body><h1>200 OK</h1><p>Cloudflare Edge Server</p></body></html>"
+		addLog(fmt.Sprintf("PROBE-BLOCKED [%s]: Invalid path %v from %s -> serving 200 OK decoy", t.Name, parts, conn.RemoteAddr().String()))
+		decoy := "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<html><body><h1>200 OK</h1><p>Edge Service Online</p></body></html>"
 		conn.Write([]byte(decoy))
 		return
 	}
@@ -284,12 +351,19 @@ func handleWSSServerConn(conn net.Conn, t Tunnel) {
 		return
 	}
 
-	target, err := net.DialTimeout("tcp", t.TargetAddr, 5*time.Second)
+	targetAddr := t.TargetAddr
+	if !strings.Contains(targetAddr, ":") {
+		targetAddr = targetAddr + ":2053"
+	}
+
+	target, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 	if err != nil {
-		addLog(fmt.Sprintf("X-UI Connect Err [%s]: %v", t.Name, err))
+		addLog(fmt.Sprintf("ERR [%s]: Local X-UI target %s unreachable -> %v", t.Name, targetAddr, err))
 		return
 	}
 	defer target.Close()
+
+	addLog(fmt.Sprintf("BRIDGE [%s]: WSS stream bridged to local X-UI (%s)", t.Name, targetAddr))
 
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
@@ -301,34 +375,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel) {
 	io.Copy(conn, target)
 }
 
-func handleRawTCPConn(client net.Conn, t Tunnel) {
-	defer client.Close()
-	target, err := net.DialTimeout("tcp", t.TargetAddr, 5*time.Second)
-	if err != nil {
-		return
-	}
-	defer target.Close()
-	go io.Copy(target, client)
-	io.Copy(client, target)
-}
-
-func saveTunnelsToDisk() {
-	data, _ := json.MarshalIndent(tunnels, "", "  ")
-	_ = os.WriteFile("/opt/litetun/tunnels.json", data, 0644)
-}
-
-func loadTunnelsFromDisk() {
-	data, err := os.ReadFile("/opt/litetun/tunnels.json")
-	if err == nil {
-		_ = json.Unmarshal(data, &tunnels)
-		for _, t := range tunnels {
-			go startTunnelEngine(t)
-		}
-	}
-}
-
 func updateConfigFile(newPort, newPath string) error {
-	confPath := "/opt/litetun/config.env"
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		return err
@@ -346,8 +393,9 @@ func updateConfigFile(newPort, newPath string) error {
 }
 
 func main() {
+	loadLogsFromDisk()
 	initSelfSignedCert()
-	loadTunnelsFromDisk()
+	loadDBFromDisk()
 
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
@@ -374,7 +422,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ram_mb":     m.Alloc / 1024 / 1024,
-			"tunnels":    tunnels,
+			"goroutines": runtime.NumGoroutine(),
+			"tunnels":    db.Tunnels,
+			"prefs":      db.Prefs,
 			"logs":       logs,
 			"panel_port": port,
 			"panel_path": panelPath,
@@ -382,22 +432,89 @@ func main() {
 		})
 	})
 
-	// Create or Edit a WSS/TCP Tunnel
+	// Save Theme, Language, and Active Tab to Database
+	http.HandleFunc("/api/prefs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		var p UIPrefs
+		if err := json.NewDecoder(r.Body).Decode(&p); err == nil {
+			mu.Lock()
+			if p.Theme != "" {
+				db.Prefs.Theme = p.Theme
+			}
+			if p.Lang != "" {
+				db.Prefs.Lang = p.Lang
+			}
+			if p.ActiveTab != "" {
+				db.Prefs.ActiveTab = p.ActiveTab
+			}
+			saveDBLocked()
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Interactive Terminal Command Endpoint
+	http.HandleFunc("/api/cmd", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		var req struct {
+			Cmd string `json:"cmd"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		cmd := strings.TrimSpace(req.Cmd)
+		addLog("root@litetun:~# " + cmd)
+
+		switch strings.ToLower(cmd) {
+		case "help":
+			addLog("Commands: status | tunnels | pin | clear | restart")
+		case "status":
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			addLog(fmt.Sprintf("STATUS: Active | Goroutines: %d | Alloc RAM: %d MB | Port: %s", runtime.NumGoroutine(), m.Alloc/1024/1024, port))
+		case "tunnels":
+			mu.Lock()
+			count := len(db.Tunnels)
+			mu.Unlock()
+			addLog(fmt.Sprintf("TUNNELS: %d configured tunnel(s) running.", count))
+		case "pin":
+			addLog("SHA256-PIN: " + localPinHex)
+		case "clear":
+			mu.Lock()
+			logs = []string{"[SYSTEM] Terminal buffer cleared."}
+			_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
+			mu.Unlock()
+		case "restart":
+			addLog("SYS: Restarting service via systemd...")
+			go func() {
+				time.Sleep(800 * time.Millisecond)
+				os.Exit(0)
+			}()
+		default:
+			if cmd != "" {
+				addLog("bash: " + cmd + ": command not found (type 'help')")
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	http.HandleFunc("/api/tunnel", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			id := r.URL.Query().Get("id")
 			mu.Lock()
 			stopTunnelIfRunning(id)
 			var updated []Tunnel
-			for _, item := range tunnels {
+			for _, item := range db.Tunnels {
 				if item.ID != id {
 					updated = append(updated, item)
 				}
 			}
-			tunnels = updated
-			saveTunnelsToDisk()
+			db.Tunnels = updated
+			saveDBLocked()
 			mu.Unlock()
-			addLog("DELETED Tunnel " + id)
+			addLog("CMD: Deleted tunnel ID " + id)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -408,22 +525,26 @@ func main() {
 		var t Tunnel
 		json.NewDecoder(r.Body).Decode(&t)
 		t.Status = "Online"
+		if !strings.HasPrefix(t.WSPath, "/") {
+			t.WSPath = "/" + strings.Trim(t.WSPath, "/")
+		}
 
 		mu.Lock()
 		if t.ID == "" {
 			t.ID = fmt.Sprintf("wss-%d", time.Now().Unix()%10000)
-			tunnels = append(tunnels, t)
+			db.Tunnels = append(db.Tunnels, t)
 		} else {
-			for i := range tunnels {
-				if tunnels[i].ID == t.ID {
-					tunnels[i] = t
+			for i := range db.Tunnels {
+				if db.Tunnels[i].ID == t.ID {
+					db.Tunnels[i] = t
 					break
 				}
 			}
 		}
-		saveTunnelsToDisk()
+		saveDBLocked()
 		mu.Unlock()
 
+		addLog(fmt.Sprintf("CFG: Saved tunnel '%s' (%s) on port :%s", t.Name, t.Role, t.ListenPort))
 		go startTunnelEngine(t)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -441,6 +562,7 @@ func main() {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		addLog(fmt.Sprintf("SYS: Updated Panel Port=%s Path=/%s/ -> Restarting...", req.Port, req.Path))
 		w.WriteHeader(http.StatusOK)
 		go func() {
 			time.Sleep(1 * time.Second)

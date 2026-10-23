@@ -2,7 +2,7 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
-  <title>LiteTun WSS Panel</title>
+  <title>LiteTun Multi-Server WSS Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
@@ -20,16 +20,16 @@
     .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
     input, select { background-color: #080d14; border: 1px solid var(--border); color: #f1f5f9; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
-    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.8); }
+    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR (Fixed LTR layout, never mirrors) -->
-  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+  <!-- TOP NAVIGATION BAR (Fixed LTR layout) -->
+  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-3">
       <div class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg" style="background: var(--accent-glow); color: var(--accent);">⚡</div>
-      <span class="font-bold tracking-wide text-sm hidden md:inline">LiteTun WSS</span>
+      <span class="font-bold tracking-wide text-sm hidden md:inline">LiteTun Controller</span>
     </div>
 
     <!-- Menu Order: Servers - Config - Tunnels - Logs -->
@@ -48,151 +48,201 @@
       </button>
     </nav>
 
-    <!-- Persistent Color Theme Dots + Language Toggle -->
+    <!-- Right Controls: Active Server Selector (Replaces "Live" badge) + Color Dots + EN/FA -->
     <div class="flex items-center gap-3">
-      <div class="flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
+      <!-- Top Server Selector Dropdown -->
+      <div class="flex items-center gap-1.5 bg-[#0b111a] border border-slate-700 rounded-xl px-2.5 py-1">
+        <span class="text-xs text-slate-400">🖥️</span>
+        <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-transparent border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer pr-2">
+          <option value="local">Master Server</option>
+        </select>
+      </div>
+
+      <!-- Theme Dots -->
+      <div class="hidden sm:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
         <button onclick="applyTheme('amber', true)" title="Midnight Amber" class="w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('cyan', true)" title="Nordic Cyan" class="w-3.5 h-3.5 rounded-full bg-sky-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('emerald', true)" title="Emerald Slate" class="w-3.5 h-3.5 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('indigo', true)" title="OLED Indigo" class="w-3.5 h-3.5 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('rose', true)" title="Sakura Rose" class="w-3.5 h-3.5 rounded-full bg-rose-400 hover:scale-125 transition"></button>
       </div>
-      <span class="hidden sm:inline px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 text-xs">● <span data-i18n="live">Live</span></span>
+
       <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
     </div>
   </header>
 
-  <!-- MAIN WORKSPACE: Left Column (Active Page) + Right Column (Always-Visible PuTTY Terminal) -->
+  <!-- MAIN WORKSPACE: Left Column (7 Cols) + Right Column PuTTY Console (5 Cols) -->
   <main class="flex-1 max-w-[1440px] w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-    <!-- LEFT COLUMN (7 Cols): Tab Views -->
+    <!-- LEFT COLUMN -->
     <div class="lg:col-span-7 space-y-6">
 
-      <!-- VIEW 1: SERVERS -->
-      <section id="view-servers" class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div class="card rounded-2xl p-6">
-          <div class="flex justify-between items-center mb-4">
-            <div class="flex items-center gap-2">
-              <h3 class="font-bold text-lg">Master Node</h3>
-              <span class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);" data-i18n="panel">Panel</span>
+      <!-- TAB 1: SERVERS (Connect via SSH & Deploy Sentinel) -->
+      <section id="view-servers" class="space-y-6">
+        <!-- SSH Connect & Sentinel Deploy Form -->
+        <div class="card rounded-2xl p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <div>
+              <h3 class="font-bold text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enter SSH credentials to automatically install and link the Sentinel agent on the target server.</p>
             </div>
-            <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs">● <span data-i18n="online">Online</span></span>
+            <span class="text-xs px-2.5 py-1 rounded-lg font-mono" style="background: var(--accent-glow); color: var(--accent);">SSH Auto-Deploy</span>
           </div>
 
-          <div class="flex justify-between text-xs text-slate-400 mb-2">
-            <span><span data-i18n="memory">RAM Usage</span>: <b id="ram-val" class="text-slate-200">0</b> MB</span>
-            <span>Goroutines: <b id="go-val" class="text-slate-200">0</b></span>
-          </div>
-          <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-5">
-            <div class="h-full w-1/4 rounded-full" style="background: var(--accent)"></div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_name">Server Name</label>
+              <input id="srv-name" placeholder="e.g. Germany Kharej" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_ip">Server IP Address</label>
+              <input id="srv-ip" placeholder="e.g. 205.234.152.182" class="w-full rounded-lg p-2.5 text-xs font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_port">SSH Port</label>
+              <input id="srv-port" value="22" placeholder="22" class="w-full rounded-lg p-2.5 text-xs font-mono">
+            </div>
           </div>
 
-          <div class="text-xs text-slate-400 bg-[#080d14] p-3 rounded-xl border border-slate-800/80 mb-4">
-            <div class="font-bold text-slate-300 mb-1" data-i18n="pin_title">Server SHA-256 Certificate Pin:</div>
-            <code id="local-pin" class="text-[11px] break-all text-emerald-400 select-all">Loading...</code>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_user">SSH Username</label>
+              <input id="srv-user" value="root" placeholder="root" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_pass">SSH Password</label>
+              <input id="srv-pass" type="password" placeholder="••••••••••••" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
           </div>
 
-          <div class="flex justify-between items-center text-xs text-slate-400 pt-3 border-t border-slate-800/70">
-            <span>Port: <code id="lbl-port" class="text-slate-200">8880</code></span>
-            <span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);" id="tun-count">0 Tunnels</span>
-          </div>
+          <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel</button>
         </div>
 
-        <div onclick="setTab('tunnels', true)" class="border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-slate-600 transition min-h-[220px]">
-          <div class="w-12 h-12 rounded-xl bg-slate-800/60 flex items-center justify-center text-2xl mb-3" style="color: var(--accent)">+</div>
-          <div class="font-bold" data-i18n="add_server">Create New WSS Tunnel</div>
-          <div class="text-xs text-slate-500 mt-1 text-center" data-i18n="add_sub">WebSocket over TLS 1.3 with SHA-256 Pinned Certificate</div>
-        </div>
+        <!-- Connected Servers Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="server-cards-list"></div>
       </section>
 
-      <!-- VIEW 2: CONFIG -->
+      <!-- TAB 2: CONFIG (Works according to the Server selected in Top Bar) -->
       <section id="view-config" class="hidden card rounded-2xl p-6 space-y-5">
-        <h3 class="font-bold text-base border-b border-slate-800 pb-3" data-i18n="network_settings">Panel Port & URL Configuration</h3>
+        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+          <h3 class="font-bold text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
+          <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master Server</span>
+        </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel Listen Port</label>
-            <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm">
+            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
+            <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm font-mono">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
-            <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm">
+            <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
           </div>
         </div>
-        <button onclick="saveConfig()" class="text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Service</button>
+        <button onclick="saveConfig()" class="text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
       </section>
 
-      <!-- VIEW 3: TUNNELS -->
+      <!-- TAB 3: TUNNELS (Method Cards + Two Server Lists + Ping/Test) -->
       <section id="view-tunnels" class="hidden space-y-6">
-        <div class="card rounded-2xl p-6 space-y-4">
-          <div class="flex justify-between items-center">
-            <h3 class="font-bold text-base" data-i18n="new_tunnel">Create / Edit WSS Tunnel</h3>
-            <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
-          </div>
-
-          <div class="p-3.5 rounded-xl accent-border flex items-center justify-between">
-            <div>
-              <div class="font-bold text-sm">WSS (WebSocket + TLS)</div>
-              <div class="text-xs text-slate-300" data-i18n="wss_desc">Encrypted WebSocket over TLS with pinned certificate support.</div>
+        <!-- Step 1: Choose Tunnel Method Card -->
+        <div class="card rounded-2xl p-5 space-y-3">
+          <h3 class="font-bold text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- Active Method: WSS -->
+            <div class="p-4 rounded-xl accent-border cursor-pointer flex items-center justify-between">
+              <div>
+                <div class="font-bold text-sm flex items-center gap-2">
+                  <span>WSS</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">ACTIVE</span>
+                </div>
+                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 with Pinned Certificate</div>
+              </div>
+              <span class="text-lg">🔒</span>
             </div>
-            <span class="text-xs font-mono px-2 py-1 rounded bg-black/40" style="color: var(--accent)">RFC 6455</span>
+
+            <!-- Future Method Placeholder -->
+            <div class="p-4 rounded-xl border border-slate-800 bg-[#080d14]/60 opacity-50 cursor-not-allowed flex items-center justify-between">
+              <div>
+                <div class="font-bold text-sm text-slate-400">gRPC / Mux (Next Step)</div>
+                <div class="text-xs text-slate-500 mt-1">Multiplexed stream transport</div>
+              </div>
+              <span class="text-lg">⚡</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Connect Between Two Servers -->
+        <div class="card rounded-2xl p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h3 class="font-bold text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
+            <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
           </div>
 
           <input type="hidden" id="tun-id">
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Two Server Dropdowns: Source (Entry) -> Destination (Exit) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3.5 rounded-xl border border-slate-800">
+            <div>
+              <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Iran Relay)</label>
+              <select id="tun-src-srv" class="w-full rounded-lg p-2.5 text-xs"></select>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Exit Server (Kharej + X-UI)</label>
+              <select id="tun-dst-srv" class="w-full rounded-lg p-2.5 text-xs"></select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
-              <input id="tun-name" placeholder="e.g. France-WSS" class="w-full rounded-lg p-2.5 text-xs">
+              <input id="tun-name" placeholder="e.g. Iran-to-Germany" class="w-full rounded-lg p-2.5 text-xs">
             </div>
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_role">Server Role</label>
-              <select id="tun-role" class="w-full rounded-lg p-2.5 text-xs">
-                <option value="client">Iran Relay (Client ➔ WSS)</option>
-                <option value="server">Kharej Exit (WSS ➔ X-UI)</option>
-              </select>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="listen_port">Entry Listen Port (Iran)</label>
+              <input id="listen-port" placeholder="e.g. 10102" class="w-full rounded-lg p-2.5 text-xs font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="wss_port_lbl">WSS Bridge Port (Kharej)</label>
+              <input id="wss-port" value="10201" placeholder="10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="listen_port">Listen Port</label>
-              <input id="listen-port" placeholder="e.g. 10102" class="w-full rounded-lg p-2.5 text-xs">
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="target_addr">X-UI Inbound (on Exit Server)</label>
+              <input id="target-addr" value="127.0.0.1:2053" placeholder="127.0.0.1:2053" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="target_addr">Target Address (IP:Port)</label>
-              <input id="target-addr" placeholder="e.g. 205.234.152.182:10201 or 127.0.0.1:2053" class="w-full rounded-lg p-2.5 text-xs">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
-              <input id="tun-sni" placeholder="www.speedtest.net" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs">
+              <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
-              <label class="text-xs text-slate-400 block mb-1">WebSocket Path (start with /)</label>
-              <input id="tun-path" placeholder="/ws" value="/ws" class="w-full rounded-lg p-2.5 text-xs">
+              <label class="text-xs text-slate-400 block mb-1">WebSocket Path</label>
+              <input id="tun-path" value="/ws" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
           </div>
 
           <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Remote SHA-256 Certificate Pin (Optional)</label>
-            <input id="tun-pin" placeholder="Leave empty to skip pin check, or paste remote SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
+            <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)</label>
+            <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
           </div>
 
-          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-sm transition" style="background: var(--accent);" data-i18n="create">Save & Run WSS Tunnel</button>
+          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish WSS Tunnel Between Selected Servers</button>
         </div>
 
+        <!-- Active Tunnels List with Ping & Test Button -->
         <div class="space-y-3">
-          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (Click Edit to modify)</h3>
+          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (Test, Ping, or Edit)</h3>
           <div id="tunnel-list" class="space-y-3"></div>
         </div>
       </section>
 
-      <!-- VIEW 4: LOGS (Full Inspection & Filter View) -->
+      <!-- TAB 4: LOGS (Filtered by Selected Server on Top) -->
       <section id="view-logs" class="hidden card rounded-2xl p-6 space-y-4">
         <div class="flex justify-between items-center">
-          <h3 class="font-bold text-base" data-i18n="logs_full">Persistent System & Packet Log Archive</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-bold text-base" data-i18n="logs_full">Server Log Archive</h3>
+            <span id="log-target-badge" class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
+          </div>
           <button onclick="sendCmd('clear')" class="px-3 py-1 rounded-lg bg-rose-950 text-rose-400 border border-rose-800 text-xs" data-i18n="clear_logs">Clear Logs</button>
         </div>
         <pre id="full-log-box" class="putty-win p-4 rounded-xl text-xs text-emerald-400 h-[460px] overflow-y-auto leading-relaxed"></pre>
@@ -200,27 +250,24 @@
 
     </div>
 
-    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Terminal Window (Visible on every tab) -->
+    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console (Synced to Selected Top Server) -->
     <aside class="lg:col-span-5 sticky top-20">
-      <div class="putty-win rounded-2xl overflow-hidden flex flex-col h-[580px]">
-        <!-- PuTTY Title Bar -->
+      <div class="putty-win rounded-2xl overflow-hidden flex flex-col h-[600px]">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
             <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <span class="text-xs font-bold text-slate-300 ml-2">root@litetun:~ (PuTTY Live Console)</span>
+            <span id="putty-title" class="text-xs font-bold text-slate-300 ml-2">root@Master:~ (PuTTY Live Console)</span>
           </div>
           <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
         </div>
 
-        <!-- Console Output Stream -->
         <div id="putty-box" class="flex-1 p-4 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
 
-        <!-- Interactive Command Prompt -->
         <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
-          <span class="text-xs font-bold" style="color: var(--accent)">root@litetun:~#</span>
-          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'pin', 'tunnels', 'clear'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
+          <span class="text-xs font-bold" style="color: var(--accent)">root@node:~#</span>
+          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'servers', 'tunnels', 'pin'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
           <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
         </div>
       </div>
@@ -232,42 +279,56 @@
     let lang = 'en';
     let currentTheme = 'amber';
     let currentTab = 'servers';
+    let selectedServer = 'local';
+    let currentServers = [];
     let currentTunnels = [];
+    let pingResults = {};
     let initialLoaded = false;
 
     const dict = {
       en: {
         servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Logs',
-        live: 'Live', online: 'Online', panel: 'Panel', memory: 'RAM Usage',
-        pin_title: 'Server SHA-256 Certificate Pin:', add_server: 'Create New WSS Tunnel',
-        add_sub: 'WebSocket over TLS 1.3 with SHA-256 Pinned Certificate',
-        network_settings: 'Panel Port & URL Configuration', lbl_panel_port: 'Panel Listen Port',
-        lbl_panel_path: 'Secret URL Path', save_restart: 'Save & Restart Service',
-        new_tunnel: 'Create / Edit WSS Tunnel', reset: 'Clear Form',
-        wss_desc: 'Encrypted WebSocket over TLS with pinned certificate support.',
-        tun_name: 'Tunnel Name', tun_role: 'Server Role', listen_port: 'Listen Port',
-        target_addr: 'Target Address (IP:Port)', cert_pin_lbl: 'Remote SHA-256 Certificate Pin (Optional)',
-        create: 'Save & Run WSS Tunnel', active_tunnels: 'Active Tunnels (Click Edit to modify)',
-        logs_full: 'Persistent System & Packet Log Archive', clear_logs: 'Clear Logs'
+        add_srv_title: 'Connect Remote Server & Deploy Sentinel',
+        add_srv_sub: 'Enter SSH credentials to automatically install and link the Sentinel agent on the target server.',
+        srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
+        srv_user: 'SSH Username', srv_pass: 'SSH Password',
+        btn_deploy: '🚀 Connect via SSH & Deploy Sentinel',
+        network_settings: 'Server Port & URL Configuration', lbl_panel_port: 'Panel / Sentinel Port',
+        lbl_panel_path: 'Secret URL Path', save_restart: 'Save & Restart Selected Server',
+        step1_method: '1. Select Tunnel Transport Method',
+        wss_desc: 'WebSocket over TLS 1.3 with Pinned Certificate',
+        new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
+        src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
+        tun_name: 'Tunnel Name', listen_port: 'Entry Listen Port (Iran)',
+        wss_port_lbl: 'WSS Bridge Port (Kharej)', target_addr: 'X-UI Inbound (on Exit Server)',
+        cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
+        create: '⚡ Establish WSS Tunnel Between Selected Servers',
+        active_tunnels: 'Active Tunnels (Test, Ping, or Edit)',
+        logs_full: 'Server Log Archive', clear_logs: 'Clear Logs'
       },
       fa: {
         servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ‌ها',
-        live: 'زنده', online: 'آنلاین', panel: 'پنل', memory: 'مصرف رم',
-        pin_title: 'پین گواهی SHA-256 این سرور:', add_server: 'ساخت تانل WSS جدید',
-        add_sub: 'وب‌سوکت روی TLS 1.3 با گواهی پین‌شده',
-        network_settings: 'تنظیمات پورت و آدرس پنل', lbl_panel_port: 'پورت پنل',
-        lbl_panel_path: 'آدرس مخفی پنل', save_restart: 'ذخیره و ری‌استارت سرویس',
-        new_tunnel: 'ساخت / ویرایش تانل WSS', reset: 'پاک کردن فرم',
-        wss_desc: 'وب‌سوکت رمزنگاری‌شده روی TLS با پشتیبانی از پین گواهی.',
-        tun_name: 'نام تانل', tun_role: 'نقش این سرور', listen_port: 'پورت ورودی (Listen)',
-        target_addr: 'آدرس مقصد (IP:Port)', cert_pin_lbl: 'پین گواهی SHA-256 سرور مقصد (اختیاری)',
-        create: 'ذخیره و اجرای تانل WSS', active_tunnels: 'تانل‌های فعال (برای ویرایش کلیک کنید)',
-        logs_full: 'آرشیو کامل لاگ‌ها و دستورات سیستم', clear_logs: 'پاک کردن لاگ'
+        add_srv_title: 'اتصال به سرور جدید و نصب خودکار سنتینل',
+        add_srv_sub: 'مشخصات SSH را وارد کنید تا سنتینل به صورت خودکار روی سرور مقصد نصب و متصل شود.',
+        srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
+        srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
+        btn_deploy: '🚀 اتصال با SSH و نصب خودکار سنتینل',
+        network_settings: 'تنظیمات پورت و آدرس سرور انتخاب‌شده', lbl_panel_port: 'پورت پنل / سنتینل',
+        lbl_panel_path: 'آدرس مخفی پنل', save_restart: 'ذخیره و ری‌استارت سرور انتخاب‌شده',
+        step1_method: '۱. انتخاب متد تانل',
+        wss_desc: 'وب‌سوکت روی TLS 1.3 با گواهی پین‌شده',
+        new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
+        src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
+        tun_name: 'نام تانل', listen_port: 'پورت ورودی در سرور ایران',
+        wss_port_lbl: 'پورت WSS در سرور خارج', target_addr: 'پورت اینباند X-UI (در سرور خارج)',
+        cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
+        create: '⚡ برقراری تانل WSS بین دو سرور انتخاب‌شده',
+        active_tunnels: 'تانل‌های فعال (تست پینگ و ویرایش)',
+        logs_full: 'آرشیو کامل لاگ‌های سرور', clear_logs: 'پاک کردن لاگ'
       }
     };
 
     function applyLangUI() {
-      // Keep dir="ltr" always so layout never mirrors!
       document.getElementById('lang-btn').innerText = lang === 'en' ? 'FA' : 'EN';
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
@@ -310,15 +371,44 @@
       if (persist) savePrefsToServer();
     }
 
+    function changeSelectedServer(srvId) {
+      selectedServer = srvId;
+      document.getElementById('cfg-port').value = '';
+      savePrefsToServer();
+      fetchState();
+    }
+
     async function savePrefsToServer() {
       await fetch('/api/prefs', {
         method: 'POST',
-        body: JSON.stringify({ theme: currentTheme, lang: lang, active_tab: currentTab })
+        body: JSON.stringify({ theme: currentTheme, lang: lang, active_tab: currentTab, selected_server: selectedServer })
       });
     }
 
+    async function addAndDeployServer() {
+      const payload = {
+        name: document.getElementById('srv-name').value.trim() || 'Remote-Node',
+        ip: document.getElementById('srv-ip').value.trim(),
+        ssh_port: document.getElementById('srv-port').value.trim() || '22',
+        ssh_user: document.getElementById('srv-user').value.trim() || 'root',
+        ssh_pass: document.getElementById('srv-pass').value
+      };
+      if (!payload.ip || !payload.ssh_pass) return alert('Please enter Server IP and SSH Password');
+      document.getElementById('srv-name').value = '';
+      document.getElementById('srv-ip').value = '';
+      document.getElementById('srv-pass').value = '';
+      await fetch('/api/servers', { method: 'POST', body: JSON.stringify(payload) });
+      fetchState();
+    }
+
+    async function deleteServer(id) {
+      if (!confirm('Remove this server from panel?')) return;
+      await fetch('/api/servers?id=' + id, { method: 'DELETE' });
+      fetchState();
+    }
+
     async function sendCmd(cmd) {
-      await fetch('/api/cmd', { method: 'POST', body: JSON.stringify({ cmd }) });
+      await fetch('/api/cmd', { method: 'POST', body: JSON.stringify({ cmd, server_id: selectedServer }) });
       fetchState();
     }
 
@@ -333,7 +423,8 @@
       document.getElementById('tun-id').value = '';
       document.getElementById('tun-name').value = '';
       document.getElementById('listen-port').value = '';
-      document.getElementById('target-addr').value = '';
+      document.getElementById('wss-port').value = '10201';
+      document.getElementById('target-addr').value = '127.0.0.1:2053';
       document.getElementById('tun-sni').value = 'www.speedtest.net';
       document.getElementById('tun-path').value = '/ws';
       document.getElementById('tun-pin').value = '';
@@ -344,8 +435,10 @@
       if (!t) return;
       document.getElementById('tun-id').value = t.id;
       document.getElementById('tun-name').value = t.name || '';
-      document.getElementById('tun-role').value = t.role || 'client';
+      if (t.source_server) document.getElementById('tun-src-srv').value = t.source_server;
+      if (t.target_server) document.getElementById('tun-dst-srv').value = t.target_server;
       document.getElementById('listen-port').value = t.listen_port || '';
+      document.getElementById('wss-port').value = t.wss_port || '10201';
       document.getElementById('target-addr').value = t.target_addr || '';
       document.getElementById('tun-sni').value = t.sni || 'www.speedtest.net';
       document.getElementById('tun-path').value = t.ws_path || '/ws';
@@ -357,22 +450,38 @@
       fetchState();
     }
 
+    async function pingTunnel(id) {
+      pingResults[id] = 'Testing...';
+      renderTunnels();
+      const res = await fetch('/api/ping?id=' + id);
+      const data = await res.json();
+      if (data.ok) {
+        pingResults[id] = `✅ ${data.ms} ms`;
+      } else {
+        pingResults[id] = `❌ Failed`;
+      }
+      renderTunnels();
+      fetchState();
+    }
+
     async function saveTunnel() {
       let pathVal = document.getElementById('tun-path').value.trim() || '/ws';
       if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
 
       const payload = {
         id: document.getElementById('tun-id').value,
-        name: document.getElementById('tun-name').value || 'WSS-Node',
-        role: document.getElementById('tun-role').value,
+        name: document.getElementById('tun-name').value.trim() || 'WSS-Bridge',
         method: 'wss',
+        source_server: document.getElementById('tun-src-srv').value,
+        target_server: document.getElementById('tun-dst-srv').value,
         listen_port: document.getElementById('listen-port').value.trim(),
-        target_addr: document.getElementById('target-addr').value.trim(),
+        wss_port: document.getElementById('wss-port').value.trim() || '10201',
+        target_addr: document.getElementById('target-addr').value.trim() || '127.0.0.1:2053',
         sni: document.getElementById('tun-sni').value.trim() || 'www.speedtest.net',
         ws_path: pathVal,
         cert_pin: document.getElementById('tun-pin').value.trim()
       };
-      if (!payload.listen_port || !payload.target_addr) return alert('Enter Listen Port and Target Address');
+      if (!payload.listen_port) return alert('Please enter Entry Listen Port');
       await fetch('/api/tunnel', { method: 'POST', body: JSON.stringify(payload) });
       resetForm();
       fetchState();
@@ -381,28 +490,119 @@
     async function saveConfig() {
       const port = document.getElementById('cfg-port').value.trim();
       const path = document.getElementById('cfg-path').value.trim();
-      await fetch('/api/config', { method: 'POST', body: JSON.stringify({ port, path }) });
-      setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
+      await fetch('/api/config?server_id=' + selectedServer, { method: 'POST', body: JSON.stringify({ port, path }) });
+      if (selectedServer === 'local') {
+        setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
+      } else {
+        alert('Remote Sentinel configuration updated!');
+      }
+    }
+
+    function renderServers() {
+      // Update Top Dropdown and Tunnel Server Dropdowns while preserving selection
+      const topSel = document.getElementById('top-server-select');
+      const srcSel = document.getElementById('tun-src-srv');
+      const dstSel = document.getElementById('tun-dst-srv');
+      const prevSrc = srcSel.value;
+      const prevDst = dstSel.value;
+
+      const optsHTML = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
+      if (topSel.innerHTML !== optsHTML) {
+        topSel.innerHTML = optsHTML;
+        srcSel.innerHTML = optsHTML;
+        dstSel.innerHTML = optsHTML;
+      }
+      topSel.value = selectedServer;
+      if (prevSrc) srcSel.value = prevSrc;
+      if (prevDst) dstSel.value = prevDst;
+      else if (currentServers.length > 1) dstSel.value = currentServers[currentServers.length - 1].id;
+
+      const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];
+      if (activeSrv) {
+        document.getElementById('putty-title').innerText = `root@${activeSrv.name} (${activeSrv.ip}) — PuTTY Live Console`;
+        document.getElementById('cfg-target-badge').innerText = `${activeSrv.name} (${activeSrv.ip})`;
+        document.getElementById('log-target-badge').innerText = `${activeSrv.name} (${activeSrv.ip})`;
+      }
+
+      document.getElementById('server-cards-list').innerHTML = currentServers.map(s => {
+        const isOnline = s.status === 'Online';
+        const badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
+        return `
+          <div class="card rounded-2xl p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="font-bold text-base">${s.name}</h4>
+                  ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}
+                </div>
+                <div class="text-xs font-mono text-slate-400 mt-1">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port}</b></div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span>
+            </div>
+
+            <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate">
+              Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 28) + '...' : 'Pending...'}</span>
+            </div>
+
+            <div class="flex justify-between items-center pt-2 border-t border-slate-800/60">
+              <button onclick="changeSelectedServer('${s.id}')" class="text-xs font-semibold hover:underline" style="color: var(--accent)">
+                ${s.id === selectedServer ? '✓ Active in Top Bar' : 'Select in Top Bar'}
+              </button>
+              ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️ Remove</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTunnels() {
+      document.getElementById('tunnel-list').innerHTML = currentTunnels.map(t => {
+        const srcName = (currentServers.find(s => s.id === t.source_server) || {}).name || 'Entry';
+        const dstName = (currentServers.find(s => s.id === t.target_server) || {}).name || 'Exit';
+        const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
+        return `
+          <div class="card p-4 rounded-2xl flex flex-col gap-2.5">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">WSS</span>
+                <span class="font-bold text-sm">${t.name}</span>
+                <span class="text-xs text-slate-400">(${srcName} ➔ ${dstName})</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="pingTunnel('${t.id}')" class="px-3 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingTxt}</button>
+                <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️ Edit</button>
+                <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
+              </div>
+            </div>
+            <div class="text-xs text-slate-400 flex flex-wrap gap-4 pt-2 border-t border-slate-800/60 font-mono">
+              <span>Entry Listen: <b class="text-slate-200">:${t.listen_port}</b></span>
+              <span>WSS Target: <b class="text-slate-200">${t.target_addr}</b></span>
+              <span>SNI: <b class="text-slate-200">${t.sni}</b></span>
+              <span>Path: <b class="text-slate-200">${t.ws_path}</b></span>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     async function fetchState() {
-      const res = await fetch('/api/state');
+      const res = await fetch('/api/state?server_id=' + selectedServer);
       const data = await res.json();
 
       if (!initialLoaded && data.prefs) {
         initialLoaded = true;
         lang = data.prefs.lang || 'en';
+        selectedServer = data.prefs.selected_server || 'local';
         applyLangUI();
         applyTheme(data.prefs.theme || 'amber', false);
         setTab(data.prefs.active_tab || 'servers', false);
       }
 
+      currentServers = data.servers || [];
       currentTunnels = data.tunnels || [];
-      document.getElementById('ram-val').innerText = data.ram_mb;
-      document.getElementById('go-val').innerText = data.goroutines || 0;
-      document.getElementById('lbl-port').innerText = data.panel_port;
-      document.getElementById('local-pin').innerText = data.cert_pin || '';
-      document.getElementById('tun-count').innerText = currentTunnels.length + ' Tunnels';
+
+      renderServers();
+      renderTunnels();
 
       const logText = (data.logs || []).join('\n');
       const puttyEl = document.getElementById('putty-box');
@@ -412,33 +612,12 @@
       document.getElementById('full-log-box').innerText = logText;
 
       if (!document.getElementById('cfg-port').value) {
-        document.getElementById('cfg-port').value = data.panel_port;
-        document.getElementById('cfg-path').value = data.panel_path;
+        document.getElementById('cfg-port').value = data.panel_port || '8880';
+        document.getElementById('cfg-path').value = data.panel_path || '';
       }
-
-      document.getElementById('tunnel-list').innerHTML = currentTunnels.map(t => `
-        <div class="card p-4 rounded-2xl flex flex-col gap-2">
-          <div class="flex justify-between items-center">
-            <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">WSS (${t.role === 'server' ? 'Server' : 'Client'})</span>
-              <span class="font-bold text-sm">${t.name}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">✏️ Edit</button>
-              <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
-            </div>
-          </div>
-          <div class="text-xs text-slate-400 flex flex-wrap gap-4 pt-1 border-t border-slate-800/60">
-            <span>Listen: <b class="text-slate-200">:${t.listen_port}</b></span>
-            <span>Target: <b class="text-slate-200">${t.target_addr}</b></span>
-            <span>SNI: <b class="text-slate-200">${t.sni}</b></span>
-            <span>Path: <b class="text-slate-200">${t.ws_path}</b></span>
-          </div>
-        </div>
-      `).join('');
     }
 
-    setInterval(fetchState, 1500);
+    setInterval(fetchState, 1800);
     fetchState();
   </script>
 </body>

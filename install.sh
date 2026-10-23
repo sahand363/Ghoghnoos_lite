@@ -1,12 +1,11 @@
 #!/bin/bash
 
 REPO="sahand363/ghoghnoos_light"
-APP_DIR="/opt/ghoghnoos"
+APP_DIR="/opt/litetun"
 BIN_PATH="$APP_DIR/ghoghnoos_lite"
 CONF_FILE="$APP_DIR/config.env"
-SERVICE_FILE="/etc/systemd/system/ghoghnoos.service"
+SERVICE_FILE="/etc/systemd/system/litetun.service"
 
-# Ensure root privileges
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root (sudo -i)"
   exit 1
@@ -37,7 +36,7 @@ EOF
   if [ ! -f "$SERVICE_FILE" ]; then
     cat <<EOF > "$SERVICE_FILE"
 [Unit]
-Description=Ghoghnoos Lite Tunnel Panel
+Description=LiteTun Tunnel Panel
 After=network.target
 
 [Service]
@@ -52,13 +51,13 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable ghoghnoos >/dev/null 2>&1
-    systemctl start ghoghnoos
+    systemctl enable litetun >/dev/null 2>&1
+    systemctl start litetun
   fi
 
-  # Create 'ghoghnoos' shortcut command so you can open the menu anytime
-  cp "$0" /usr/local/bin/ghoghnoos 2>/dev/null || curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" -o /usr/local/bin/ghoghnoos
-  chmod +x /usr/local/bin/ghoghnoos
+  # Download the CLI script cleanly to /usr/local/bin/litetun and strip any Windows \r characters
+  curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
+  chmod +x /usr/local/bin/litetun
 }
 
 get_panel_url() {
@@ -71,13 +70,14 @@ show_menu() {
   while true; do
     clear
     source "$CONF_FILE"
-    STATUS=$(systemctl is-active ghoghnoos)
+    STATUS=$(systemctl is-active litetun)
     echo "=========================================================="
-    echo "              GHOGHNOOS LITE MANAGEMENT MENU              "
+    echo "                 LITETUN MANAGEMENT MENU                  "
     echo "=========================================================="
     echo " Status    : $STATUS"
     echo " Panel URL : $(get_panel_url)"
     echo " Username  : $PANEL_USER"
+    echo " Command   : litetun"
     echo "=========================================================="
     echo "1) Start / Restart"
     echo "2) Stop"
@@ -90,36 +90,38 @@ show_menu() {
     echo "9) Make this panel Sentinel Node"
     echo "0) Exit"
     echo "=========================================================="
-    read -p "Select [0-9]: " choice
+    read -p "Select [0-9]: " choice < /dev/tty
 
     case $choice in
       1)
-        systemctl restart ghoghnoos
+        systemctl restart litetun
         echo "✅ Service started/restarted!"
         sleep 1.5
         ;;
       2)
-        systemctl stop ghoghnoos
+        systemctl stop litetun
         echo "🛑 Service stopped."
         sleep 1.5
         ;;
       3)
         echo "Press Ctrl+C to exit logs..."
         sleep 1
-        journalctl -u ghoghnoos -f -n 50
+        journalctl -u litetun -f -n 50
         ;;
       4)
-        echo "⬇️ Updating ghoghnoos_lite from GitHub..."
+        echo "⬇️ Updating binary from GitHub..."
         curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH"
         chmod +x "$BIN_PATH"
-        systemctl restart ghoghnoos
+        curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
+        chmod +x /usr/local/bin/litetun
+        systemctl restart litetun
         echo "✅ Updated and restarted!"
         sleep 2
         ;;
       5)
-        systemctl stop ghoghnoos
-        systemctl disable ghoghnoos
-        rm -rf "$APP_DIR" "$SERVICE_FILE" /usr/local/bin/ghoghnoos
+        systemctl stop litetun
+        systemctl disable litetun
+        rm -rf "$APP_DIR" "$SERVICE_FILE" /usr/local/bin/litetun
         systemctl daemon-reload
         echo "🗑️ Uninstalled completely."
         exit 0
@@ -127,40 +129,40 @@ show_menu() {
       6)
         NEW_PATH=$(openssl rand -hex 4)
         sed -i "s/^PANEL_PATH=.*/PANEL_PATH=$NEW_PATH/" "$CONF_FILE"
-        systemctl restart ghoghnoos
+        systemctl restart litetun
         echo "🔗 New Panel URL: $(get_panel_url)"
-        read -p "Press Enter to continue..."
+        read -p "Press Enter to continue..." < /dev/tty
         ;;
       7)
-        read -p "Enter new Username: " new_user
-        read -p "Enter new Password: " new_pass
+        read -p "Enter new Username: " new_user < /dev/tty
+        read -p "Enter new Password: " new_pass < /dev/tty
         sed -i "s/^PANEL_USER=.*/PANEL_USER=$new_user/" "$CONF_FILE"
         sed -i "s/^PANEL_PASS=.*/PANEL_PASS=$new_pass/" "$CONF_FILE"
-        systemctl restart ghoghnoos
+        systemctl restart litetun
         echo "✅ Credentials updated!"
         sleep 1.5
         ;;
       8)
-        read -p "Enable HTTPS on Port 5001? (y/n): " ssl_yn
+        read -p "Enable HTTPS on Port 5001? (y/n): " ssl_yn < /dev/tty
         if [ "$ssl_yn" = "y" ]; then
           sed -i "s/^PANEL_PORT=.*/PANEL_PORT=5001/" "$CONF_FILE"
           openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
             -keyout "$APP_DIR/server.key" -out "$APP_DIR/server.crt" \
-            -subj "/CN=ghoghnoos" >/dev/null 2>&1
+            -subj "/CN=litetun" >/dev/null 2>&1
           echo "✅ SSL enabled on port 5001!"
         else
           sed -i "s/^PANEL_PORT=.*/PANEL_PORT=8080/" "$CONF_FILE"
           rm -f "$APP_DIR/server.key" "$APP_DIR/server.crt"
           echo "✅ Reverted to HTTP on port 8080."
         fi
-        systemctl restart ghoghnoos
+        systemctl restart litetun
         sleep 2
         ;;
       9)
         echo "🛰️ Switching node to Sentinel (Slave/Agent) mode..."
-        read -p "Enter Master Server IP:Port : " master_addr
+        read -p "Enter Master Server IP:Port : " master_addr < /dev/tty
         echo "MASTER_NODE=$master_addr" >> "$CONF_FILE"
-        systemctl restart ghoghnoos
+        systemctl restart litetun
         echo "✅ Node configured as Sentinel Node!"
         sleep 2
         ;;

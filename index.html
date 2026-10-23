@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
-  <title>LiteTun Panel</title>
+  <title>LiteTun WSS Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #0b111a;
@@ -13,238 +13,293 @@
       --accent: #facc15;
       --accent-glow: rgba(250, 204, 21, 0.12);
     }
-    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: all 0.25s ease; }
+    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.25s ease; }
     .card { background-color: var(--card); border: 1px solid var(--border); }
     .accent-border { border: 1px solid var(--accent); background: var(--accent-glow); }
     .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
     .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
     input, select { background-color: #080d14; border: 1px solid var(--border); color: #f1f5f9; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
+    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.8); }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="w-full bg-[#080d14]/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+  <!-- TOP NAVIGATION BAR (Fixed LTR layout, never mirrors) -->
+  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <div class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg" style="background: var(--accent-glow); color: var(--accent);">⚡</div>
       <span class="font-bold tracking-wide text-sm hidden md:inline">LiteTun WSS</span>
     </div>
 
-    <!-- Top Menu Tabs -->
-    <nav class="flex items-center gap-1 sm:gap-3">
-      <button onclick="setTab('servers')" id="tab-servers" class="tab-btn active-tab px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-        <span>🖥️</span><span data-i18n="servers">سرورها</span>
+    <!-- Menu Order: Servers - Config - Tunnels - Logs -->
+    <nav class="flex items-center gap-1 sm:gap-2">
+      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+        <span>🖥️</span><span data-i18n="servers">Servers</span>
       </button>
-      <button onclick="setTab('tunnels')" id="tab-tunnels" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-        <span>🚇</span><span data-i18n="tunnels">تانل‌ها (WSS)</span>
+      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+        <span>⚙️</span><span data-i18n="config">Config</span>
       </button>
-      <button onclick="setTab('config')" id="tab-config" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-        <span>🎨</span><span data-i18n="config">تنظیمات و تم</span>
+      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+        <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
       </button>
-      <button onclick="setTab('logs')" id="tab-logs" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-        <span>📋</span><span data-i18n="logs">لاگ</span>
+      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+        <span>📋</span><span data-i18n="logs">Logs</span>
       </button>
     </nav>
 
-    <!-- Quick Theme Dots + Language Switcher -->
+    <!-- Persistent Color Theme Dots + Language Toggle -->
     <div class="flex items-center gap-3">
-      <div class="hidden sm:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
-        <button onclick="applyTheme('amber')" title="Midnight Amber" class="w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('cyan')" title="Nordic Cyan" class="w-3.5 h-3.5 rounded-full bg-sky-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('emerald')" title="Emerald Slate" class="w-3.5 h-3.5 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('indigo')" title="OLED Indigo" class="w-3.5 h-3.5 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('rose')" title="Sakura Rose" class="w-3.5 h-3.5 rounded-full bg-rose-400 hover:scale-125 transition"></button>
+      <div class="flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
+        <button onclick="applyTheme('amber', true)" title="Midnight Amber" class="w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('cyan', true)" title="Nordic Cyan" class="w-3.5 h-3.5 rounded-full bg-sky-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('emerald', true)" title="Emerald Slate" class="w-3.5 h-3.5 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('indigo', true)" title="OLED Indigo" class="w-3.5 h-3.5 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('rose', true)" title="Sakura Rose" class="w-3.5 h-3.5 rounded-full bg-rose-400 hover:scale-125 transition"></button>
       </div>
-      <span class="px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 text-xs">● <span data-i18n="live">زنده</span></span>
-      <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">EN</button>
+      <span class="hidden sm:inline px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 text-xs">● <span data-i18n="live">Live</span></span>
+      <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
     </div>
   </header>
 
-  <!-- MAIN CONTENT AREA -->
-  <main class="flex-1 max-w-6xl w-full mx-auto p-6">
+  <!-- MAIN WORKSPACE: Left Column (Active Page) + Right Column (Always-Visible PuTTY Terminal) -->
+  <main class="flex-1 max-w-[1440px] w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-    <!-- TAB 1: SERVERS -->
-    <section id="view-servers" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="card rounded-2xl p-6">
-        <div class="flex justify-between items-center mb-4">
-          <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs">● <span data-i18n="online">آنلاین</span></span>
-          <div class="flex items-center gap-2">
-            <span class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);" data-i18n="panel">پنل</span>
-            <h3 class="font-bold text-lg">LiteTun Node</h3>
+    <!-- LEFT COLUMN (7 Cols): Tab Views -->
+    <div class="lg:col-span-7 space-y-6">
+
+      <!-- VIEW 1: SERVERS -->
+      <section id="view-servers" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="card rounded-2xl p-6">
+          <div class="flex justify-between items-center mb-4">
+            <div class="flex items-center gap-2">
+              <h3 class="font-bold text-lg">Master Node</h3>
+              <span class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);" data-i18n="panel">Panel</span>
+            </div>
+            <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs">● <span data-i18n="online">Online</span></span>
+          </div>
+
+          <div class="flex justify-between text-xs text-slate-400 mb-2">
+            <span><span data-i18n="memory">RAM Usage</span>: <b id="ram-val" class="text-slate-200">0</b> MB</span>
+            <span>Goroutines: <b id="go-val" class="text-slate-200">0</b></span>
+          </div>
+          <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-5">
+            <div class="h-full w-1/4 rounded-full" style="background: var(--accent)"></div>
+          </div>
+
+          <div class="text-xs text-slate-400 bg-[#080d14] p-3 rounded-xl border border-slate-800/80 mb-4">
+            <div class="font-bold text-slate-300 mb-1" data-i18n="pin_title">Server SHA-256 Certificate Pin:</div>
+            <code id="local-pin" class="text-[11px] break-all text-emerald-400 select-all">Loading...</code>
+          </div>
+
+          <div class="flex justify-between items-center text-xs text-slate-400 pt-3 border-t border-slate-800/70">
+            <span>Port: <code id="lbl-port" class="text-slate-200">8880</code></span>
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);" id="tun-count">0 Tunnels</span>
           </div>
         </div>
-        <div class="text-xs text-slate-400 mb-2"><span data-i18n="memory">حافظه مصرفی</span>: <span id="ram-val">0</span> MB</div>
-        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-5">
-          <div class="h-full w-1/4 rounded-full" style="background: var(--accent)"></div>
-        </div>
-        <div class="text-xs text-slate-400 bg-[#080d14] p-3 rounded-xl border border-slate-800/80 mb-4">
-          <div class="font-bold text-slate-300 mb-1" data-i18n="pin_title">گواهی پین‌شده این سرور (SHA-256 Pin):</div>
-          <code id="local-pin" class="text-[11px] break-all text-emerald-400 select-all">Loading...</code>
-        </div>
-        <div class="flex justify-between items-center text-xs text-slate-400 pt-3 border-t border-slate-800/70">
-          <span>Panel Port: <code id="lbl-port">8880</code></span>
-          <span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);" id="tun-count">0 Tunnels</span>
-        </div>
-      </div>
 
-      <div onclick="setTab('tunnels')" class="border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-slate-600 transition">
-        <div class="w-12 h-12 rounded-xl bg-slate-800/60 flex items-center justify-center text-2xl mb-3" style="color: var(--accent)">+</div>
-        <div class="font-bold" data-i18n="add_server">ساخت تانل WSS جدید</div>
-        <div class="text-xs text-slate-500 mt-1" data-i18n="add_sub">وب‌سوکت روی TLS، با گواهی پین‌شده و قابل ویرایش</div>
-      </div>
-    </section>
+        <div onclick="setTab('tunnels', true)" class="border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-slate-600 transition min-h-[220px]">
+          <div class="w-12 h-12 rounded-xl bg-slate-800/60 flex items-center justify-center text-2xl mb-3" style="color: var(--accent)">+</div>
+          <div class="font-bold" data-i18n="add_server">Create New WSS Tunnel</div>
+          <div class="text-xs text-slate-500 mt-1 text-center" data-i18n="add_sub">WebSocket over TLS 1.3 with SHA-256 Pinned Certificate</div>
+        </div>
+      </section>
 
-    <!-- TAB 2: TUNNELS (WSS & TCP) -->
-    <section id="view-tunnels" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <!-- Left/Right Editor Form -->
-      <div class="lg:col-span-5 card rounded-2xl p-6 space-y-4">
+      <!-- VIEW 2: CONFIG -->
+      <section id="view-config" class="hidden card rounded-2xl p-6 space-y-5">
+        <h3 class="font-bold text-base border-b border-slate-800 pb-3" data-i18n="network_settings">Panel Port & URL Configuration</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel Listen Port</label>
+            <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
+            <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm">
+          </div>
+        </div>
+        <button onclick="saveConfig()" class="text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Service</button>
+      </section>
+
+      <!-- VIEW 3: TUNNELS -->
+      <section id="view-tunnels" class="hidden space-y-6">
+        <div class="card rounded-2xl p-6 space-y-4">
+          <div class="flex justify-between items-center">
+            <h3 class="font-bold text-base" data-i18n="new_tunnel">Create / Edit WSS Tunnel</h3>
+            <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
+          </div>
+
+          <div class="p-3.5 rounded-xl accent-border flex items-center justify-between">
+            <div>
+              <div class="font-bold text-sm">WSS (WebSocket + TLS)</div>
+              <div class="text-xs text-slate-300" data-i18n="wss_desc">Encrypted WebSocket over TLS with pinned certificate support.</div>
+            </div>
+            <span class="text-xs font-mono px-2 py-1 rounded bg-black/40" style="color: var(--accent)">RFC 6455</span>
+          </div>
+
+          <input type="hidden" id="tun-id">
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
+              <input id="tun-name" placeholder="e.g. France-WSS" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_role">Server Role</label>
+              <select id="tun-role" class="w-full rounded-lg p-2.5 text-xs">
+                <option value="client">Iran Relay (Client ➔ WSS)</option>
+                <option value="server">Kharej Exit (WSS ➔ X-UI)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="listen_port">Listen Port</label>
+              <input id="listen-port" placeholder="e.g. 10102" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="target_addr">Target Address (IP:Port)</label>
+              <input id="target-addr" placeholder="e.g. 205.234.152.182:10201 or 127.0.0.1:2053" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
+              <input id="tun-sni" placeholder="www.speedtest.net" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">WebSocket Path (start with /)</label>
+              <input id="tun-path" placeholder="/ws" value="/ws" class="w-full rounded-lg p-2.5 text-xs">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Remote SHA-256 Certificate Pin (Optional)</label>
+            <input id="tun-pin" placeholder="Leave empty to skip pin check, or paste remote SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
+          </div>
+
+          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-sm transition" style="background: var(--accent);" data-i18n="create">Save & Run WSS Tunnel</button>
+        </div>
+
+        <div class="space-y-3">
+          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (Click Edit to modify)</h3>
+          <div id="tunnel-list" class="space-y-3"></div>
+        </div>
+      </section>
+
+      <!-- VIEW 4: LOGS (Full Inspection & Filter View) -->
+      <section id="view-logs" class="hidden card rounded-2xl p-6 space-y-4">
         <div class="flex justify-between items-center">
-          <h3 class="font-bold text-base" id="form-title" data-i18n="new_tunnel">ساخت / ویرایش تانل</h3>
-          <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">پاک کردن فرم</button>
+          <h3 class="font-bold text-base" data-i18n="logs_full">Persistent System & Packet Log Archive</h3>
+          <button onclick="sendCmd('clear')" class="px-3 py-1 rounded-lg bg-rose-950 text-rose-400 border border-rose-800 text-xs" data-i18n="clear_logs">Clear Logs</button>
         </div>
+        <pre id="full-log-box" class="putty-win p-4 rounded-xl text-xs text-emerald-400 h-[460px] overflow-y-auto leading-relaxed"></pre>
+      </section>
 
-        <!-- Method Card (Matches Your Screenshot) -->
-        <div class="p-4 rounded-2xl accent-border flex flex-col gap-1">
-          <div class="font-bold text-base tracking-wide">WSS</div>
-          <div class="text-xs text-slate-300" data-i18n="wss_desc">وب‌سوکت روی TLS، با گواهی پین‌شده.</div>
-        </div>
+    </div>
 
-        <input type="hidden" id="tun-id">
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">نام تانل</label>
-            <input id="tun-name" placeholder="France WSS" class="w-full rounded-lg p-2 text-xs">
+    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Terminal Window (Visible on every tab) -->
+    <aside class="lg:col-span-5 sticky top-20">
+      <div class="putty-win rounded-2xl overflow-hidden flex flex-col h-[580px]">
+        <!-- PuTTY Title Bar -->
+        <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span class="text-xs font-bold text-slate-300 ml-2">root@litetun:~ (PuTTY Live Console)</span>
           </div>
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_role">نقش این سرور</label>
-            <select id="tun-role" class="w-full rounded-lg p-2 text-xs">
-              <option value="client">Iran Relay (Client ➔ WSS)</option>
-              <option value="server">Kharej Exit (WSS ➔ X-UI)</option>
-            </select>
-          </div>
+          <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="listen_port">پورت ورودی (Listen Port)</label>
-            <input id="listen-port" placeholder="e.g. 10004 or 443" class="w-full rounded-lg p-2 text-xs">
-          </div>
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="target_addr">آدرس مقصد (IP:Port)</label>
-            <input id="target-addr" placeholder="e.g. 31.56.48.160:443 or 127.0.0.1:2053" class="w-full rounded-lg p-2 text-xs">
-          </div>
-        </div>
+        <!-- Console Output Stream -->
+        <div id="putty-box" class="flex-1 p-4 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
-            <input id="tun-sni" placeholder="www.speedtest.net" value="www.speedtest.net" class="w-full rounded-lg p-2 text-xs">
-          </div>
-          <div>
-            <label class="text-xs text-slate-400 block mb-1">WebSocket Path</label>
-            <input id="tun-path" placeholder="/ws" value="/ws" class="w-full rounded-lg p-2 text-xs">
-          </div>
-        </div>
-
-        <div>
-          <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">پین گواهی SHA-256 سرور مقصد (اختیاری برای امنیت مضاعف)</label>
-          <input id="tun-pin" placeholder="Leave empty to skip pin check, or paste SHA-256 Pin" class="w-full rounded-lg p-2 text-xs font-mono">
-        </div>
-
-        <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-sm transition" style="background: var(--accent);" id="save-tun-btn" data-i18n="create">ذخیره و اجرای تانل WSS</button>
-      </div>
-
-      <!-- Active Tunnels List -->
-      <div class="lg:col-span-7 space-y-3">
-        <h3 class="font-bold text-base mb-2" data-i18n="active_tunnels">لیست تانل‌های فعال (قابل ویرایش)</h3>
-        <div id="tunnel-list" class="space-y-3"></div>
-      </div>
-    </section>
-
-    <!-- TAB 3: CONFIG & ALL CALM THEMES -->
-    <section id="view-config" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="card rounded-2xl p-6 space-y-4">
-        <h3 class="font-bold text-base" data-i18n="network_settings">تنظیمات پورت و آدرس پنل</h3>
-        <div>
-          <label class="text-xs text-slate-400 block mb-1">Panel Port</label>
-          <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm">
-        </div>
-        <div>
-          <label class="text-xs text-slate-400 block mb-1">Secret URL Path</label>
-          <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm">
-        </div>
-        <button onclick="saveConfig()" class="text-black font-bold px-5 py-2.5 rounded-lg text-xs transition" style="background: var(--accent);" data-i18n="save_restart">ذخیره و ری‌استارت پنل</button>
-      </div>
-
-      <div class="card rounded-2xl p-6 space-y-4">
-        <h3 class="font-bold text-base" data-i18n="theme_select">انتخاب تم و رنگ آرامش‌بخش</h3>
-        <div class="grid grid-cols-2 gap-3">
-          <button onclick="applyTheme('amber')" class="p-3 rounded-xl border border-amber-500/40 bg-[#111a27] text-amber-400 text-xs font-bold flex items-center justify-between">
-            <span>Midnight Amber</span><span class="w-3.5 h-3.5 rounded-full bg-amber-400"></span>
-          </button>
-          <button onclick="applyTheme('cyan')" class="p-3 rounded-xl border border-sky-500/40 bg-[#131e2f] text-sky-400 text-xs font-bold flex items-center justify-between">
-            <span>Nordic Cyan</span><span class="w-3.5 h-3.5 rounded-full bg-sky-400"></span>
-          </button>
-          <button onclick="applyTheme('emerald')" class="p-3 rounded-xl border border-emerald-500/40 bg-[#12201e] text-emerald-400 text-xs font-bold flex items-center justify-between">
-            <span>Emerald Slate</span><span class="w-3.5 h-3.5 rounded-full bg-emerald-400"></span>
-          </button>
-          <button onclick="applyTheme('indigo')" class="p-3 rounded-xl border border-indigo-500/40 bg-[#161b22] text-indigo-400 text-xs font-bold flex items-center justify-between">
-            <span>OLED Indigo</span><span class="w-3.5 h-3.5 rounded-full bg-indigo-400"></span>
-          </button>
-          <button onclick="applyTheme('rose')" class="p-3 rounded-xl border border-rose-500/40 bg-[#1c1318] text-rose-400 text-xs font-bold flex items-center justify-between">
-            <span>Sakura Rose</span><span class="w-3.5 h-3.5 rounded-full bg-rose-400"></span>
-          </button>
-          <button onclick="applyTheme('violet')" class="p-3 rounded-xl border border-purple-500/40 bg-[#171221] text-purple-400 text-xs font-bold flex items-center justify-between">
-            <span>Royal Amethyst</span><span class="w-3.5 h-3.5 rounded-full bg-purple-400"></span>
-          </button>
+        <!-- Interactive Command Prompt -->
+        <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
+          <span class="text-xs font-bold" style="color: var(--accent)">root@litetun:~#</span>
+          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'pin', 'tunnels', 'clear'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
+          <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
         </div>
       </div>
-    </section>
+    </aside>
 
-    <!-- TAB 4: LOGS -->
-    <section id="view-logs" class="hidden card rounded-2xl p-6">
-      <pre id="log-box" dir="ltr" class="text-xs font-mono text-emerald-400 space-y-1 overflow-x-auto leading-relaxed"></pre>
-    </section>
   </main>
 
   <script>
-    let lang = 'fa';
+    let lang = 'en';
+    let currentTheme = 'amber';
+    let currentTab = 'servers';
     let currentTunnels = [];
+    let initialLoaded = false;
 
     const dict = {
-      fa: { servers: 'سرورها', tunnels: 'تانل‌ها (WSS)', config: 'تنظیمات و تم', logs: 'لاگ', live: 'زنده', online: 'آنلاین', panel: 'پنل', memory: 'حافظه مصرفی', pin_title: 'گواهی پین‌شده این سرور (SHA-256 Pin):', add_server: 'ساخت تانل WSS جدید', add_sub: 'وب‌سوکت روی TLS، با گواهی پین‌شده و قابل ویرایش', new_tunnel: 'ساخت / ویرایش تانل', reset: 'پاک کردن فرم', wss_desc: 'وب‌سوکت روی TLS، با گواهی پین‌شده.', tun_name: 'نام تانل', tun_role: 'نقش این سرور', listen_port: 'پورت ورودی (Listen)', target_addr: 'آدرس مقصد (IP:Port)', cert_pin_lbl: 'پین گواهی SHA-256 (اختیاری)', create: 'ذخیره و اجرای تانل WSS', active_tunnels: 'لیست تانل‌های فعال (قابل ویرایش)', network_settings: 'تنظیمات پورت و آدرس پنل', save_restart: 'ذخیره و ری‌استارت پنل', theme_select: 'انتخاب تم و رنگ آرامش‌بخش' },
-      en: { servers: 'Servers', tunnels: 'Tunnels (WSS)', config: 'Config & Themes', logs: 'Logs', live: 'Live', online: 'Online', panel: 'Panel', memory: 'Memory Usage', pin_title: 'This Server SHA-256 Certificate Pin:', add_server: 'Create New WSS Tunnel', add_sub: 'WebSocket over TLS with Pinned Certificate', new_tunnel: 'Create / Edit WSS Tunnel', reset: 'Reset Form', wss_desc: 'WebSocket over TLS, with pinned certificate.', tun_name: 'Tunnel Name', tun_role: 'Server Role', listen_port: 'Listen Port', target_addr: 'Target Address (IP:Port)', cert_pin_lbl: 'Remote SHA-256 Cert Pin (Optional)', create: 'Save & Start WSS Tunnel', active_tunnels: 'Active Tunnels (Click Edit to modify)', network_settings: 'Port & URL Settings', save_restart: 'Save & Restart Panel', theme_select: 'Calm Color Themes' }
+      en: {
+        servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Logs',
+        live: 'Live', online: 'Online', panel: 'Panel', memory: 'RAM Usage',
+        pin_title: 'Server SHA-256 Certificate Pin:', add_server: 'Create New WSS Tunnel',
+        add_sub: 'WebSocket over TLS 1.3 with SHA-256 Pinned Certificate',
+        network_settings: 'Panel Port & URL Configuration', lbl_panel_port: 'Panel Listen Port',
+        lbl_panel_path: 'Secret URL Path', save_restart: 'Save & Restart Service',
+        new_tunnel: 'Create / Edit WSS Tunnel', reset: 'Clear Form',
+        wss_desc: 'Encrypted WebSocket over TLS with pinned certificate support.',
+        tun_name: 'Tunnel Name', tun_role: 'Server Role', listen_port: 'Listen Port',
+        target_addr: 'Target Address (IP:Port)', cert_pin_lbl: 'Remote SHA-256 Certificate Pin (Optional)',
+        create: 'Save & Run WSS Tunnel', active_tunnels: 'Active Tunnels (Click Edit to modify)',
+        logs_full: 'Persistent System & Packet Log Archive', clear_logs: 'Clear Logs'
+      },
+      fa: {
+        servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ‌ها',
+        live: 'زنده', online: 'آنلاین', panel: 'پنل', memory: 'مصرف رم',
+        pin_title: 'پین گواهی SHA-256 این سرور:', add_server: 'ساخت تانل WSS جدید',
+        add_sub: 'وب‌سوکت روی TLS 1.3 با گواهی پین‌شده',
+        network_settings: 'تنظیمات پورت و آدرس پنل', lbl_panel_port: 'پورت پنل',
+        lbl_panel_path: 'آدرس مخفی پنل', save_restart: 'ذخیره و ری‌استارت سرویس',
+        new_tunnel: 'ساخت / ویرایش تانل WSS', reset: 'پاک کردن فرم',
+        wss_desc: 'وب‌سوکت رمزنگاری‌شده روی TLS با پشتیبانی از پین گواهی.',
+        tun_name: 'نام تانل', tun_role: 'نقش این سرور', listen_port: 'پورت ورودی (Listen)',
+        target_addr: 'آدرس مقصد (IP:Port)', cert_pin_lbl: 'پین گواهی SHA-256 سرور مقصد (اختیاری)',
+        create: 'ذخیره و اجرای تانل WSS', active_tunnels: 'تانل‌های فعال (برای ویرایش کلیک کنید)',
+        logs_full: 'آرشیو کامل لاگ‌ها و دستورات سیستم', clear_logs: 'پاک کردن لاگ'
+      }
     };
 
-    function toggleLang() {
-      lang = lang === 'fa' ? 'en' : 'fa';
-      document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
-      document.getElementById('lang-btn').innerText = lang === 'fa' ? 'EN' : 'FA';
+    function applyLangUI() {
+      // Keep dir="ltr" always so layout never mirrors!
+      document.getElementById('lang-btn').innerText = lang === 'en' ? 'FA' : 'EN';
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         if (dict[lang][key]) el.innerText = dict[lang][key];
       });
     }
 
-    function setTab(t) {
-      ['servers', 'tunnels', 'config', 'logs'].forEach(id => {
+    function toggleLang() {
+      lang = lang === 'en' ? 'fa' : 'en';
+      applyLangUI();
+      savePrefsToServer();
+    }
+
+    function setTab(t, persist) {
+      currentTab = t;
+      ['servers', 'config', 'tunnels', 'logs'].forEach(id => {
         document.getElementById('view-' + id).classList.add('hidden');
         document.getElementById('tab-' + id).classList.remove('active-tab');
       });
       document.getElementById('view-' + t).classList.remove('hidden');
       document.getElementById('tab-' + t).classList.add('active-tab');
+      if (persist) savePrefsToServer();
     }
 
-    function applyTheme(name) {
+    function applyTheme(name, persist) {
+      currentTheme = name;
       const themes = {
         amber:   { bg: '#0b111a', card: '#111a27', border: '#1e293b', accent: '#facc15', glow: 'rgba(250, 204, 21, 0.12)' },
         cyan:    { bg: '#0c131f', card: '#131e2f', border: '#1e2e46', accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.12)' },
         emerald: { bg: '#0b1312', card: '#12201e', border: '#1a332f', accent: '#10b981', glow: 'rgba(16, 185, 129, 0.12)' },
         indigo:  { bg: '#0d1117', card: '#161b22', border: '#30363d', accent: '#818cf8', glow: 'rgba(129, 140, 248, 0.12)' },
-        rose:    { bg: '#120c10', card: '#1c1318', border: '#33202a', accent: '#fb7185', glow: 'rgba(251, 113, 133, 0.12)' },
-        violet:  { bg: '#0f0b16', card: '#171221', border: '#2a203d', accent: '#c084fc', glow: 'rgba(192, 132, 252, 0.12)' }
+        rose:    { bg: '#120c10', card: '#1c1318', border: '#33202a', accent: '#fb7185', glow: 'rgba(251, 113, 133, 0.12)' }
       };
       const t = themes[name] || themes.amber;
       document.documentElement.style.setProperty('--bg', t.bg);
@@ -252,7 +307,26 @@
       document.documentElement.style.setProperty('--border', t.border);
       document.documentElement.style.setProperty('--accent', t.accent);
       document.documentElement.style.setProperty('--accent-glow', t.glow);
-      localStorage.setItem('lt_theme', name);
+      if (persist) savePrefsToServer();
+    }
+
+    async function savePrefsToServer() {
+      await fetch('/api/prefs', {
+        method: 'POST',
+        body: JSON.stringify({ theme: currentTheme, lang: lang, active_tab: currentTab })
+      });
+    }
+
+    async function sendCmd(cmd) {
+      await fetch('/api/cmd', { method: 'POST', body: JSON.stringify({ cmd }) });
+      fetchState();
+    }
+
+    function runConsoleInput() {
+      const box = document.getElementById('putty-input');
+      if (!box.value.trim()) return;
+      sendCmd(box.value.trim());
+      box.value = '';
     }
 
     function resetForm() {
@@ -284,26 +358,29 @@
     }
 
     async function saveTunnel() {
+      let pathVal = document.getElementById('tun-path').value.trim() || '/ws';
+      if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
+
       const payload = {
         id: document.getElementById('tun-id').value,
-        name: document.getElementById('tun-name').value || 'WSS-Tunnel',
+        name: document.getElementById('tun-name').value || 'WSS-Node',
         role: document.getElementById('tun-role').value,
         method: 'wss',
-        listen_port: document.getElementById('listen-port').value,
-        target_addr: document.getElementById('target-addr').value,
-        sni: document.getElementById('tun-sni').value,
-        ws_path: document.getElementById('tun-path').value,
-        cert_pin: document.getElementById('tun-pin').value
+        listen_port: document.getElementById('listen-port').value.trim(),
+        target_addr: document.getElementById('target-addr').value.trim(),
+        sni: document.getElementById('tun-sni').value.trim() || 'www.speedtest.net',
+        ws_path: pathVal,
+        cert_pin: document.getElementById('tun-pin').value.trim()
       };
-      if (!payload.listen_port || !payload.target_addr) return alert('Please enter both Listen Port and Target Address');
+      if (!payload.listen_port || !payload.target_addr) return alert('Enter Listen Port and Target Address');
       await fetch('/api/tunnel', { method: 'POST', body: JSON.stringify(payload) });
       resetForm();
       fetchState();
     }
 
     async function saveConfig() {
-      const port = document.getElementById('cfg-port').value;
-      const path = document.getElementById('cfg-path').value;
+      const port = document.getElementById('cfg-port').value.trim();
+      const path = document.getElementById('cfg-path').value.trim();
       await fetch('/api/config', { method: 'POST', body: JSON.stringify({ port, path }) });
       setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
     }
@@ -311,12 +388,28 @@
     async function fetchState() {
       const res = await fetch('/api/state');
       const data = await res.json();
+
+      if (!initialLoaded && data.prefs) {
+        initialLoaded = true;
+        lang = data.prefs.lang || 'en';
+        applyLangUI();
+        applyTheme(data.prefs.theme || 'amber', false);
+        setTab(data.prefs.active_tab || 'servers', false);
+      }
+
       currentTunnels = data.tunnels || [];
       document.getElementById('ram-val').innerText = data.ram_mb;
+      document.getElementById('go-val').innerText = data.goroutines || 0;
       document.getElementById('lbl-port').innerText = data.panel_port;
       document.getElementById('local-pin').innerText = data.cert_pin || '';
       document.getElementById('tun-count').innerText = currentTunnels.length + ' Tunnels';
-      document.getElementById('log-box').innerText = (data.logs || []).join('\n');
+
+      const logText = (data.logs || []).join('\n');
+      const puttyEl = document.getElementById('putty-box');
+      const wasAtBottom = puttyEl.scrollHeight - puttyEl.clientHeight <= puttyEl.scrollTop + 40;
+      puttyEl.innerText = logText;
+      if (wasAtBottom) puttyEl.scrollTop = puttyEl.scrollHeight;
+      document.getElementById('full-log-box').innerText = logText;
 
       if (!document.getElementById('cfg-port').value) {
         document.getElementById('cfg-port').value = data.panel_port;
@@ -335,7 +428,7 @@
               <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
             </div>
           </div>
-          <div class="text-xs text-slate-400 flex flex-wrap gap-4 pt-1 border-t border-slate-800/60" dir="ltr">
+          <div class="text-xs text-slate-400 flex flex-wrap gap-4 pt-1 border-t border-slate-800/60">
             <span>Listen: <b class="text-slate-200">:${t.listen_port}</b></span>
             <span>Target: <b class="text-slate-200">${t.target_addr}</b></span>
             <span>SNI: <b class="text-slate-200">${t.sni}</b></span>
@@ -345,8 +438,7 @@
       `).join('');
     }
 
-    applyTheme(localStorage.getItem('lt_theme') || 'amber');
-    setInterval(fetchState, 2000);
+    setInterval(fetchState, 1500);
     fetchState();
   </script>
 </body>

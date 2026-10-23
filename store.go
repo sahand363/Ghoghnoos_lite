@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type ServerNode struct {
@@ -179,7 +182,82 @@ func updateConfigFile(newPort, newPath string) error {
 }
 
 func deploySentinelSSH(s ServerNode) {
-	addLog(fmt.Sprintf("SSH [%s]: Connecting to %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
+	detectedPort := s.PanelPort
+	if detectedPort == "" {
+		detectedPort = "8880"
+	}
+
+	// First check if Sentinel is already running on the remote server!
+	httpClient := &http.Client{Timeout: 3 * time.Second}
+	if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
+		defer resp.Body.Close()
+		var st map[string]interface{}
+		if json.NewDecoder(resp.Body).Decode(&st) == nil {
+			remotePin, _ := st["cert_pin"].(string)
+			mu.Lock()
+			if srv := findServerByID(s.ID); srv != nil {
+				srv.PanelPort = detectedPort
+				srv.CertPin = remotePin
+				srv.Status = "Online"
+				saveDBLocked()
+			}
+			mu.Unlock()
+			addLog(fmt.Sprintf("CONNECTED [%s]: Linked directly to running Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
+			return
+		}
+	}
+
+	if s.SSHPass == "" {
+		addLog(fmt.Sprintf("ERR [%s]: Sentinel not running on %s:%s and no SSH password given.", s.Name, s.IP, detectedPort))
+		mu.Lock()
+		if srv := findServerByID(s.ID); srv != nil {
+			srv.Status = "Offline"
+			saveDBLocked()
+		}
+		mu.Unlock()
+		return
+	}
+
+	// Connect using Native Go SSH Client (Zero external dependencies, no sshpass needed!)
+	addLog(fmt.Sprintf("SSH [%s]: Native Go SSH connecting to %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
+
+	sshConfig := &ssh.ClientConfig{
+		User: s.SSHUser,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(s.SSHPass),
+			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range answers {
+					answers[i] = s.SSHPass
+				}
+				return answers, nil
+			}),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         12 * time.Second,
+	}
+
+	sshClient, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshConfig)
+	if err != nil {
+		addLog(fmt.Sprintf("SSH-ERR [%s]: Connection failed -> %v", s.Name, err))
+		mu.Lock()
+		if srv := findServerByID(s.ID); srv != nil {
+			srv.Status = "SSH Error"
+			saveDBLocked()
+		}
+		mu.Unlock()
+		return
+	}
+	defer sshClient.Close()
+
+	session, err := sshClient.NewSession()
+	if err != nil {
+		addLog(fmt.Sprintf("SSH-ERR [%s]: Session error -> %v", s.Name, err))
+		return
+	}
+	defer session.Close()
+
+	addLog(fmt.Sprintf("SSH-OK [%s]: Authenticated! Installing Sentinel agent...", s.Name))
 
 	remoteCmd := "export DEBIAN_FRONTEND=noninteractive; " +
 		"mkdir -p /opt/litetun; " +
@@ -194,16 +272,12 @@ func deploySentinelSSH(s ServerNode) {
 		"systemctl restart litetun && " +
 		"grep '^PANEL_PORT=' /opt/litetun/config.env | cut -d= -f2"
 
-	cmd := exec.Command("sshpass", "-p", s.SSHPass,
-		"ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=12",
-		"-p", s.SSHPort, fmt.Sprintf("%s@%s", s.SSHUser, s.IP), remoteCmd)
-
-	out, err := cmd.CombinedOutput()
+	out, err := session.CombinedOutput(remoteCmd)
 	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Failed -> %v (%s)", s.Name, err, strings.TrimSpace(string(out))))
+		addLog(fmt.Sprintf("SSH-ERR [%s]: Install command failed -> %v (%s)", s.Name, err, strings.TrimSpace(string(out))))
 		mu.Lock()
 		if srv := findServerByID(s.ID); srv != nil {
-			srv.Status = "SSH Error"
+			srv.Status = "Deploy Error"
 			saveDBLocked()
 		}
 		mu.Unlock()
@@ -211,16 +285,14 @@ func deploySentinelSSH(s ServerNode) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	detectedPort := "8880"
 	if len(lines) > 0 && lines[len(lines)-1] != "" {
 		detectedPort = strings.TrimSpace(lines[len(lines)-1])
 	}
 
-	addLog(fmt.Sprintf("SENTINEL [%s]: Deployed on %s:%s! Syncing...", s.Name, s.IP, detectedPort))
+	addLog(fmt.Sprintf("SENTINEL [%s]: Deployed on %s:%s! Syncing SHA-256 Pin...", s.Name, s.IP, detectedPort))
 	time.Sleep(2 * time.Second)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort))
+	resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort))
 	remotePin := ""
 	if err == nil {
 		defer resp.Body.Close()
@@ -231,6 +303,8 @@ func deploySentinelSSH(s ServerNode) {
 			}
 		}
 		addLog(fmt.Sprintf("CONNECTED [%s]: Sentinel Online! SHA-256 Pin synced.", s.Name))
+	} else {
+		addLog(fmt.Sprintf("WARN [%s]: Sentinel installed, but port %s blocked by firewall (%v)", s.Name, detectedPort, err))
 	}
 
 	mu.Lock()

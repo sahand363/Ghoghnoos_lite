@@ -23,6 +23,9 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+//go:embed app.js
+var appJS []byte
+
 const (
 	wsGUID   = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	dbPath   = "/opt/litetun/panel_db.json"
@@ -41,7 +44,7 @@ var (
 			SelectedServer: "local",
 		},
 	}
-	activeListeners = make(map[string]net.Listener)
+	activeListeners = make(map[string][]net.Listener)
 	logs            = []string{}
 	localCert       tls.Certificate
 	localPinHex     string
@@ -87,7 +90,7 @@ func main() {
 	loadDBFromDisk(port)
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("LiteTun running on port %s (Path: /%s/)\n", port, panelPath)
+	fmt.Printf("Ghoghnoos-lite (LiteTun) running on port %s (Path: /%s/)\n", port, panelPath)
 	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
 		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
 	} else {

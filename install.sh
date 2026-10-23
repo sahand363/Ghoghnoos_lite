@@ -13,9 +13,10 @@ fi
 
 install_base() {
   mkdir -p "$APP_DIR"
+  apt-get update -y >/dev/null 2>&1
+  apt-get install -y curl openssl sshpass >/dev/null 2>&1
+
   if [ ! -f "$CONF_FILE" ]; then
-    apt-get update -y >/dev/null 2>&1
-    apt-get install -y curl openssl >/dev/null 2>&1
     RAND_PATH=$(openssl rand -hex 4)
     cat <<EOF > "$CONF_FILE"
 PANEL_PORT=8880
@@ -106,6 +107,7 @@ show_menu() {
         ;;
       4)
         echo "⬇️ Stopping service and updating binary..."
+        apt-get install -y sshpass >/dev/null 2>&1
         systemctl stop litetun
         curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH.tmp"
         mv -f "$BIN_PATH.tmp" "$BIN_PATH"
@@ -169,6 +171,12 @@ show_menu() {
     esac
   done
 }
+
+# Support silent install when called by Sentinel Deployer
+if [ "$1" = "--sentinel" ]; then
+  install_base
+  exit 0
+fi
 
 install_base
 show_menu

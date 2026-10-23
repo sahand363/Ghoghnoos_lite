@@ -196,9 +196,10 @@ func handleWSSServerConn(conn net.Conn, t Tunnel) {
 		return
 	}
 
-	targetAddr := t.TargetAddr
+	targetAddr := strings.TrimSpace(t.TargetAddr)
 	if !strings.Contains(targetAddr, ":") {
-		targetAddr = targetAddr + ":2053"
+		// If user entered only a port number like "54253", prepend 127.0.0.1:
+		targetAddr = "127.0.0.1:" + targetAddr
 	}
 
 	target, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)

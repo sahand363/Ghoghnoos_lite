@@ -17,8 +17,19 @@ import (
 )
 
 func registerRoutes(port, panelPath string) {
+	http.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(appJS)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqPath := strings.Trim(r.URL.Path, "/")
+		if strings.HasSuffix(reqPath, "app.js") {
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Write(appJS)
+			return
+		}
 		if panelPath != "" && reqPath != "" && reqPath != panelPath {
 			http.NotFound(w, r)
 			return
@@ -208,14 +219,12 @@ func registerRoutes(port, panelPath string) {
 			addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", runtime.NumGoroutine(), m.Alloc/1024/1024, port))
 		case "servers":
 			mu.Lock()
-			cnt := len(db.Servers)
+			addLog(fmt.Sprintf("SERVERS: %d server(s) linked.", len(db.Servers)))
 			mu.Unlock()
-			addLog(fmt.Sprintf("SERVERS: %d server(s) linked.", cnt))
 		case "tunnels":
 			mu.Lock()
-			cnt := len(db.Tunnels)
+			addLog(fmt.Sprintf("TUNNELS: %d active tunnel(s).", len(db.Tunnels)))
 			mu.Unlock()
-			addLog(fmt.Sprintf("TUNNELS: %d active tunnel(s).", cnt))
 		case "pin":
 			addLog("SHA256-PIN: " + localPinHex)
 		case "clear":
@@ -224,14 +233,10 @@ func registerRoutes(port, panelPath string) {
 			_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
 			mu.Unlock()
 		case "restart":
-			addLog("SYS: Restarting service...")
-			go func() {
-				time.Sleep(800 * time.Millisecond)
-				os.Exit(0)
-			}()
+			go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
 		default:
 			if cmd != "" {
-				addLog("bash: " + cmd + ": command not found (type 'help')")
+				addLog("bash: " + cmd + ": command not found")
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -268,6 +273,8 @@ func registerRoutes(port, panelPath string) {
 		if t.WSSPort == "" {
 			t.WSSPort = "10201"
 		}
+		t.XUIPort = strings.Join(parsePortList(t.XUIPort), ", ")
+		t.ListenPort = strings.Join(parsePortList(t.ListenPort), ", ")
 		if t.ID == "" {
 			t.ID = fmt.Sprintf("wss-%d", time.Now().Unix()%10000)
 		}
@@ -277,15 +284,22 @@ func registerRoutes(port, panelPath string) {
 		dstSrv := findServerByID(t.TargetServer)
 		mu.Unlock()
 
-		if srcSrv != nil && dstSrv != nil && t.SourceServer != "" && t.TargetServer != "" && t.Role == "" {
+		// Configure Exit Server & Entry Server cleanly without overwriting XUIPort!
+		if srcSrv != nil && dstSrv != nil && t.Role != "server" {
 			t.Role = "client"
+			t.RemoteAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.WSSPort)
+			if t.CertPin == "" && dstSrv.CertPin != "" {
+				t.CertPin = dstSrv.CertPin
+			}
+
 			exitTunnel := Tunnel{
 				ID:         t.ID + "-exit",
 				Name:       t.Name + " (Exit)",
 				Role:       "server",
 				Method:     "wss",
+				WSSPort:    t.WSSPort,
 				ListenPort: t.WSSPort,
-				TargetAddr: t.TargetAddr,
+				XUIPort:    t.XUIPort,
 				SNI:        t.SNI,
 				WSPath:     t.WSPath,
 				Status:     "Online",
@@ -298,13 +312,8 @@ func registerRoutes(port, panelPath string) {
 				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
 				if err == nil {
 					resp.Body.Close()
-					addLog(fmt.Sprintf("REMOTE [%s]: Configured WSS-Server on %s (:%s -> X-UI %s)", t.Name, dstSrv.Name, t.WSSPort, t.TargetAddr))
+					addLog(fmt.Sprintf("EXIT-OK [%s]: WSS Bridge :%s -> 127.0.0.1:[%s] on %s", t.Name, t.WSSPort, t.XUIPort, dstSrv.Name))
 				}
-			}
-
-			t.TargetAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.WSSPort)
-			if t.CertPin == "" && dstSrv.CertPin != "" {
-				t.CertPin = dstSrv.CertPin
 			}
 		}
 
@@ -327,10 +336,7 @@ func registerRoutes(port, panelPath string) {
 			go startTunnelEngine(t)
 		} else {
 			body, _ := json.Marshal(t)
-			_, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), "application/json", bytes.NewReader(body))
-			if err == nil {
-				addLog(fmt.Sprintf("REMOTE [%s]: Configured WSS-Client on %s (:%s -> %s)", t.Name, srcSrv.Name, t.ListenPort, t.TargetAddr))
-			}
+			http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), "application/json", bytes.NewReader(body))
 		}
 		w.WriteHeader(http.StatusOK)
 	})
@@ -346,17 +352,15 @@ func registerRoutes(port, panelPath string) {
 			}
 		}
 		mu.Unlock()
-
 		if tun == nil {
-			http.Error(w, "Tunnel not found", 404)
+			http.Error(w, "Not found", 404)
 			return
 		}
 
 		start := time.Now()
 		tlsCfg := &tls.Config{ServerName: tun.SNI, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
-		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.TargetAddr, tlsCfg)
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 		if err != nil {
-			addLog(fmt.Sprintf("PING-FAIL [%s]: %s unreachable -> %v", tun.Name, tun.TargetAddr, err))
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
 			return
 		}
@@ -365,21 +369,18 @@ func registerRoutes(port, panelPath string) {
 		keyBytes := make([]byte, 16)
 		rand.Read(keyBytes)
 		wsKey := base64.StdEncoding.EncodeToString(keyBytes)
-		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: ping\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
 			tun.WSPath, tun.SNI, wsKey)
 		conn.Write([]byte(req))
 
 		br := bufio.NewReader(conn)
 		statusLine, err := br.ReadString('\n')
 		ms := time.Since(start).Milliseconds()
-
 		if err != nil || !strings.Contains(statusLine, "101") {
-			addLog(fmt.Sprintf("PING-ERR [%s]: Handshake failed (%d ms) -> %s", tun.Name, ms, strings.TrimSpace(statusLine)))
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "ms": ms, "error": strings.TrimSpace(statusLine)})
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "ms": ms})
 			return
 		}
-
-		addLog(fmt.Sprintf("PING-OK [%s]: WSS TLS 1.3 Handshake verified in %d ms!", tun.Name, ms))
+		addLog(fmt.Sprintf("PING-OK [%s]: %d ms", tun.Name, ms))
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "ms": ms})
 	})
 
@@ -387,39 +388,10 @@ func registerRoutes(port, panelPath string) {
 		if r.Method != http.MethodPost {
 			return
 		}
-		targetSrvID := r.URL.Query().Get("server_id")
 		var req ConfigReq
 		json.NewDecoder(r.Body).Decode(&req)
-
-		if targetSrvID != "" && targetSrvID != "local" {
-			mu.Lock()
-			srv := findServerByID(targetSrvID)
-			if srv != nil && req.Port != "" {
-				srv.PanelPort = req.Port
-				saveDBLocked()
-			}
-			mu.Unlock()
-			if srv != nil {
-				body, _ := json.Marshal(req)
-				http.Post(fmt.Sprintf("http://%s:%s/api/config", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body))
-				addLog(fmt.Sprintf("CFG [%s]: Updated remote panel port to %s", srv.Name, req.Port))
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-		}
-
-		if req.Port == "" {
-			req.Port = port
-		}
-		if err := updateConfigFile(req.Port, req.Path); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		addLog(fmt.Sprintf("SYS: Updated Master Panel Port=%s Path=/%s/ -> Restarting...", req.Port, req.Path))
+		_ = updateConfigFile(req.Port, req.Path)
 		w.WriteHeader(http.StatusOK)
-		go func() {
-			time.Sleep(1 * time.Second)
-			os.Exit(0)
-		}()
+		go func() { time.Sleep(1 * time.Second); os.Exit(0) }()
 	})
 }

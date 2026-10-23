@@ -20,7 +20,7 @@ install_base() {
     
     RAND_PATH=$(openssl rand -hex 4)
     cat <<EOF > "$CONF_FILE"
-PANEL_PORT=8080
+PANEL_PORT=8880
 PANEL_PATH=$RAND_PATH
 PANEL_USER=admin
 PANEL_PASS=admin
@@ -28,7 +28,7 @@ EOF
   fi
 
   if [ ! -f "$BIN_PATH" ]; then
-    echo "Downloading latest ghoghnoos_lite binary from GitHub..."
+    echo "Downloading latest binary from GitHub..."
     curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH"
     chmod +x "$BIN_PATH"
   fi
@@ -45,7 +45,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$CONF_FILE
 ExecStart=$BIN_PATH
 Restart=always
-RestartSec=3
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
@@ -55,7 +55,6 @@ EOF
     systemctl start litetun
   fi
 
-  # Download the CLI script cleanly to /usr/local/bin/litetun and strip any Windows \r characters
   curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
   chmod +x /usr/local/bin/litetun
 }
@@ -75,6 +74,7 @@ show_menu() {
     echo "                 LITETUN MANAGEMENT MENU                  "
     echo "=========================================================="
     echo " Status    : $STATUS"
+    echo " Panel Port: $PANEL_PORT"
     echo " Panel URL : $(get_panel_url)"
     echo " Username  : $PANEL_USER"
     echo " Command   : litetun"
@@ -84,10 +84,10 @@ show_menu() {
     echo "3) View Logs"
     echo "4) Update"
     echo "5) Uninstall"
-    echo "6) Rebuild Panel URL"
-    echo "7) Set / Change Username & Password"
-    echo "8) Enable / Disable Domain SSL (HTTPS on Port 5001)"
-    echo "9) Make this panel Sentinel Node"
+    echo "6) Set Custom URL Path"
+    echo "7) Set Custom Panel Port"
+    echo "8) Set / Change Username & Password"
+    echo "9) Enable / Disable Domain SSL (Port 5001)"
     echo "0) Exit"
     echo "=========================================================="
     read -p "Select [0-9]: " choice < /dev/tty
@@ -95,7 +95,7 @@ show_menu() {
     case $choice in
       1)
         systemctl restart litetun
-        echo "✅ Service started/restarted!"
+        echo "✅ Service restarted!"
         sleep 1.5
         ;;
       2)
@@ -109,7 +109,7 @@ show_menu() {
         journalctl -u litetun -f -n 50
         ;;
       4)
-        echo "⬇️ Updating binary from GitHub..."
+        echo "⬇️ Updating binary and scripts..."
         curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH"
         chmod +x "$BIN_PATH"
         curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
@@ -127,13 +127,26 @@ show_menu() {
         exit 0
         ;;
       6)
-        NEW_PATH=$(openssl rand -hex 4)
-        sed -i "s/^PANEL_PATH=.*/PANEL_PATH=$NEW_PATH/" "$CONF_FILE"
+        read -p "Enter new URL Path (e.g. mysecret, or press Enter for random): " input_path < /dev/tty
+        if [ -z "$input_path" ]; then
+          input_path=$(openssl rand -hex 4)
+        fi
+        sed -i "s/^PANEL_PATH=.*/PANEL_PATH=$input_path/" "$CONF_FILE"
         systemctl restart litetun
-        echo "🔗 New Panel URL: $(get_panel_url)"
+        echo "🔗 Updated! New URL: $(get_panel_url)"
         read -p "Press Enter to continue..." < /dev/tty
         ;;
       7)
+        read -p "Enter new Port for Panel (e.g. 8880, 2082): " new_port < /dev/tty
+        if [ -n "$new_port" ]; then
+          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=$new_port/" "$CONF_FILE"
+          systemctl restart litetun
+          echo "✅ Port set to $new_port!"
+          echo "🔗 New URL: $(get_panel_url)"
+          read -p "Press Enter to continue..." < /dev/tty
+        fi
+        ;;
+      8)
         read -p "Enter new Username: " new_user < /dev/tty
         read -p "Enter new Password: " new_pass < /dev/tty
         sed -i "s/^PANEL_USER=.*/PANEL_USER=$new_user/" "$CONF_FILE"
@@ -142,7 +155,7 @@ show_menu() {
         echo "✅ Credentials updated!"
         sleep 1.5
         ;;
-      8)
+      9)
         read -p "Enable HTTPS on Port 5001? (y/n): " ssl_yn < /dev/tty
         if [ "$ssl_yn" = "y" ]; then
           sed -i "s/^PANEL_PORT=.*/PANEL_PORT=5001/" "$CONF_FILE"
@@ -151,26 +164,18 @@ show_menu() {
             -subj "/CN=litetun" >/dev/null 2>&1
           echo "✅ SSL enabled on port 5001!"
         else
-          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=8080/" "$CONF_FILE"
+          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=8880/" "$CONF_FILE"
           rm -f "$APP_DIR/server.key" "$APP_DIR/server.crt"
-          echo "✅ Reverted to HTTP on port 8080."
+          echo "✅ Reverted to HTTP on port 8880."
         fi
         systemctl restart litetun
-        sleep 2
-        ;;
-      9)
-        echo "🛰️ Switching node to Sentinel (Slave/Agent) mode..."
-        read -p "Enter Master Server IP:Port : " master_addr < /dev/tty
-        echo "MASTER_NODE=$master_addr" >> "$CONF_FILE"
-        systemctl restart litetun
-        echo "✅ Node configured as Sentinel Node!"
         sleep 2
         ;;
       0)
         exit 0
         ;;
       *)
-        echo "Invalid option."
+        echo "Invalid choice."
         sleep 1
         ;;
     esac

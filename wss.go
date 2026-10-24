@@ -22,6 +22,14 @@ func computeWSAccept(key string) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
+// Keep TCP sockets alive with 15-second OS heartbeats so firewalls never drop idle tunnels
+func enableKeepAlive(c net.Conn) {
+	if tcp, ok := c.(*net.TCPConn); ok {
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(15 * time.Second)
+	}
+}
+
 func parsePortList(raw string) []string {
 	var res []string
 	for _, part := range strings.Split(raw, ",") {
@@ -71,7 +79,6 @@ func startTunnelEngine(t Tunnel) {
 		tunPort = "10201"
 	}
 
-	// EXIT SERVER (US): Listens on single TunnelPort and forwards to 127.0.0.1:<InboundPort>
 	if t.Role == "server" {
 		tlsCfg := &tls.Config{
 			Certificates: []tls.Certificate{localCert},
@@ -99,7 +106,6 @@ func startTunnelEngine(t Tunnel) {
 		return
 	}
 
-	// ENTRY SERVER (IRAN): Opens every port in InboundPorts locally and tunnels via RemoteAddr
 	for _, iPort := range inboundPorts {
 		ln, err := net.Listen("tcp", ":"+iPort)
 		if err != nil {
@@ -118,6 +124,7 @@ func startTunnelEngine(t Tunnel) {
 				if err != nil {
 					return
 				}
+				enableKeepAlive(client)
 				go handleWSSClientConn(client, t, targetPort)
 			}
 		}(ln, iPort)
@@ -149,7 +156,7 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 		}
 	}
 
-	dialer := &net.Dialer{Timeout: 6 * time.Second}
+	dialer := &net.Dialer{Timeout: 8 * time.Second, KeepAlive: 15 * time.Second}
 	remoteTLS, err := tls.DialWithDialer(dialer, "tcp", t.RemoteAddr, tlsCfg)
 	if err != nil {
 		addLog(fmt.Sprintf("ERR [%s]: Dial %s failed -> %v", t.Name, t.RemoteAddr, err))
@@ -194,8 +201,10 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 		client.Write(buf)
 	}
 
-	go io.Copy(remoteTLS, client)
-	io.Copy(client, remoteTLS)
+	done := make(chan struct{}, 2)
+	go func() { io.Copy(remoteTLS, client); done <- struct{}{} }()
+	go func() { io.Copy(client, remoteTLS); done <- struct{}{} }()
+	<-done
 }
 
 func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
@@ -231,12 +240,10 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		}
 	}
 
-	// End-to-End Ping Probe: Test if local 127.0.0.1:<port> is actually open in X-UI!
 	if strings.HasPrefix(targetPort, "probe:") {
 		probePort := strings.TrimPrefix(targetPort, "probe:")
 		testConn, err := net.DialTimeout("tcp", "127.0.0.1:"+probePort, 2*time.Second)
 		if err != nil {
-			addLog(fmt.Sprintf("PING-WARN [%s]: Tunnel OK, but local X-UI 127.0.0.1:%s is not listening!", t.Name, probePort))
 			conn.Write([]byte("HTTP/1.1 502 X-UI Port " + probePort + " Unreachable\r\n\r\n"))
 			return
 		}
@@ -247,18 +254,16 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	}
 
 	localXUI := "127.0.0.1:" + strings.TrimPrefix(targetPort, "127.0.0.1:")
-	target, err := net.DialTimeout("tcp", localXUI, 5*time.Second)
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 15 * time.Second}
+	target, err := dialer.Dial("tcp", localXUI)
 	if err != nil {
-		addLog(fmt.Sprintf("X-UI ERR [%s]: Local X-UI %s refused connection (%v)", t.Name, localXUI, err))
+		addLog(fmt.Sprintf("X-UI ERR [%s]: Local X-UI %s refused (%v)", t.Name, localXUI, err))
 		return
 	}
 	defer target.Close()
 
 	accept := computeWSAccept(wsKey)
-	resp := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\n"+
-		"Upgrade: websocket\r\n"+
-		"Connection: Upgrade\r\n"+
-		"Sec-WebSocket-Accept: %s\r\n\r\n", accept)
+	resp := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
 	if _, err := conn.Write([]byte(resp)); err != nil {
 		return
 	}
@@ -269,6 +274,61 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		target.Write(buf)
 	}
 
-	go io.Copy(target, conn)
-	io.Copy(conn, target)
+	done := make(chan struct{}, 2)
+	go func() { io.Copy(target, conn); done <- struct{}{} }()
+	go func() { io.Copy(conn, target); done <- struct{}{} }()
+	<-done
+}
+
+func probeTunnelOnce(tun Tunnel) PingPoint {
+	ports := parsePortList(tun.InboundPorts)
+	firstPort := "2053"
+	if len(ports) > 0 {
+		firstPort = ports[0]
+	}
+	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
+
+	start := time.Now()
+	tlsCfg := &tls.Config{ServerName: tun.SNI, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
+	if err != nil {
+		pt.OK = false
+		pt.Error = "Tunnel Offline"
+		recordPingPoint(pt)
+		return pt
+	}
+	defer conn.Close()
+
+	keyBytes := make([]byte, 16)
+	rand.Read(keyBytes)
+	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: probe:%s\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+		tun.WSPath, tun.SNI, firstPort, wsKey)
+	conn.Write([]byte(req))
+
+	br := bufio.NewReader(conn)
+	statusLine, err := br.ReadString('\n')
+	pt.LatencyMS = time.Since(start).Milliseconds()
+	if err != nil || !strings.Contains(statusLine, "101") {
+		pt.OK = false
+		pt.Error = "X-UI :" + firstPort + " Refused"
+	} else {
+		pt.OK = true
+	}
+	recordPingPoint(pt)
+	return pt
+}
+
+func startPingMonitor() {
+	for {
+		time.Sleep(60 * time.Second)
+		mu.Lock()
+		tuns := append([]Tunnel{}, db.Tunnels...)
+		mu.Unlock()
+		for _, t := range tuns {
+			if t.Role != "server" && t.RemoteAddr != "" {
+				probeTunnelOnce(t)
+			}
+		}
+	}
 }

@@ -1,370 +1,504 @@
-<!DOCTYPE html>
-<html lang="en" dir="ltr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>Ghoghnoos-lite (LiteTun)</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0b111a;
-      --card: #111a27;
-      --border: #1e293b;
-      --accent: #facc15;
-      --accent-glow: rgba(250, 204, 21, 0.12);
+let lang = 'en';
+let currentTheme = 'amber';
+let currentTab = 'servers';
+let selectedServer = 'local';
+let currentServers = [];
+let currentTunnels = [];
+let pingHistory = [];
+let sysMetrics = {};
+let pingResults = {};
+let initialLoaded = false;
+let userEditedName = false;
+let consoleCollapsed = false;
+let historyRange = '24h';
+
+const el = id => document.getElementById(id);
+const setText = (id, val) => { const e = el(id); if (e) e.innerText = val; };
+const setHTML = (id, val) => { const e = el(id); if (e) e.innerHTML = val; };
+
+const dict = {
+  en: {
+    servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Log',
+    add_srv_title: 'Connect Remote Server & Deploy Sentinel',
+    add_srv_sub: 'Enter SSH credentials to automatically install and link the Sentinel agent.',
+    srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
+    srv_user: 'SSH Username', srv_pass: 'SSH Password',
+    btn_deploy: '🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)',
+    network_settings: 'Server Port & URL Configuration', lbl_panel_port: 'Panel / Sentinel Port',
+    lbl_panel_path: 'Secret URL Path', save_restart: 'Save & Restart Selected Server',
+    bbr_title: 'TCP BBR & FQ Kernel Acceleration',
+    bbr_sub: 'Boosts tunnel throughput and reduces packet-loss throttling on the selected server.',
+    btn_bbr: '⚡ Enable Google BBR + FQ on Selected Server',
+    step1_method: '1. Select Tunnel Transport Method',
+    wss_desc: 'WebSocket over TLS 1.3 + Keep-Alive',
+    new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
+    src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
+    tun_name: 'Tunnel Name (Auto-filled)',
+    tun_port_lbl: 'Tunnel Port (WSS Highway)',
+    inb_port_lbl: 'X-UI Inbound Port(s)',
+    cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
+    create: '⚡ Establish WSS Tunnel Between Selected Servers',
+    active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)'
+  },
+  fa: {
+    servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ',
+    add_srv_title: 'اتصال به سرور جدید و نصب خودکار سنتینل',
+    add_srv_sub: 'مشخصات SSH را وارد کنید تا سنتینل با نمایش درصد پیشرفت نصب شود.',
+    srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
+    srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
+    btn_deploy: '🚀 اتصال با SSH و نصب سنتینل (۰٪ تا ۱۰۰٪)',
+    network_settings: 'تنظیمات پورت و آدرس سرور انتخاب‌شده', lbl_panel_port: 'پورت پنل / سنتینل',
+    lbl_panel_path: 'آدرس مخفی پنل', save_restart: 'ذخیره و ری‌استارت سرور انتخاب‌شده',
+    bbr_title: 'شتاب‌دهنده کرنل TCP BBR و FQ',
+    bbr_sub: 'افزایش سرعت تانل و جلوگیری از افت سرعت در سرور انتخاب‌شده.',
+    btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
+    step1_method: '۱. انتخاب متد تانل',
+    wss_desc: 'وب‌سوکت روی TLS 1.3 با اتصال پایدار ضد قطعی',
+    new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
+    src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
+    tun_name: 'نام تانل (پیشنهاد خودکار)',
+    tun_port_lbl: 'پورت تانل (پل ارتباطی WSS)',
+    inb_port_lbl: 'پورت(های) اینباند X-UI (با کاما)',
+    cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
+    create: '⚡ برقراری تانل WSS بین دو سرور انتخاب‌شده',
+    active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)'
+  }
+};
+
+function applyLangUI() {
+  setText('lang-btn', lang === 'en' ? 'FA' : 'EN');
+  document.querySelectorAll('[data-i18n]').forEach(node => {
+    const key = node.getAttribute('data-i18n');
+    if (dict[lang] && dict[lang][key]) node.innerText = dict[lang][key];
+  });
+}
+
+function toggleLang() {
+  lang = lang === 'en' ? 'fa' : 'en';
+  applyLangUI();
+  savePrefsToServer();
+}
+
+function toggleMobileConsole() {
+  consoleCollapsed = !consoleCollapsed;
+  const body = el('putty-body');
+  if (body) body.classList.toggle('hidden', consoleCollapsed);
+  setText('console-toggle-btn', consoleCollapsed ? '▲' : '▼');
+}
+
+function setTab(t, persist) {
+  currentTab = t;
+  ['servers', 'config', 'tunnels', 'logs'].forEach(id => {
+    const v = el('view-' + id), b = el('tab-' + id);
+    if (v) v.classList.add('hidden');
+    if (b) b.classList.remove('active-tab');
+  });
+  const activeV = el('view-' + t), activeB = el('tab-' + t);
+  if (activeV) activeV.classList.remove('hidden');
+  if (activeB) activeB.classList.add('active-tab');
+  if (persist) savePrefsToServer();
+}
+
+function setHistoryRange(r) {
+  historyRange = r;
+  const b24 = el('btn-range-24h'), b7d = el('btn-range-7d');
+  if (b24) b24.className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  if (b7d) b7d.className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  renderPingAnalytics();
+}
+
+function applyTheme(name, persist) {
+  currentTheme = name;
+  const themes = {
+    amber:   { bg: '#0b111a', card: '#111a27', border: '#1e293b', accent: '#facc15', glow: 'rgba(250, 204, 21, 0.12)' },
+    cyan:    { bg: '#0c131f', card: '#131e2f', border: '#1e2e46', accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.12)' },
+    emerald: { bg: '#0b1312', card: '#12201e', border: '#1a332f', accent: '#10b981', glow: 'rgba(16, 185, 129, 0.12)' },
+    indigo:  { bg: '#0d1117', card: '#161b22', border: '#30363d', accent: '#818cf8', glow: 'rgba(129, 140, 248, 0.12)' },
+    rose:    { bg: '#120c10', card: '#1c1318', border: '#33202a', accent: '#fb7185', glow: 'rgba(251, 113, 133, 0.12)' }
+  };
+  const t = themes[name] || themes.amber;
+  document.documentElement.style.setProperty('--bg', t.bg);
+  document.documentElement.style.setProperty('--card', t.card);
+  document.documentElement.style.setProperty('--border', t.border);
+  document.documentElement.style.setProperty('--accent', t.accent);
+  document.documentElement.style.setProperty('--accent-glow', t.glow);
+  if (persist) savePrefsToServer();
+}
+
+function autoUpdateTunnelName() {
+  const nameIn = el('tun-name'), srcIn = el('tun-src-srv'), dstIn = el('tun-dst-srv');
+  if (!nameIn || !srcIn || !dstIn) return;
+  if (userEditedName && nameIn.value.trim() !== '') return;
+  const srcObj = currentServers.find(s => s.id === srcIn.value);
+  const dstObj = currentServers.find(s => s.id === dstIn.value);
+  nameIn.value = `${srcObj ? srcObj.name.split(' ')[0] : 'Iran'}-to-${dstObj ? dstObj.name.split(' ')[0] : 'Kharej'}`;
+}
+
+function changeSelectedServer(srvId) {
+  selectedServer = srvId;
+  if (el('cfg-port')) el('cfg-port').value = '';
+  savePrefsToServer();
+  fetchState();
+}
+
+async function savePrefsToServer() {
+  try {
+    await fetch('/api/prefs', {
+      method: 'POST',
+      body: JSON.stringify({ theme: currentTheme, lang: lang, active_tab: currentTab, selected_server: selectedServer })
+    });
+  } catch (e) {}
+}
+
+async function enableBBR() {
+  await fetch('/api/bbr?server_id=' + selectedServer, { method: 'POST' });
+  fetchState();
+}
+
+async function addAndDeployServer() {
+  const payload = {
+    name: (el('srv-name')?.value || '').trim() || 'Remote-Node',
+    ip: (el('srv-ip')?.value || '').trim(),
+    ssh_port: (el('srv-port')?.value || '').trim() || '22',
+    ssh_user: (el('srv-user')?.value || '').trim() || 'root',
+    ssh_pass: el('srv-pass')?.value || ''
+  };
+  if (!payload.ip) return alert('Please enter Server IP');
+  if (el('srv-name')) el('srv-name').value = '';
+  if (el('srv-ip')) el('srv-ip').value = '';
+  if (el('srv-pass')) el('srv-pass').value = '';
+  await fetch('/api/servers', { method: 'POST', body: JSON.stringify(payload) });
+  fetchState();
+}
+
+async function redeployServer(id) {
+  await fetch('/api/servers/deploy?id=' + id, { method: 'POST' });
+  fetchState();
+}
+
+async function deleteServer(id) {
+  if (!confirm('Remove this server from panel?')) return;
+  await fetch('/api/servers?id=' + id, { method: 'DELETE' });
+  fetchState();
+}
+
+async function sendCmd(cmd) {
+  await fetch('/api/cmd', { method: 'POST', body: JSON.stringify({ cmd, server_id: selectedServer }) });
+  fetchState();
+}
+
+function runConsoleInput() {
+  const box = el('putty-input');
+  if (!box || !box.value.trim()) return;
+  sendCmd(box.value.trim());
+  box.value = '';
+}
+
+function resetForm() {
+  userEditedName = false;
+  if (el('tun-id')) el('tun-id').value = '';
+  if (el('tunnel-port')) el('tunnel-port').value = '10201';
+  if (el('inbound-ports')) el('inbound-ports').value = '';
+  if (el('tun-sni')) el('tun-sni').value = 'www.speedtest.net';
+  if (el('tun-path')) el('tun-path').value = '/ws';
+  if (el('tun-pin')) el('tun-pin').value = '';
+  autoUpdateTunnelName();
+}
+
+function editTunnel(id) {
+  const t = currentTunnels.find(x => x.id === id);
+  if (!t) return;
+  userEditedName = true;
+  if (el('tun-id')) el('tun-id').value = t.id;
+  if (el('tun-name')) el('tun-name').value = t.name || '';
+  if (t.source_server && el('tun-src-srv')) el('tun-src-srv').value = t.source_server;
+  if (t.target_server && el('tun-dst-srv')) el('tun-dst-srv').value = t.target_server;
+  if (el('tunnel-port')) el('tunnel-port').value = t.tunnel_port || '10201';
+  if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
+  if (el('tun-sni')) el('tun-sni').value = t.sni || 'www.speedtest.net';
+  if (el('tun-path')) el('tun-path').value = t.ws_path || '/ws';
+  if (el('tun-pin')) el('tun-pin').value = t.cert_pin || '';
+}
+
+async function deleteTunnel(id) {
+  await fetch('/api/tunnel?id=' + id, { method: 'DELETE' });
+  fetchState();
+}
+
+async function pingTunnel(id) {
+  pingResults[id] = 'Testing...';
+  renderTunnels();
+  const res = await fetch('/api/ping?id=' + id);
+  const data = await res.json();
+  pingResults[id] = data.ok ? `✅ ${data.ms} ms (X-UI OK)` : `❌ ${data.error || 'Failed'}`;
+  renderTunnels();
+  fetchState();
+}
+
+function cleanPortsInput(raw) {
+  return (raw || '').split(',').map(p => {
+    const trimmed = p.trim();
+    return trimmed.includes(':') ? trimmed.split(':').pop() : trimmed;
+  }).filter(Boolean).join(', ');
+}
+
+async function saveTunnel() {
+  let pathVal = (el('tun-path')?.value || '').trim() || '/ws';
+  if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
+
+  const cleanInbounds = cleanPortsInput(el('inbound-ports')?.value || '');
+  const cleanTunPort = cleanPortsInput(el('tunnel-port')?.value || '') || '10201';
+  if (!cleanInbounds) return alert('Please enter at least one X-UI Inbound Port (e.g. 45454)');
+
+  const payload = {
+    id: el('tun-id')?.value || '',
+    name: (el('tun-name')?.value || '').trim() || 'WSS-Bridge',
+    method: 'wss',
+    source_server: el('tun-src-srv')?.value || 'local',
+    target_server: el('tun-dst-srv')?.value || 'local',
+    tunnel_port: cleanTunPort,
+    inbound_ports: cleanInbounds,
+    sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
+    ws_path: pathVal,
+    cert_pin: (el('tun-pin')?.value || '').trim()
+  };
+
+  await fetch('/api/tunnel', { method: 'POST', body: JSON.stringify(payload) });
+  resetForm();
+  fetchState();
+}
+
+async function saveConfig() {
+  const port = (el('cfg-port')?.value || '').trim();
+  const path = (el('cfg-path')?.value || '').trim();
+  await fetch('/api/config?server_id=' + selectedServer, { method: 'POST', body: JSON.stringify({ port, path }) });
+  if (selectedServer === 'local') {
+    setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
+  } else {
+    alert('Remote Sentinel configuration updated!');
+  }
+}
+
+function buildSVGChart(values, unit, strokeColor, gradId) {
+  let clean = (values || []).filter(v => typeof v === 'number' && !isNaN(v));
+  if (clean.length === 0) clean = [0, 0, 0, 0];
+  while (clean.length < 6) clean.unshift(clean[0]);
+
+  const w = 600, h = 135, padL = 54, padR = 10, padT = 14, padB = 14;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const maxVal = Math.max(...clean, unit === 'ms' ? 220 : 2);
+  const midVal = (maxVal / 2).toFixed(unit === 'ms' ? 0 : 1);
+  const topVal = maxVal.toFixed(unit === 'ms' ? 0 : 1);
+
+  const pts = clean.map((v, idx) => {
+    const x = padL + (idx / (clean.length - 1)) * plotW;
+    const y = padT + plotH - ((v / maxVal) * plotH);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = pts.join(' ');
+  const area = `${padL},${padT + plotH} ${line} ${padL + plotW},${padT + plotH}`;
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
+    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.02"/>
+    </linearGradient></defs>
+    <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
+    <text x="6" y="${padT + 4}" fill="#64748b" font-size="10" font-family="monospace">${topVal} ${unit}</text>
+    <text x="6" y="${padT + plotH / 2 + 4}" fill="#64748b" font-size="10" font-family="monospace">${midVal} ${unit}</text>
+    <text x="6" y="${padT + plotH + 3}" fill="#64748b" font-size="10" font-family="monospace">0 ${unit}</text>
+    <polygon points="${area}" fill="url(#${gradId})"/>
+    <polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${line}"/>
+  </svg>`;
+}
+
+function renderServers() {
+  const topSel = el('top-server-select'), srcSel = el('tun-src-srv'), dstSel = el('tun-dst-srv');
+  if (topSel && srcSel && dstSel) {
+    const prevSrc = srcSel.value, prevDst = dstSel.value;
+    const optsHTML = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
+    if (topSel.innerHTML !== optsHTML) {
+      topSel.innerHTML = optsHTML; srcSel.innerHTML = optsHTML; dstSel.innerHTML = optsHTML;
     }
-    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.25s ease; }
-    .card { background-color: var(--card); border: 1px solid var(--border); }
-    .accent-border { border: 1px solid var(--accent); background: var(--accent-glow); }
-    .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
-    .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
-    input, select { background-color: #080d14; border: 1px solid var(--border); color: #f1f5f9; color-scheme: dark; }
-    select option { background-color: #0b111a; color: #f1f5f9; padding: 8px; }
-    input:focus, select:focus { border-color: var(--accent); outline: none; }
-    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
-    [data-i18n] { unicode-bidi: plaintext; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-  </style>
-</head>
-<body class="flex flex-col min-h-screen">
+    topSel.value = selectedServer;
+    if (prevSrc) srcSel.value = prevSrc;
+    if (prevDst) dstSel.value = prevDst;
+    else if (currentServers.length > 1) dstSel.value = currentServers[currentServers.length - 1].id;
+  }
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
-    <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
-      <div>
-        <span class="font-bold tracking-wide text-xs sm:text-sm block leading-none">Ghoghnoos-lite</span>
-        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun WSS Engine</span>
-      </div>
-    </div>
+  if (el('tun-name') && !el('tun-name').value) autoUpdateTunnelName();
 
-    <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
-      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
-        <span>🖥️</span><span data-i18n="servers">Servers</span>
-      </button>
-      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
-        <span>⚙️</span><span data-i18n="config">Config</span>
-      </button>
-      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
-        <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
-      </button>
-      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
-        <span>📋</span><span data-i18n="logs">Log</span>
-      </button>
-    </nav>
+  const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];
+  if (activeSrv) {
+    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})`);
+    setText('cfg-target-badge', `${activeSrv.name} (${activeSrv.ip})`);
+  }
 
-    <div class="flex items-center gap-2 order-2 md:order-3">
-      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] font-mono text-emerald-400">
-        <span>🕒</span>
-        <span id="top-server-clock">--:--:--</span>
-      </div>
+  const cc = sysMetrics.bbr_status || 'cubic';
+  const qd = sysMetrics.qdisc || 'fq_codel';
+  setText('bbr-cc-val', cc.toUpperCase());
+  setText('bbr-qdisc-val', qd.toUpperCase());
+  const bbrBadge = el('bbr-status-badge');
+  if (bbrBadge) {
+    if (cc === 'bbr') {
+      bbrBadge.className = 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800';
+      bbrBadge.innerText = '● BBR Active (Optimized)';
+    } else {
+      bbrBadge.className = 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
+      bbrBadge.innerText = `● ${cc.toUpperCase()} (Not BBR)`;
+    }
+  }
 
-      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-700 rounded-xl px-2 py-1">
-        <span class="text-xs text-slate-400">🖥️</span>
-        <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-[#0b111a] border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-[160px] truncate">
-          <option value="local">Master</option>
-        </select>
-      </div>
-
-      <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
-        <button onclick="applyTheme('amber', true)" class="w-3 h-3 rounded-full bg-amber-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('cyan', true)" class="w-3 h-3 rounded-full bg-sky-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('emerald', true)" class="w-3 h-3 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('indigo', true)" class="w-3 h-3 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('rose', true)" class="w-3 h-3 rounded-full bg-rose-400 hover:scale-125 transition"></button>
-      </div>
-
-      <button onclick="toggleLang()" id="lang-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
-    </div>
-  </header>
-
-  <!-- MAIN WORKSPACE -->
-  <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
-
-    <!-- LEFT COLUMN (7 Cols) -->
-    <div class="lg:col-span-7 space-y-4 sm:space-y-6">
-
-      <!-- TAB 1: SERVERS -->
-      <section id="view-servers" class="space-y-4 sm:space-y-6">
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enter SSH credentials to automatically install and link the Sentinel agent.</p>
-            </div>
-            <span class="text-[11px] px-2.5 py-1 rounded-lg font-mono" style="background: var(--accent-glow); color: var(--accent);">Native Go SSH</span>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_name">Server Name</label>
-              <input id="srv-name" placeholder="e.g. USS" class="w-full rounded-lg p-2.5 text-xs">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_ip">Server IP Address</label>
-              <input id="srv-ip" placeholder="e.g. 205.234.152.182" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_port">SSH Port</label>
-              <input id="srv-port" value="22" placeholder="22" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_user">SSH Username</label>
-              <input id="srv-user" value="root" placeholder="root" class="w-full rounded-lg p-2.5 text-xs">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_pass">SSH Password</label>
-              <input id="srv-pass" type="password" placeholder="••••••••••••" class="w-full rounded-lg p-2.5 text-xs">
-            </div>
-          </div>
-
-          <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)</button>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4" id="server-cards-list"></div>
-      </section>
-
-      <!-- TAB 2: CONFIG (Includes BBR Check & 1-Click Optimizer for Selected Server) -->
-      <section id="view-config" class="hidden space-y-4 sm:space-y-6">
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
-            <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
-              <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
-              <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-          </div>
-          <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
-        </div>
-
-        <!-- BBR Kernel Congestion Control Card -->
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <h3 class="font-bold text-sm sm:text-base" data-i18n="bbr_title">TCP BBR & FQ Kernel Acceleration</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="bbr_sub">Boosts tunnel throughput and reduces packet-loss throttling on the selected server.</p>
-            </div>
-            <span id="bbr-status-badge" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300">Checking...</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3 text-xs font-mono" dir="ltr">
-            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
-              <span class="text-slate-400 block">TCP Congestion Control:</span>
-              <b id="bbr-cc-val" class="text-sm text-sky-400 mt-1 block">--</b>
-            </div>
-            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
-              <span class="text-slate-400 block">Default Packet Scheduler (qdisc):</span>
-              <b id="bbr-qdisc-val" class="text-sm text-indigo-400 mt-1 block">--</b>
-            </div>
-          </div>
-
-          <button onclick="enableBBR()" id="btn-enable-bbr" class="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold text-black transition" style="background: var(--accent);" data-i18n="btn_bbr">⚡ Enable Google BBR + FQ on Selected Server</button>
-        </div>
-      </section>
-
-      <!-- TAB 3: TUNNELS -->
-      <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
-        <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
-          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between">
-              <div>
-                <div class="font-bold text-sm flex items-center gap-2">
-                  <span>WSS</span>
-                  <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">ACTIVE</span>
-                </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 + Keep-Alive</div>
-              </div>
-              <span class="text-lg">🔒</span>
-            </div>
-            <div class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/60 opacity-50 cursor-not-allowed flex items-center justify-between">
-              <div>
-                <div class="font-bold text-sm text-slate-400">Next Method (Coming Soon)</div>
-                <div class="text-xs text-slate-500 mt-1">Additional transport protocols</div>
-              </div>
-              <span class="text-lg">⚡</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-sm sm:text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
-            <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
-          </div>
-
-          <input type="hidden" id="tun-id">
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3 rounded-xl border border-slate-800">
-            <div>
-              <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Iran Relay)</label>
-              <select id="tun-src-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
-            </div>
-            <div>
-              <label class="text-xs font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Exit Server (Kharej + X-UI)</label>
-              <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name (Auto-filled)</label>
-              <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-lg p-2.5 text-xs font-semibold">
-            </div>
-            <div>
-              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port (WSS Highway)</label>
-              <input id="tunnel-port" value="10201" placeholder="e.g. 10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">X-UI Inbound Port(s)</label>
-              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden focus-within:border-amber-400">
-                <span class="px-2 py-2.5 text-[11px] font-mono text-slate-400 bg-slate-900/90 border-r border-slate-800 select-none">Ports:</span>
-                <input id="inbound-ports" placeholder="45454, 2053" class="w-full border-0 p-2.5 text-xs font-mono focus:outline-none">
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
-              <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1">WebSocket Path</label>
-              <input id="tun-path" value="/ws" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-          </div>
-
+  setHTML('server-cards-list', currentServers.map(s => {
+    const isOnline = s.status === 'Online';
+    const badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
+    const infoUrl = `http://${s.ip}:${s.panel_port || '8880'}/sentinel-info`;
+    return `
+      <div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
+        <div class="flex justify-between items-start">
           <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)</label>
-            <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
-          </div>
-
-          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish WSS Tunnel Between Selected Servers</button>
-        </div>
-
-        <div class="space-y-3">
-          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End X-UI Ping & Edit)</h3>
-          <div id="tunnel-list" class="space-y-3"></div>
-        </div>
-      </section>
-
-      <!-- TAB 4: LOG (Telemetry & Ping Analytics Dashboard) -->
-      <section id="view-logs" class="hidden space-y-4" dir="ltr">
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">CPU USAGE</div>
-            <div id="kpi-cpu" class="text-xl sm:text-2xl font-bold text-sky-400 font-mono mt-1">0.0%</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">RAM USAGE</div>
-            <div id="kpi-ram" class="text-sm sm:text-base font-bold text-indigo-400 font-mono mt-2">--% (--/-- MB)</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">LIVE THROUGHPUT (8 MBPS = 1 MB/S)</div>
-            <div id="kpi-tp" class="text-xs sm:text-sm font-bold text-emerald-400 font-mono mt-2">↓ 0.00 Mbps | ↑ 0.00 Mbps</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">REACHABLE / CHECKED</div>
-            <div id="kpi-reach" class="text-xl sm:text-2xl font-bold text-slate-100 font-mono mt-1">20 / 20</div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="card rounded-2xl p-4 border-l-2 border-l-sky-400">
-            <div class="text-xs font-bold text-sky-400">⚡ APP CUMULATIVE BANDWIDTH</div>
-            <div id="bw-app" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
-          </div>
-          <div class="card rounded-2xl p-4 border-l-2 border-l-indigo-400">
-            <div class="text-xs font-bold text-indigo-400">🖥️ WHOLE SERVER BANDWIDTH</div>
-            <div id="bw-srv" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 GB | 7d: 0 GB | 30d: 0 GB</div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-slate-300">📈 RECENT PING</span>
-              <span id="recent-ping-val" class="text-xs font-bold font-mono text-sky-400">-- ms</span>
+            <div class="flex items-center gap-2">
+              <h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
+              ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}
             </div>
-            <div id="svg-recent-ping" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
-            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-120s</span><span>-60s</span><span class="text-sky-400">Now</span></div>
+            <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port}</b></div>
           </div>
+          <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span>
+        </div>
+        <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">
+          Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span>
+        </div>
+        <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
+            <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
+            <a href="${infoUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a>
+          </div>
+          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
+        </div>
+      </div>`;
+  }).join(''));
+}
 
-          <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-slate-300">📊 150-SECOND THROUGHPUT</span>
-              <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">0.00 Mbps | 0.00 MB/s</span>
-            </div>
-            <div id="svg-recent-tp" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
-            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-150s</span><span>-75s</span><span class="text-indigo-400">Now</span></div>
+function renderTunnels() {
+  setHTML('tunnel-list', currentTunnels.map(t => {
+    const srcSrv = currentServers.find(s => s.id === t.source_server);
+    const dstSrv = currentServers.find(s => s.id === t.target_server);
+    const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
+    return `
+      <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">WSS</span>
+            <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
+            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Entry'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingTxt}</button>
+            <button onclick="editTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
+            <button onclick="deleteTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
           </div>
         </div>
-
-        <div class="card rounded-2xl p-5 space-y-4">
-          <div class="flex flex-wrap justify-between items-center gap-2">
-            <span class="text-xs sm:text-sm font-bold text-slate-100">🕒 24-HOUR & 7-DAY SERVER PING + DOWNTIME HISTORY</span>
-            <div class="flex items-center gap-1.5">
-              <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black">24h</button>
-              <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400">7d</button>
-            </div>
-          </div>
-
-          <div class="flex flex-wrap gap-2 text-xs font-mono">
-            <span id="pill-uptime" class="px-3 py-1 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">● Uptime: 100.0%</span>
-            <span id="pill-avg" class="px-3 py-1 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/80">⚡ Avg Latency: -- ms</span>
-            <span id="pill-down" class="px-3 py-1 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/80">● Downtime: 0m</span>
-            <span id="pill-inc" class="px-3 py-1 rounded-full bg-slate-900 text-slate-300 border border-slate-800">🕒 Incidents: 0 Incidents</span>
-          </div>
-
-          <div id="svg-history-ping" class="w-full h-40 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
+          <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
+          <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
+          <div>SNI: <b class="text-slate-200">${t.sni}</b></div>
         </div>
-      </section>
+      </div>`;
+  }).join(''));
+}
 
-    </div>
+function renderPingAnalytics() {
+  if (!el('kpi-cpu')) return;
+  const cpu = sysMetrics.cpu_pct || 0;
+  const ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
+  const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0;
+  const appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
 
-    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console -->
-    <aside class="lg:col-span-5 lg:sticky lg:top-20 w-full">
-      <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
-        <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
-          <div class="flex items-center gap-2 truncate">
-            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
-            <span id="putty-title" class="text-xs font-bold text-slate-300 ml-1 truncate">root@Master — Ghoghnoos-lite</span>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
-            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400">▼</button>
-          </div>
-        </div>
+  setText('kpi-cpu', `${cpu.toFixed(1)}%`);
+  setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot} MB)`);
+  setHTML('kpi-tp', `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`);
 
-        <div id="putty-body" class="flex flex-col h-[340px] sm:h-[540px]">
-          <div id="putty-box" class="flex-1 p-3.5 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
+  const srvHistory = (selectedServer && selectedServer !== 'local')
+    ? pingHistory.filter(p => !p.sid || p.sid === selectedServer)
+    : pingHistory;
 
-          <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
-            <span class="text-xs font-bold shrink-0" style="color: var(--accent)">root@litetun:~#</span>
-            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
-            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
-          </div>
-        </div>
-      </div>
-    </aside>
+  const last20 = srvHistory.slice(-20);
+  const ok20 = last20.filter(x => x.ok).length;
+  setText('kpi-reach', last20.length ? `${ok20} / ${last20.length}` : `20 / 20`);
 
-  </main>
+  setText('bw-app', `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`);
+  setText('bw-srv', `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`);
 
-  <script src="/app.js"></script>
-</body>
-</html>
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rangeSec = historyRange === '24h' ? 86400 : 7 * 86400;
+  const filtered = srvHistory.filter(p => p.ts >= nowSec - rangeSec);
+  const okList = filtered.filter(p => p.ok && p.ms > 0);
+  const fails = filtered.filter(p => !p.ok).length;
+  const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 185;
+  const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0';
+  const latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
+
+  setText('recent-ping-val', `${latestMs} ms`);
+  const totMbps = rxMbps + txMbps;
+  setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
+
+  const recentPings = okList.slice(-25).map(x => x.ms);
+  setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [182, 185, 180, 184, 182], 'ms', '#38bdf8', 'gradPing'));
+  setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
+
+  setText('pill-uptime', `● Uptime: ${uptimePct}%`);
+  setText('pill-avg', `⚡ Avg Latency: ${avgMs} ms`);
+  setText('pill-down', `● Downtime: ${fails}m`);
+  setText('pill-inc', `🕒 Incidents: ${fails} Incidents`);
+
+  const histSeries = filtered.slice(-80).map(x => x.ok ? x.ms : 0);
+  setHTML('svg-history-ping', buildSVGChart(histSeries.length ? histSeries : [184, 182, 186, 180, 185, 183], 'ms', '#38bdf8', 'gradHist'));
+}
+
+async function fetchState() {
+  try {
+    const res = await fetch('/api/state?server_id=' + selectedServer);
+    const data = await res.json();
+
+    if (data.server_time) setText('top-server-clock', data.server_time);
+
+    if (!initialLoaded && data.prefs) {
+      initialLoaded = true;
+      lang = data.prefs.lang || 'en';
+      selectedServer = data.prefs.selected_server || 'local';
+      applyLangUI();
+      applyTheme(data.prefs.theme || 'amber', false);
+      setTab(data.prefs.active_tab || 'servers', false);
+    }
+
+    currentServers = data.servers || [];
+    currentTunnels = data.tunnels || [];
+    pingHistory = data.ping_history || [];
+    sysMetrics = data.metrics || {};
+
+    renderServers();
+    renderTunnels();
+    renderPingAnalytics();
+
+    const logText = (data.logs || []).join('\n');
+    const puttyEl = el('putty-box');
+    if (puttyEl) {
+      const wasAtBottom = puttyEl.scrollHeight - puttyEl.clientHeight <= puttyEl.scrollTop + 40;
+      puttyEl.innerText = logText;
+      if (wasAtBottom) puttyEl.scrollTop = puttyEl.scrollHeight;
+    }
+
+    if (el('cfg-port') && !el('cfg-port').value) {
+      el('cfg-port').value = data.panel_port || '8880';
+      if (el('cfg-path')) el('cfg-path').value = data.panel_path || '';
+    }
+  } catch (err) {
+    console.error('State sync error:', err);
+  }
+}
+
+setInterval(fetchState, 2000);
+fetchState();

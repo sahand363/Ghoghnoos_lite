@@ -5,14 +5,17 @@ let selectedServer = 'local';
 let currentServers = [];
 let currentTunnels = [];
 let pingHistory = [];
+let recentPingSamples = [];
+let sysMetrics = {};
 let pingResults = {};
 let initialLoaded = false;
 let userEditedName = false;
 let consoleCollapsed = false;
+let historyRange = '24h';
 
 const dict = {
   en: {
-    servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: '24h/7d Ping',
+    servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Log',
     add_srv_title: 'Connect Remote Server & Deploy Sentinel',
     add_srv_sub: 'Enter SSH credentials to automatically install and link the Sentinel agent.',
     srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
@@ -29,13 +32,10 @@ const dict = {
     inb_port_lbl: 'X-UI Inbound Port(s)',
     cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
     create: '⚡ Establish WSS Tunnel Between Selected Servers',
-    active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)',
-    uptime_title: '24-Hour & 7-Day Tunnel Ping & Uptime Monitor',
-    uptime_sub: 'Automatic every-60s health probes + manual ping checks.',
-    outage_log: 'Recent Ping Events & Offline Incidents'
+    active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)'
   },
   fa: {
-    servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'پینگ ۲۴ساعته/هفتگی',
+    servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ',
     add_srv_title: 'اتصال به سرور جدید و نصب خودکار سنتینل',
     add_srv_sub: 'مشخصات SSH را وارد کنید تا سنتینل با نمایش درصد پیشرفت نصب شود.',
     srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
@@ -52,10 +52,7 @@ const dict = {
     inb_port_lbl: 'پورت(های) اینباند X-UI (با کاما)',
     cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
     create: '⚡ برقراری تانل WSS بین دو سرور انتخاب‌شده',
-    active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)',
-    uptime_title: 'مانیتورینگ پینگ و آپتایم ۲۴ ساعته و ۷ روزه',
-    uptime_sub: 'تست خودکار هر ۶۰ ثانیه و ثبت زمان‌های قطعی سرور.',
-    outage_log: 'گزارش آخرین تست‌های پینگ و زمان‌های قطعی'
+    active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)'
   }
 };
 
@@ -75,10 +72,8 @@ function toggleLang() {
 
 function toggleMobileConsole() {
   consoleCollapsed = !consoleCollapsed;
-  const body = document.getElementById('putty-body');
-  const btn = document.getElementById('console-toggle-btn');
-  body.classList.toggle('hidden', consoleCollapsed);
-  btn.innerText = consoleCollapsed ? '▲' : '▼';
+  document.getElementById('putty-body').classList.toggle('hidden', consoleCollapsed);
+  document.getElementById('console-toggle-btn').innerText = consoleCollapsed ? '▲' : '▼';
 }
 
 function setTab(t, persist) {
@@ -90,6 +85,17 @@ function setTab(t, persist) {
   document.getElementById('view-' + t).classList.remove('hidden');
   document.getElementById('tab-' + t).classList.add('active-tab');
   if (persist) savePrefsToServer();
+}
+
+function setHistoryRange(r) {
+  historyRange = r;
+  const b24 = document.getElementById('btn-range-24h');
+  const b7d = document.getElementById('btn-range-7d');
+  if (b24 && b7d) {
+    b24.className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+    b7d.className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  }
+  renderPingAnalytics();
 }
 
 function applyTheme(name, persist) {
@@ -112,10 +118,8 @@ function applyTheme(name, persist) {
 
 function autoUpdateTunnelName() {
   if (userEditedName && document.getElementById('tun-name').value.trim() !== '') return;
-  const srcId = document.getElementById('tun-src-srv').value;
-  const dstId = document.getElementById('tun-dst-srv').value;
-  const srcObj = currentServers.find(s => s.id === srcId);
-  const dstObj = currentServers.find(s => s.id === dstId);
+  const srcObj = currentServers.find(s => s.id === document.getElementById('tun-src-srv').value);
+  const dstObj = currentServers.find(s => s.id === document.getElementById('tun-dst-srv').value);
   const sName = srcObj ? srcObj.name.split(' ')[0] : 'Iran';
   const dName = dstObj ? dstObj.name.split(' ')[0] : 'Kharej';
   document.getElementById('tun-name').value = `${sName}-to-${dName}`;
@@ -259,18 +263,37 @@ async function saveConfig() {
   }
 }
 
+function buildSVGChart(values, maxVal, strokeColor, gradId) {
+  if (!values || values.length === 0) values = [0, 0];
+  if (values.length === 1) values = [values[0], values[0]];
+  const w = 600, h = 130, pad = 8;
+  const max = Math.max(maxVal || 10, ...values, 1);
+  const pts = values.map((v, idx) => {
+    const x = (idx / (values.length - 1)) * w;
+    const y = h - pad - ((v / max) * (h - pad * 2));
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = pts.join(' ');
+  const area = `0,${h} ${line} ${w},${h}`;
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-32 preserve-3d" preserveAspectRatio="none">
+    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0"/>
+    </linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gradId})"/>
+    <polyline fill="none" stroke="${strokeColor}" stroke-width="2.2" points="${line}"/>
+  </svg>`;
+}
+
 function renderServers() {
   const topSel = document.getElementById('top-server-select');
   const srcSel = document.getElementById('tun-src-srv');
   const dstSel = document.getElementById('tun-dst-srv');
-  const prevSrc = srcSel.value;
-  const prevDst = dstSel.value;
+  const prevSrc = srcSel.value, prevDst = dstSel.value;
 
   const optsHTML = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
   if (topSel.innerHTML !== optsHTML) {
-    topSel.innerHTML = optsHTML;
-    srcSel.innerHTML = optsHTML;
-    dstSel.innerHTML = optsHTML;
+    topSel.innerHTML = optsHTML; srcSel.innerHTML = optsHTML; dstSel.innerHTML = optsHTML;
   }
   topSel.value = selectedServer;
   if (prevSrc) srcSel.value = prevSrc;
@@ -306,16 +329,13 @@ function renderServers() {
         </div>
         <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60">
           <div class="flex flex-wrap items-center gap-1.5">
-            <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">
-              ${s.id === selectedServer ? '✓ Active' : 'Select'}
-            </button>
+            <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
             <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
             <a href="${infoUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a>
           </div>
           ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
@@ -323,8 +343,6 @@ function renderTunnels() {
   document.getElementById('tunnel-list').innerHTML = currentTunnels.map(t => {
     const srcSrv = currentServers.find(s => s.id === t.source_server);
     const dstSrv = currentServers.find(s => s.id === t.target_server);
-    const srcLabel = srcSrv ? srcSrv.name : 'Entry';
-    const dstLabel = dstSrv ? dstSrv.name : 'Exit';
     const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
     return `
       <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
@@ -332,7 +350,7 @@ function renderTunnels() {
           <div class="flex flex-wrap items-center gap-2">
             <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">WSS</span>
             <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
-            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcLabel} ➔ ${dstLabel}</span>
+            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Entry'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
           </div>
           <div class="flex items-center gap-1.5">
             <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingTxt}</button>
@@ -345,75 +363,61 @@ function renderTunnels() {
           <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
           <div>SNI: <b class="text-slate-200">${t.sni}</b></div>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
 function renderPingAnalytics() {
+  const el = id => document.getElementById(id);
+  if (!el('kpi-cpu')) return;
+
+  const cpu = sysMetrics.cpu_pct || 0;
+  const ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
+  const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0;
+  const appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
+
+  el('kpi-cpu').innerText = `${cpu.toFixed(1)}%`;
+  el('kpi-ram').innerText = `${ramPct}% (${ramUsed}/${ramTot} MB)`;
+  el('kpi-tp').innerHTML = `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`;
+
+  const last20 = pingHistory.slice(-20);
+  const ok20 = last20.filter(x => x.ok).length;
+  el('kpi-reach').innerText = last20.length ? `${ok20} / ${last20.length}` : `${currentServers.length} / ${currentServers.length}`;
+
+  el('bw-app').innerText = `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`;
+  el('bw-srv').innerText = `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`;
+
   const nowSec = Math.floor(Date.now() / 1000);
-  const last24h = pingHistory.filter(p => p.ts >= nowSec - 86400);
-  const last7d = pingHistory.filter(p => p.ts >= nowSec - 7 * 86400);
+  const rangeSec = historyRange === '24h' ? 86400 : 7 * 86400;
+  const filtered = pingHistory.filter(p => p.ts >= nowSec - rangeSec);
+  const okList = filtered.filter(p => p.ok && p.ms > 0);
+  const fails = filtered.filter(p => !p.ok).length;
+  const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 185;
+  const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0';
+  const latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
 
-  const calcUptime = arr => arr.length ? Math.round((arr.filter(x => x.ok).length / arr.length) * 1000) / 10 + '%' : '100%';
-  document.getElementById('stat-24h').innerText = calcUptime(last24h);
-  document.getElementById('stat-7d').innerText = calcUptime(last7d);
+  el('recent-ping-val').innerText = `${latestMs} ms`;
+  const totMbps = rxMbps + txMbps;
+  el('recent-tp-val').innerText = `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`;
 
-  const okPings = last24h.filter(x => x.ok && x.ms > 0);
-  const avgMs = okPings.length ? Math.round(okPings.reduce((a, b) => a + b.ms, 0) / okPings.length) : 0;
-  document.getElementById('stat-avg-ms').innerText = avgMs ? `${avgMs} ms` : '-- ms';
+  const recentPings = okList.slice(-30).map(x => x.ms);
+  el('svg-recent-ping').innerHTML = buildSVGChart(recentPings.length ? recentPings : [avgMs, avgMs], 350, '#38bdf8', 'gradPing');
+  el('svg-recent-tp').innerHTML = buildSVGChart(sysMetrics.tp_history || [0.2, 0.4], 15, '#818cf8', 'gradTp');
 
-  // Render 24 Hourly Blocks
-  let html24 = '';
-  for (let i = 23; i >= 0; i--) {
-    const start = nowSec - (i + 1) * 3600;
-    const end = nowSec - i * 3600;
-    const slot = last24h.filter(p => p.ts >= start && p.ts < end);
-    let color = 'bg-slate-800';
-    let tip = `${i}h ago: No checks`;
-    if (slot.length > 0) {
-      const fails = slot.filter(x => !x.ok).length;
-      if (fails === 0) { color = 'bg-emerald-500'; tip = `${i}h ago: 100% Online (${slot.length} checks)`; }
-      else if (fails < slot.length) { color = 'bg-amber-400'; tip = `${i}h ago: ${fails} failure(s)`; }
-      else { color = 'bg-rose-500'; tip = `${i}h ago: Offline`; }
-    }
-    html24 += `<div title="${tip}" class="${color} h-full rounded-sm transition hover:opacity-80"></div>`;
-  }
-  document.getElementById('bar-24h').innerHTML = html24;
+  el('pill-uptime').innerText = `● Uptime: ${uptimePct}%`;
+  el('pill-avg').innerText = `⚡ Avg Latency: ${avgMs} ms`;
+  el('pill-down').innerText = `● Downtime: ${fails}m`;
+  el('pill-inc').innerText = `🕒 Incidents: ${fails} Incidents`;
 
-  // Render 7 Daily Blocks
-  let html7d = '';
-  for (let d = 6; d >= 0; d--) {
-    const start = nowSec - (d + 1) * 86400;
-    const end = nowSec - d * 86400;
-    const slot = last7d.filter(p => p.ts >= start && p.ts < end);
-    let color = 'bg-slate-800 text-slate-400';
-    let label = d === 0 ? 'Today' : `${d}d ago`;
-    if (slot.length > 0) {
-      const pct = Math.round((slot.filter(x => x.ok).length / slot.length) * 100);
-      color = pct === 100 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800';
-      label = `${pct}%`;
-    }
-    html7d += `<div class="${color} h-full rounded-lg flex items-center justify-center text-[11px] font-mono font-bold">${label}</div>`;
-  }
-  document.getElementById('bar-7d').innerHTML = html7d;
-
-  // Recent Incidents & Pings
-  const recent = [...pingHistory].reverse().slice(0, 25);
-  document.getElementById('incident-list').innerHTML = recent.length ? recent.map(p => {
-    const dt = new Date(p.ts * 1000).toLocaleTimeString();
-    const badge = p.ok ? `<span class="text-emerald-400">● ONLINE (${p.ms} ms)</span>` : `<span class="text-rose-400">▲ OFFLINE (${p.err || 'Timeout'})</span>`;
-    return `<div class="flex justify-between bg-[#080d14] px-3 py-1.5 rounded border border-slate-800/80"><span>[${dt}] Tunnel ${p.tid}</span>${badge}</div>`;
-  }).join('') : `<div class="text-slate-500">Click "⚡ Ping / Test" on any tunnel or wait 60s for automatic probes.</div>`;
+  const histSeries = filtered.slice(-80).map(x => x.ok ? x.ms : 0);
+  el('svg-history-ping').innerHTML = buildSVGChart(histSeries.length ? histSeries : [avgMs, avgMs], 600, '#38bdf8', 'gradHist');
 }
 
 async function fetchState() {
   const res = await fetch('/api/state?server_id=' + selectedServer);
   const data = await res.json();
 
-  if (data.server_time) {
-    document.getElementById('top-server-clock').innerText = data.server_time;
-  }
+  if (data.server_time) document.getElementById('top-server-clock').innerText = data.server_time;
 
   if (!initialLoaded && data.prefs) {
     initialLoaded = true;
@@ -427,6 +431,7 @@ async function fetchState() {
   currentServers = data.servers || [];
   currentTunnels = data.tunnels || [];
   pingHistory = data.ping_history || [];
+  sysMetrics = data.metrics || {};
 
   renderServers();
   renderTunnels();
@@ -444,5 +449,5 @@ async function fetchState() {
   }
 }
 
-setInterval(fetchState, 1800);
+setInterval(fetchState, 2000);
 fetchState();

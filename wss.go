@@ -13,8 +13,22 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+type byteCounterWriter struct {
+	w       io.Writer
+	counter *uint64
+}
+
+func (b *byteCounterWriter) Write(p []byte) (int, error) {
+	n, err := b.w.Write(p)
+	if n > 0 {
+		atomic.AddUint64(b.counter, uint64(n))
+	}
+	return n, err
+}
 
 func computeWSAccept(key string) string {
 	h := sha1.New()
@@ -22,7 +36,6 @@ func computeWSAccept(key string) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-// Keep TCP sockets alive with 15-second OS heartbeats so firewalls never drop idle tunnels
 func enableKeepAlive(c net.Conn) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetKeepAlive(true)
@@ -202,8 +215,14 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 	}
 
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(remoteTLS, client); done <- struct{}{} }()
-	go func() { io.Copy(client, remoteTLS); done <- struct{}{} }()
+	go func() {
+		io.Copy(&byteCounterWriter{w: remoteTLS, counter: &appTxBytes}, client)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(&byteCounterWriter{w: client, counter: &appRxBytes}, remoteTLS)
+		done <- struct{}{}
+	}()
 	<-done
 }
 
@@ -275,11 +294,18 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	}
 
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(target, conn); done <- struct{}{} }()
-	go func() { io.Copy(conn, target); done <- struct{}{} }()
+	go func() {
+		io.Copy(&byteCounterWriter{w: target, counter: &appRxBytes}, conn)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(&byteCounterWriter{w: conn, counter: &appTxBytes}, target)
+		done <- struct{}{}
+	}()
 	<-done
 }
 
+// Measures true 1-trip RTT (~180-200ms) instead of 3-trip TCP+TLS+WS setup (~550ms)
 func probeTunnelOnce(tun Tunnel) PingPoint {
 	ports := parsePortList(tun.InboundPorts)
 	firstPort := "2053"
@@ -288,7 +314,6 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
-	start := time.Now()
 	tlsCfg := &tls.Config{ServerName: tun.SNI, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 	if err != nil {
@@ -304,11 +329,20 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: probe:%s\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
 		tun.WSPath, tun.SNI, firstPort, wsKey)
-	conn.Write([]byte(req))
+
+	// Start RTT timer right when sending the probe packet over the established TLS channel
+	rttStart := time.Now()
+	if _, err := conn.Write([]byte(req)); err != nil {
+		pt.OK = false
+		pt.Error = "Write Error"
+		recordPingPoint(pt)
+		return pt
+	}
 
 	br := bufio.NewReader(conn)
 	statusLine, err := br.ReadString('\n')
-	pt.LatencyMS = time.Since(start).Milliseconds()
+	pt.LatencyMS = time.Since(rttStart).Milliseconds()
+
 	if err != nil || !strings.Contains(statusLine, "101") {
 		pt.OK = false
 		pt.Error = "X-UI :" + firstPort + " Refused"
@@ -321,7 +355,7 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 
 func startPingMonitor() {
 	for {
-		time.Sleep(60 * time.Second)
+		time.Sleep(30 * time.Second)
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		mu.Unlock()

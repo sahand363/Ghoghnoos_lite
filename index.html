@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Ghoghnoos-lite (LiteTun)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: dark;
@@ -40,7 +40,6 @@
       </div>
     </div>
 
-    <!-- Menu Order: Servers - Config - Tunnels - Log -->
     <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
       <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
         <span>🖥️</span><span data-i18n="servers">Servers</span>
@@ -56,9 +55,8 @@
       </button>
     </nav>
 
-    <!-- Right Controls: Live Server Clock + Server Selector + Theme Dots + EN/FA -->
     <div class="flex items-center gap-2 order-2 md:order-3">
-      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2 py-1 text-[11px] font-mono text-emerald-400" title="Selected Server Time">
+      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] font-mono text-emerald-400">
         <span>🕒</span>
         <span id="top-server-clock">--:--:--</span>
       </div>
@@ -131,23 +129,49 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4" id="server-cards-list"></div>
       </section>
 
-      <!-- TAB 2: CONFIG -->
-      <section id="view-config" class="hidden card rounded-2xl p-4 sm:p-6 space-y-5">
-        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-          <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
-          <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
-            <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm font-mono">
+      <!-- TAB 2: CONFIG (Includes BBR Check & 1-Click Optimizer for Selected Server) -->
+      <section id="view-config" class="hidden space-y-4 sm:space-y-6">
+        <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
+            <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
           </div>
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
-            <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
+              <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
+              <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
           </div>
+          <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
         </div>
-        <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
+
+        <!-- BBR Kernel Congestion Control Card -->
+        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
+          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 class="font-bold text-sm sm:text-base" data-i18n="bbr_title">TCP BBR & FQ Kernel Acceleration</h3>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="bbr_sub">Boosts tunnel throughput and reduces packet-loss throttling on the selected server.</p>
+            </div>
+            <span id="bbr-status-badge" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300">Checking...</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs font-mono" dir="ltr">
+            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
+              <span class="text-slate-400 block">TCP Congestion Control:</span>
+              <b id="bbr-cc-val" class="text-sm text-sky-400 mt-1 block">--</b>
+            </div>
+            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
+              <span class="text-slate-400 block">Default Packet Scheduler (qdisc):</span>
+              <b id="bbr-qdisc-val" class="text-sm text-indigo-400 mt-1 block">--</b>
+            </div>
+          </div>
+
+          <button onclick="enableBBR()" id="btn-enable-bbr" class="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold text-black transition" style="background: var(--accent);" data-i18n="btn_bbr">⚡ Enable Google BBR + FQ on Selected Server</button>
+        </div>
       </section>
 
       <!-- TAB 3: TUNNELS -->
@@ -237,85 +261,75 @@
         </div>
       </section>
 
-      <!-- TAB 4: LOG (Exact Telemetry & SVG Charts Dashboard from Screenshot) -->
-      <section id="view-logs" class="hidden space-y-3.5" dir="ltr">
-        <!-- Row 1: 4 Metric Cards -->
+      <!-- TAB 4: LOG (Telemetry & Ping Analytics Dashboard) -->
+      <section id="view-logs" class="hidden space-y-4" dir="ltr">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div class="card rounded-2xl p-4">
-            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">CPU USAGE</div>
-            <div id="m-cpu" class="text-xl sm:text-2xl font-bold text-sky-400 font-mono mt-1">1.2%</div>
+            <div class="text-[11px] text-slate-400 font-semibold uppercase">CPU USAGE</div>
+            <div id="kpi-cpu" class="text-xl sm:text-2xl font-bold text-sky-400 font-mono mt-1">0.0%</div>
           </div>
           <div class="card rounded-2xl p-4">
-            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">RAM USAGE</div>
-            <div id="m-ram" class="text-sm sm:text-lg font-bold text-indigo-400 font-mono mt-1.5 truncate">24% (240/980 MB)</div>
+            <div class="text-[11px] text-slate-400 font-semibold uppercase">RAM USAGE</div>
+            <div id="kpi-ram" class="text-sm sm:text-base font-bold text-indigo-400 font-mono mt-2">--% (--/-- MB)</div>
           </div>
           <div class="card rounded-2xl p-4">
-            <div class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">LIVE THROUGHPUT (8 MBPS = 1 MB/S)</div>
-            <div id="m-tp" class="text-xs sm:text-sm font-bold text-emerald-400 font-mono mt-2">↓ 0.00 Mbps | ↑ 0.00 Mbps</div>
+            <div class="text-[11px] text-slate-400 font-semibold uppercase">LIVE THROUGHPUT (8 MBPS = 1 MB/S)</div>
+            <div id="kpi-tp" class="text-xs sm:text-sm font-bold text-emerald-400 font-mono mt-2">↓ 0.00 Mbps | ↑ 0.00 Mbps</div>
           </div>
           <div class="card rounded-2xl p-4">
-            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">REACHABLE / CHECKED</div>
-            <div id="m-reach" class="text-xl sm:text-2xl font-bold text-slate-100 font-mono mt-1">20 / 20</div>
+            <div class="text-[11px] text-slate-400 font-semibold uppercase">REACHABLE / CHECKED</div>
+            <div id="kpi-reach" class="text-xl sm:text-2xl font-bold text-slate-100 font-mono mt-1">20 / 20</div>
           </div>
         </div>
 
-        <!-- Row 2: 2 Bandwidth Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="card rounded-2xl p-4 border-l-2 border-l-sky-400">
-            <div class="text-xs font-bold text-sky-400 font-mono">⚡ APP CUMULATIVE BANDWIDTH</div>
-            <div id="m-app-bw" class="text-xs font-mono text-slate-200 mt-1.5">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
+            <div class="text-xs font-bold text-sky-400">⚡ APP CUMULATIVE BANDWIDTH</div>
+            <div id="bw-app" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
           </div>
           <div class="card rounded-2xl p-4 border-l-2 border-l-indigo-400">
-            <div class="text-xs font-bold text-indigo-400 font-mono">🖥️ WHOLE SERVER BANDWIDTH</div>
-            <div id="m-srv-bw" class="text-xs font-mono text-slate-200 mt-1.5">24h: 1.20 GB | 7d: 1.20 GB | 30d: 1.20 GB</div>
+            <div class="text-xs font-bold text-indigo-400">🖥️ WHOLE SERVER BANDWIDTH</div>
+            <div id="bw-srv" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 GB | 7d: 0 GB | 30d: 0 GB</div>
           </div>
         </div>
 
-        <!-- Row 3: 2 Smooth Area Charts (Recent Ping + 150s Throughput) -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center text-xs font-mono">
-              <span class="text-slate-400">📈 RECENT PING</span>
-              <span id="chart-ping-now" class="text-sky-400 font-bold">-- ms</span>
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-slate-300">📈 RECENT PING</span>
+              <span id="recent-ping-val" class="text-xs font-bold font-mono text-sky-400">-- ms</span>
             </div>
-            <div id="svg-recent-ping" class="w-full h-36"></div>
-            <div class="flex justify-between text-[10px] font-mono text-slate-500 pt-1">
-              <span>-120s</span><span>-60s</span><span class="text-sky-400">Now</span>
-            </div>
+            <div id="svg-recent-ping" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-120s</span><span>-60s</span><span class="text-sky-400">Now</span></div>
           </div>
 
           <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center text-xs font-mono">
-              <span class="text-slate-400 truncate">📊 150-SECOND THROUGHPUT</span>
-              <span id="chart-tp-now" class="text-indigo-400 font-bold shrink-0">0.00 Mbps</span>
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-slate-300">📊 150-SECOND THROUGHPUT</span>
+              <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">0.00 Mbps | 0.00 MB/s</span>
             </div>
-            <div id="svg-recent-tp" class="w-full h-36"></div>
-            <div class="flex justify-between text-[10px] font-mono text-slate-500 pt-1">
-              <span>-150s</span><span>-75s</span><span class="text-indigo-400">Now</span>
-            </div>
+            <div id="svg-recent-tp" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-150s</span><span>-75s</span><span class="text-indigo-400">Now</span></div>
           </div>
         </div>
 
-        <!-- Row 4: Full-Width 24-Hour & 7-Day Server Ping + Downtime History -->
-        <div class="card rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="card rounded-2xl p-5 space-y-4">
           <div class="flex flex-wrap justify-between items-center gap-2">
-            <div class="text-xs sm:text-sm font-bold font-mono tracking-wide text-slate-100">🕒 24-HOUR & 7-DAY SERVER PING + DOWNTIME HISTORY</div>
-            <div class="flex items-center gap-1 bg-[#080d14] p-1 rounded-lg border border-slate-800 text-xs font-mono">
-              <button onclick="setHistoryRange('24h')" id="btn-rng-24h" class="px-2.5 py-1 rounded bg-sky-400 text-black font-bold">24h</button>
-              <button onclick="setHistoryRange('7d')" id="btn-rng-7d" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">7d</button>
+            <span class="text-xs sm:text-sm font-bold text-slate-100">🕒 24-HOUR & 7-DAY SERVER PING + DOWNTIME HISTORY</span>
+            <div class="flex items-center gap-1.5">
+              <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black">24h</button>
+              <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400">7d</button>
             </div>
           </div>
 
-          <!-- 4 Status Pills -->
-          <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+          <div class="flex flex-wrap gap-2 text-xs font-mono">
             <span id="pill-uptime" class="px-3 py-1 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">● Uptime: 100.0%</span>
             <span id="pill-avg" class="px-3 py-1 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/80">⚡ Avg Latency: -- ms</span>
             <span id="pill-down" class="px-3 py-1 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/80">● Downtime: 0m</span>
-            <span id="pill-inc" class="px-3 py-1 rounded-full bg-slate-900 text-slate-200 border border-slate-800">🕒 Incidents: 0 Incidents</span>
+            <span id="pill-inc" class="px-3 py-1 rounded-full bg-slate-900 text-slate-300 border border-slate-800">🕒 Incidents: 0 Incidents</span>
           </div>
 
-          <!-- Full-Width Spike Line Chart -->
-          <div id="svg-history-chart" class="w-full h-44"></div>
+          <div id="svg-history-ping" class="w-full h-40 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
       </section>
 
@@ -342,7 +356,7 @@
 
           <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
             <span class="text-xs font-bold shrink-0" style="color: var(--accent)">root@litetun:~#</span>
-            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
+            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
             <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
           </div>
         </div>

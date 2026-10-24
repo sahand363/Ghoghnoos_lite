@@ -87,6 +87,7 @@ func registerRoutes(port, panelPath string) {
 		historyCopy := append([]PingPoint{}, db.PingHistory...)
 		prefsCopy := db.Prefs
 		localLogs := append([]string{}, logs...)
+		metricsCopy := sysMetrics
 		mu.Unlock()
 
 		activeLogs := localLogs
@@ -112,11 +113,9 @@ func registerRoutes(port, panelPath string) {
 								activeLogs = append(activeLogs, fmt.Sprintf("%v", item))
 							}
 						}
-						if rm, ok := rem["ram_mb"].(float64); ok {
-							ramMB = uint64(rm)
-						}
-						if rg, ok := rem["goroutines"].(float64); ok {
-							goroutines = int(rg)
+						if rm, ok := rem["metrics"].(map[string]interface{}); ok {
+							b, _ := json.Marshal(rm)
+							_ = json.Unmarshal(b, &metricsCopy)
 						}
 						if rp, ok := rem["panel_port"].(string); ok {
 							activePort = rp
@@ -142,6 +141,7 @@ func registerRoutes(port, panelPath string) {
 			"ram_mb":       ramMB,
 			"goroutines":   goroutines,
 			"server_time":  srvTime,
+			"metrics":      metricsCopy,
 			"servers":      serversCopy,
 			"tunnels":      tunnelsCopy,
 			"ping_history": historyCopy,

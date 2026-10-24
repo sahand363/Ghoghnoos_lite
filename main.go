@@ -35,8 +35,9 @@ const (
 
 var (
 	db = Database{
-		Servers: []ServerNode{},
-		Tunnels: []Tunnel{},
+		Servers:     []ServerNode{},
+		Tunnels:     []Tunnel{},
+		PingHistory: []PingPoint{},
 		Prefs: UIPrefs{
 			Theme:          "amber",
 			Lang:           "en",
@@ -88,6 +89,7 @@ func main() {
 	loadLogsFromDisk()
 	initSelfSignedCert()
 	loadDBFromDisk(port)
+	go startPingMonitor()
 	registerRoutes(port, panelPath)
 
 	fmt.Printf("Ghoghnoos-lite (LiteTun) running on port %s (Path: /%s/)\n", port, panelPath)

@@ -22,7 +22,6 @@ func computeWSAccept(key string) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-// Clean comma-separated port list and strip any accidental IP prefix (e.g. "127.0.0.1:2053" -> "2053")
 func parsePortList(raw string) []string {
 	var res []string
 	for _, part := range strings.Split(raw, ",") {
@@ -63,79 +62,69 @@ func startTunnelEngine(t Tunnel) {
 		t.SNI = "www.speedtest.net"
 	}
 
-	xuiPorts := parsePortList(t.XUIPort)
-	if len(xuiPorts) == 0 {
-		xuiPorts = []string{"2053"}
+	inboundPorts := parsePortList(t.InboundPorts)
+	if len(inboundPorts) == 0 {
+		inboundPorts = []string{"2053"}
+	}
+	tunPort := strings.TrimSpace(t.TunnelPort)
+	if tunPort == "" {
+		tunPort = "10201"
 	}
 
-	// EXIT SERVER ROLE: Listen on single WSS Bridge Port and route to 127.0.0.1:<X-Target-Port>
+	// EXIT SERVER (US): Listens on single TunnelPort and forwards to 127.0.0.1:<InboundPort>
 	if t.Role == "server" {
-		wssPort := strings.TrimSpace(t.WSSPort)
-		if wssPort == "" {
-			wssPort = parsePortList(t.ListenPort)[0]
-		}
 		tlsCfg := &tls.Config{
 			Certificates: []tls.Certificate{localCert},
 			MinVersion:   tls.VersionTLS12,
 		}
-		ln, err := tls.Listen("tcp", ":"+wssPort, tlsCfg)
+		ln, err := tls.Listen("tcp", ":"+tunPort, tlsCfg)
 		if err != nil {
-			addLog(fmt.Sprintf("ERR [WSS-Exit %s]: Cannot bind :%s -> %v", t.Name, wssPort, err))
+			addLog(fmt.Sprintf("ERR [WSS-Exit %s]: Cannot bind Tunnel Port :%s -> %v", t.Name, tunPort, err))
 			return
 		}
 		mu.Lock()
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
-		addLog(fmt.Sprintf("LISTEN [WSS-Exit %s]: TLS :%s -> 127.0.0.1:[%s]", t.Name, wssPort, strings.Join(xuiPorts, ",")))
+		addLog(fmt.Sprintf("LISTEN [WSS-Exit %s]: Tunnel :%s -> X-UI 127.0.0.1:[%s]", t.Name, tunPort, strings.Join(inboundPorts, ",")))
 
-		go func(l net.Listener, defaultXUI string) {
+		go func(l net.Listener, defPort string) {
 			for {
 				conn, err := l.Accept()
 				if err != nil {
 					return
 				}
-				go handleWSSServerConn(conn, t, defaultXUI)
+				go handleWSSServerConn(conn, t, defPort)
 			}
-		}(ln, xuiPorts[0])
+		}(ln, inboundPorts[0])
 		return
 	}
 
-	// ENTRY SERVER ROLE: Listen on 1 or multiple comma-separated Entry Ports
-	entryPorts := parsePortList(t.ListenPort)
-	if len(entryPorts) == 0 && len(xuiPorts) > 0 {
-		entryPorts = xuiPorts
-	}
-
-	for idx, ePort := range entryPorts {
-		targetXUI := xuiPorts[0]
-		if idx < len(xuiPorts) {
-			targetXUI = xuiPorts[idx]
-		}
-
-		ln, err := net.Listen("tcp", ":"+ePort)
+	// ENTRY SERVER (IRAN): Opens every port in InboundPorts locally and tunnels via RemoteAddr
+	for _, iPort := range inboundPorts {
+		ln, err := net.Listen("tcp", ":"+iPort)
 		if err != nil {
-			addLog(fmt.Sprintf("ERR [WSS-Entry %s]: Cannot bind :%s -> %v", t.Name, ePort, err))
+			addLog(fmt.Sprintf("ERR [WSS-Entry %s]: Cannot bind Inbound Port :%s -> %v", t.Name, iPort, err))
 			continue
 		}
 		mu.Lock()
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
 
-		addLog(fmt.Sprintf("LISTEN [WSS-Entry %s]: :%s -> wss://%s%s (X-UI :%s)", t.Name, ePort, t.RemoteAddr, t.WSPath, targetXUI))
+		addLog(fmt.Sprintf("LISTEN [WSS-Entry %s]: :%s -> Tunnel %s (X-UI :%s)", t.Name, iPort, t.RemoteAddr, iPort))
 
-		go func(l net.Listener, xPort string) {
+		go func(l net.Listener, targetPort string) {
 			for {
 				client, err := l.Accept()
 				if err != nil {
 					return
 				}
-				go handleWSSClientConn(client, t, xPort)
+				go handleWSSClientConn(client, t, targetPort)
 			}
-		}(ln, targetXUI)
+		}(ln, iPort)
 	}
 }
 
-func handleWSSClientConn(client net.Conn, t Tunnel, xuiPort string) {
+func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 	defer client.Close()
 
 	pinClean := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(t.CertPin, ":", "")))
@@ -180,7 +169,7 @@ func handleWSSClientConn(client net.Conn, t Tunnel, xuiPort string) {
 		"Sec-WebSocket-Version: 13\r\n"+
 		"X-Target-Port: %s\r\n"+
 		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n\r\n",
-		t.WSPath, t.SNI, wsKey, xuiPort)
+		t.WSPath, t.SNI, wsKey, targetPort)
 
 	if _, err := remoteTLS.Write([]byte(req)); err != nil {
 		return
@@ -209,7 +198,7 @@ func handleWSSClientConn(client net.Conn, t Tunnel, xuiPort string) {
 	io.Copy(client, remoteTLS)
 }
 
-func handleWSSServerConn(conn net.Conn, t Tunnel, defaultXUI string) {
+func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	defer conn.Close()
 	br := bufio.NewReader(conn)
 
@@ -225,7 +214,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultXUI string) {
 	}
 
 	var wsKey string
-	targetPort := defaultXUI
+	targetPort := defaultPort
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil || line == "\r\n" || line == "\n" {
@@ -242,6 +231,29 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultXUI string) {
 		}
 	}
 
+	// End-to-End Ping Probe: Test if local 127.0.0.1:<port> is actually open in X-UI!
+	if strings.HasPrefix(targetPort, "probe:") {
+		probePort := strings.TrimPrefix(targetPort, "probe:")
+		testConn, err := net.DialTimeout("tcp", "127.0.0.1:"+probePort, 2*time.Second)
+		if err != nil {
+			addLog(fmt.Sprintf("PING-WARN [%s]: Tunnel OK, but local X-UI 127.0.0.1:%s is not listening!", t.Name, probePort))
+			conn.Write([]byte("HTTP/1.1 502 X-UI Port " + probePort + " Unreachable\r\n\r\n"))
+			return
+		}
+		testConn.Close()
+		accept := computeWSAccept(wsKey)
+		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)))
+		return
+	}
+
+	localXUI := "127.0.0.1:" + strings.TrimPrefix(targetPort, "127.0.0.1:")
+	target, err := net.DialTimeout("tcp", localXUI, 5*time.Second)
+	if err != nil {
+		addLog(fmt.Sprintf("X-UI ERR [%s]: Local X-UI %s refused connection (%v)", t.Name, localXUI, err))
+		return
+	}
+	defer target.Close()
+
 	accept := computeWSAccept(wsKey)
 	resp := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\n"+
 		"Upgrade: websocket\r\n"+
@@ -250,19 +262,6 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultXUI string) {
 	if _, err := conn.Write([]byte(resp)); err != nil {
 		return
 	}
-
-	// If this is a Ping test probe, close cleanly after 101 handshake
-	if targetPort == "ping" {
-		return
-	}
-
-	localXUI := "127.0.0.1:" + strings.TrimPrefix(targetPort, "127.0.0.1:")
-	target, err := net.DialTimeout("tcp", localXUI, 5*time.Second)
-	if err != nil {
-		addLog(fmt.Sprintf("X-UI ERR [%s]: Local X-UI port %s refused connection (%v)", t.Name, localXUI, err))
-		return
-	}
-	defer target.Close()
 
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())

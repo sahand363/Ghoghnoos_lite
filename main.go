@@ -50,6 +50,9 @@ var (
 	localCert       tls.Certificate
 	localPinHex     string
 	localIP         string
+	appRxBytes      uint64
+	appTxBytes      uint64
+	sysMetrics      SystemMetrics
 	mu              sync.Mutex
 )
 
@@ -89,6 +92,7 @@ func main() {
 	loadLogsFromDisk()
 	initSelfSignedCert()
 	loadDBFromDisk(port)
+	go startTelemetryMonitor()
 	go startPingMonitor()
 	registerRoutes(port, panelPath)
 

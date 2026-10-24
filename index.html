@@ -23,7 +23,6 @@
     select option { background-color: #0b111a; color: #f1f5f9; padding: 8px; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
     .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
-    /* Fixes Persian + English mixed text ordering without mirroring page layout */
     [data-i18n] { unicode-bidi: plaintext; }
   </style>
 </head>
@@ -144,7 +143,7 @@
         <button onclick="saveConfig()" class="text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
       </section>
 
-      <!-- TAB 3: TUNNELS -->
+      <!-- TAB 3: TUNNELS (Clean 2-Port Design) -->
       <section id="view-tunnels" class="hidden space-y-6">
         <!-- Method Cards -->
         <div class="card rounded-2xl p-5 space-y-3">
@@ -170,7 +169,7 @@
           </div>
         </div>
 
-        <!-- Tunnel Form -->
+        <!-- 2-Port Tunnel Form -->
         <div class="card rounded-2xl p-6 space-y-4">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
             <h3 class="font-bold text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
@@ -179,7 +178,7 @@
 
           <input type="hidden" id="tun-id">
 
-          <!-- Server Dropdowns (Dark styled + triggers Auto-Naming) -->
+          <!-- Server Dropdowns -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3.5 rounded-xl border border-slate-800">
             <div>
               <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Iran Relay)</label>
@@ -191,30 +190,27 @@
             </div>
           </div>
 
+          <!-- Row 1: Tunnel Name + Single Tunnel Highway Port + Multi Inbound Ports -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name (Auto-filled)</label>
               <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-lg p-2.5 text-xs font-semibold">
             </div>
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="listen_port">Entry Port(s) (Iran)</label>
-              <input id="listen-port" placeholder="e.g. 10101, 10102" class="w-full rounded-lg p-2.5 text-xs font-mono">
+              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port (WSS Highway)</label>
+              <input id="tunnel-port" value="10201" placeholder="e.g. 10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="wss_port_lbl">WSS Bridge Port (Kharej)</label>
-              <input id="wss-port" value="10201" placeholder="10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
+              <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">X-UI Inbound Port(s)</label>
+              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden focus-within:border-amber-400">
+                <span class="px-2 py-2.5 text-[11px] font-mono text-slate-400 bg-slate-900/90 border-r border-slate-800 select-none">Ports:</span>
+                <input id="inbound-ports" placeholder="45454, 2053" class="w-full border-0 p-2.5 text-xs font-mono focus:outline-none">
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <!-- Port-Only X-UI Inbound with locked 127.0.0.1: badge and comma support -->
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="xui_port_lbl">X-UI Port(s) (Comma separated)</label>
-              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden focus-within:border-amber-400">
-                <span class="px-2.5 py-2.5 text-xs font-mono text-slate-400 bg-slate-900/90 border-r border-slate-800 select-none">127.0.0.1:</span>
-                <input id="xui-port" placeholder="2053, 7788" class="w-full border-0 p-2.5 text-xs font-mono focus:outline-none">
-              </div>
-            </div>
+          <!-- Row 2: SNI + WS Path + SHA-256 Pin -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
               <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
@@ -234,7 +230,7 @@
         </div>
 
         <div class="space-y-3">
-          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (Full Details, Ping & Edit)</h3>
+          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End X-UI Ping & Edit)</h3>
           <div id="tunnel-list" class="space-y-3"></div>
         </div>
       </section>
@@ -270,7 +266,7 @@
 
         <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
           <span class="text-xs font-bold" style="color: var(--accent)">root@litetun:~#</span>
-          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'servers', 'tunnels', 'pin'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
+          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'pin', 'clear', 'restart'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
           <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
         </div>
       </div>

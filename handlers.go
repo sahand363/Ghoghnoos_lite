@@ -19,6 +19,7 @@ func registerRoutes(port, panelPath string) {
 
 	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
 		ramMB, goroutines := getMemoryStats()
+		cc, qd := checkBBRStatus()
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		recentLogs := append([]string{}, logs...)
@@ -55,11 +56,11 @@ func registerRoutes(port, panelPath string) {
 		.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}
 		h2{color:#facc15;margin-top:0;}</style></head><body>
 		<div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2>
-		<p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>Goroutines:</b> %d | <b>Time:</b> %s</p>
+		<p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s) | <b>Time:</b> %s</p>
 		<p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div>
 		<div class="box"><h3>Active Tunnel Listeners & Local X-UI Port Check</h3>%s</div>
 		<div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div>
-		</body></html>`, localIP, port, ramMB, goroutines, time.Now().Format("15:04:05 MST"), localPinHex, rows, strings.Join(recentLogs, "\n"))
+		</body></html>`, localIP, port, ramMB, cc, qd, time.Now().Format("15:04:05 MST"), localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +95,7 @@ func registerRoutes(port, panelPath string) {
 		activePort := port
 		activePath := panelPath
 		activePin := localPinHex
-		srvTime := time.Now().Format("15:04:05 MST")
+		srvTime := time.Now().UTC().Format("15:04:05 UTC")
 
 		if targetSrvID != "" && targetSrvID != "local" {
 			mu.Lock()
@@ -151,6 +152,40 @@ func registerRoutes(port, panelPath string) {
 			"panel_path":   activePath,
 			"cert_pin":     activePin,
 		})
+	})
+
+	// Enable BBR + FQ on Local or Selected Remote Server
+	http.HandleFunc("/api/bbr", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		targetSrvID := r.URL.Query().Get("server_id")
+		if targetSrvID != "" && targetSrvID != "local" {
+			mu.Lock()
+			srv := findServerByID(targetSrvID)
+			mu.Unlock()
+			if srv != nil {
+				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), "application/json", nil)
+				if err == nil {
+					resp.Body.Close()
+					addLog(fmt.Sprintf("BBR-OK [%s]: Enabled Google BBR + FQ on %s!", srv.Name, srv.IP))
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+			}
+		}
+		if err := enableLocalBBR(); err != nil {
+			addLog(fmt.Sprintf("BBR-ERR: Could not enable BBR -> %v", err))
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		cc, qd := checkBBRStatus()
+		mu.Lock()
+		sysMetrics.BBRStatus = cc
+		sysMetrics.Qdisc = qd
+		mu.Unlock()
+		addLog(fmt.Sprintf("BBR-OK: Kernel TCP Congestion Control set to %s (qdisc: %s)", cc, qd))
+		w.WriteHeader(http.StatusOK)
 	})
 
 	http.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
@@ -272,10 +307,13 @@ func registerRoutes(port, panelPath string) {
 		addLog("root@litetun:~# " + cmd)
 		switch strings.ToLower(cmd) {
 		case "help":
-			addLog("Commands: status | pin | clear | restart")
+			addLog("Commands: status | bbr | pin | clear | restart")
 		case "status":
 			ram, goCnt := getMemoryStats()
 			addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", goCnt, ram, port))
+		case "bbr":
+			cc, qd := checkBBRStatus()
+			addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
 		case "pin":
 			addLog("SHA256-PIN: " + localPinHex)
 		case "clear":
@@ -375,6 +413,7 @@ func registerRoutes(port, panelPath string) {
 
 		if srcSrv == nil || srcSrv.IsLocal {
 			go startTunnelEngine(t)
+			go probeTunnelOnce(t)
 		} else {
 			body, _ := json.Marshal(t)
 			http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), "application/json", bytes.NewReader(body))

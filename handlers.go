@@ -18,7 +18,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
-		ramMB, goroutines := getMemoryStats()
+		ramMB, _ := getMemoryStats()
 		cc, qd := checkBBRStatus()
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
@@ -154,7 +154,6 @@ func registerRoutes(port, panelPath string) {
 		})
 	})
 
-	// Enable BBR + FQ on Local or Selected Remote Server
 	http.HandleFunc("/api/bbr", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			return

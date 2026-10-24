@@ -55,15 +55,17 @@ type PingPoint struct {
 }
 
 type SystemMetrics struct {
-	CPUPercent  float64   `json:"cpu_pct"`
-	RAMUsedMB   uint64    `json:"ram_used_mb"`
-	RAMTotalMB  uint64    `json:"ram_total_mb"`
-	RAMPct      uint64    `json:"ram_pct"`
-	LiveRxMbps  float64   `json:"live_rx_mbps"`
-	LiveTxMbps  float64   `json:"live_tx_mbps"`
-	TpHistory   []float64 `json:"tp_history"`
-	AppTotalMB  uint64    `json:"app_total_mb"`
-	SrvTotalGB  float64   `json:"srv_total_gb"`
+	CPUPercent float64   `json:"cpu_pct"`
+	RAMUsedMB  uint64    `json:"ram_used_mb"`
+	RAMTotalMB uint64    `json:"ram_total_mb"`
+	RAMPct     uint64    `json:"ram_pct"`
+	LiveRxMbps float64   `json:"live_rx_mbps"`
+	LiveTxMbps float64   `json:"live_tx_mbps"`
+	TpHistory  []float64 `json:"tp_history"`
+	AppTotalMB uint64    `json:"app_total_mb"`
+	SrvTotalGB float64   `json:"srv_total_gb"`
+	BBRStatus  string    `json:"bbr_status"`
+	Qdisc      string    `json:"qdisc"`
 }
 
 type UIPrefs struct {
@@ -74,16 +76,41 @@ type UIPrefs struct {
 }
 
 type Database struct {
-	Servers     []ServerNode `json:"servers"`
-	Tunnels     []Tunnel     `json:"tunnels"`
-	PingHistory []PingPoint  `json:"ping_history"`
-	AppBaseBytes uint64      `json:"app_base_bytes"`
-	Prefs       UIPrefs      `json:"prefs"`
+	Servers      []ServerNode `json:"servers"`
+	Tunnels      []Tunnel     `json:"tunnels"`
+	PingHistory  []PingPoint  `json:"ping_history"`
+	AppBaseBytes uint64       `json:"app_base_bytes"`
+	Prefs        UIPrefs      `json:"prefs"`
 }
 
 type ConfigReq struct {
 	Port string `json:"port"`
 	Path string `json:"path"`
+}
+
+func checkBBRStatus() (cc, qdisc string) {
+	b1, err := os.ReadFile("/proc/sys/net/ipv4/tcp_congestion_control")
+	if err == nil {
+		cc = strings.TrimSpace(string(b1))
+	} else {
+		cc = "unknown"
+	}
+	b2, err := os.ReadFile("/proc/sys/net/core/default_qdisc")
+	if err == nil {
+		qdisc = strings.TrimSpace(string(b2))
+	} else {
+		qdisc = "unknown"
+	}
+	return cc, qdisc
+}
+
+func enableLocalBBR() error {
+	cmd := "sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf; " +
+		"sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf; " +
+		"echo 'net.core.default_qdisc=fq' >> /etc/sysctl.conf; " +
+		"echo 'net.ipv4.tcp_congestion_control=bbr' >> /etc/sysctl.conf; " +
+		"sysctl -p"
+	return exec.Command("bash", "-c", cmd).Run()
 }
 
 func readCPUSample() (idle, total uint64) {
@@ -96,9 +123,6 @@ func readCPUSample() (idle, total uint64) {
 		return 0, 0
 	}
 	fields := strings.Fields(lines[0])
-	if len(fields) < 5 {
-		return 0, 0
-	}
 	for i := 1; i < len(fields); i++ {
 		v, _ := strconv.ParseUint(fields[i], 10, 64)
 		total += v
@@ -155,6 +179,11 @@ func readNetDevBytes() (rx, tx uint64) {
 }
 
 func startTelemetryMonitor() {
+	mu.Lock()
+	sysMetrics.TpHistory = []float64{0.05, 0.08, 0.06, 0.10, 0.07, 0.09}
+	sysMetrics.BBRStatus, sysMetrics.Qdisc = checkBBRStatus()
+	mu.Unlock()
+
 	prevIdle, prevTotal := readCPUSample()
 	prevRx, prevTx := readNetDevBytes()
 	for {
@@ -177,6 +206,7 @@ func startTelemetryMonitor() {
 		prevRx, prevTx = rx, tx
 
 		usedMB, totalMB, ramPct := readMemInfo()
+		cc, qd := checkBBRStatus()
 		appBytes := db.AppBaseBytes + atomic.LoadUint64(&appRxBytes) + atomic.LoadUint64(&appTxBytes)
 
 		mu.Lock()
@@ -188,6 +218,8 @@ func startTelemetryMonitor() {
 		sysMetrics.LiveTxMbps = float64(int(txMbps*100)) / 100.0
 		sysMetrics.AppTotalMB = appBytes / (1024 * 1024)
 		sysMetrics.SrvTotalGB = float64(int((float64(rx+tx)/(1024*1024*1024))*100)) / 100.0
+		sysMetrics.BBRStatus = cc
+		sysMetrics.Qdisc = qd
 		sysMetrics.TpHistory = append(sysMetrics.TpHistory, sysMetrics.LiveRxMbps+sysMetrics.LiveTxMbps)
 		if len(sysMetrics.TpHistory) > 75 {
 			sysMetrics.TpHistory = sysMetrics.TpHistory[len(sysMetrics.TpHistory)-75:]

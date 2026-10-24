@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -19,8 +18,53 @@ import (
 func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
 		w.Write(appJS)
+	})
+
+	// Dedicated Standalone Sentinel Info Page
+	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
+		ramMB, goroutines := getMemoryStats()
+		mu.Lock()
+		tuns := append([]Tunnel{}, db.Tunnels...)
+		recentLogs := append([]string{}, logs...)
+		mu.Unlock()
+		if len(recentLogs) > 20 {
+			recentLogs = recentLogs[len(recentLogs)-20:]
+		}
+
+		rows := ""
+		for _, t := range tuns {
+			ports := parsePortList(t.InboundPorts)
+			portBadges := ""
+			for _, p := range ports {
+				c, err := net.DialTimeout("tcp", "127.0.0.1:"+p, 500*time.Millisecond)
+				if err == nil {
+					c.Close()
+					portBadges += fmt.Sprintf(`<span style="color:#10b981;margin-right:8px;">● 127.0.0.1:%s (X-UI OPEN)</span>`, p)
+				} else {
+					portBadges += fmt.Sprintf(`<span style="color:#f43f5e;margin-right:8px;">● 127.0.0.1:%s (REFUSED)</span>`, p)
+				}
+			}
+			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;">
+				<b>%s</b> (%s) | Tunnel Port: <code>:%s</code> | WS Path: <code>%s</code><br>
+				<div style="margin-top:6px;font-size:12px;">Local X-UI Check: %s</div>
+			</div>`, t.Name, t.Role, t.TunnelPort, t.WSPath, portBadges)
+		}
+		if rows == "" {
+			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title>
+		<style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:30px;max-width:900px;margin:auto;}
+		.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:20px;margin-bottom:20px;}
+		h2{color:#facc15;margin-top:0;}</style></head><body>
+		<div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2>
+		<p><b>Server IP:</b> %s &nbsp;|&nbsp; <b>Sentinel Port:</b> %s &nbsp;|&nbsp; <b>RAM:</b> %d MB &nbsp;|&nbsp; <b>Goroutines:</b> %d</p>
+		<p><b>SHA-256 Certificate Pin:</b> <code style="color:#10b981;">%s</code></p></div>
+		<div class="box"><h3>Active Tunnel Listeners & Local X-UI Port Check</h3>%s</div>
+		<div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div>
+		</body></html>`, localIP, port, ramMB, goroutines, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -35,14 +79,12 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
 		w.Write(indexHTML)
 	})
 
 	http.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		targetSrvID := r.URL.Query().Get("server_id")
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
+		ramMB, goroutines := getMemoryStats()
 
 		mu.Lock()
 		serversCopy := append([]ServerNode{}, db.Servers...)
@@ -52,8 +94,6 @@ func registerRoutes(port, panelPath string) {
 		mu.Unlock()
 
 		activeLogs := localLogs
-		ramMB := m.Alloc / 1024 / 1024
-		goroutines := runtime.NumGoroutine()
 		activePort := port
 		activePath := panelPath
 		activePin := localPinHex
@@ -161,6 +201,25 @@ func registerRoutes(port, panelPath string) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Re-Deploy & Verify Sentinel Button Handler
+	http.HandleFunc("/api/servers/deploy", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		mu.Lock()
+		srv := findServerByID(id)
+		if srv == nil {
+			mu.Unlock()
+			http.Error(w, "Server not found", 404)
+			return
+		}
+		srv.Status = "Verifying..."
+		sCopy := *srv
+		saveDBLocked()
+		mu.Unlock()
+
+		go deploySentinelSSH(sCopy)
+		w.WriteHeader(http.StatusOK)
+	})
+
 	http.HandleFunc("/api/prefs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			return
@@ -214,17 +273,8 @@ func registerRoutes(port, panelPath string) {
 		case "help":
 			addLog("Commands: status | servers | tunnels | pin | clear | restart")
 		case "status":
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", runtime.NumGoroutine(), m.Alloc/1024/1024, port))
-		case "servers":
-			mu.Lock()
-			addLog(fmt.Sprintf("SERVERS: %d server(s) linked.", len(db.Servers)))
-			mu.Unlock()
-		case "tunnels":
-			mu.Lock()
-			addLog(fmt.Sprintf("TUNNELS: %d active tunnel(s).", len(db.Tunnels)))
-			mu.Unlock()
+			ram, goCnt := getMemoryStats()
+			addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", goCnt, ram, port))
 		case "pin":
 			addLog("SHA256-PIN: " + localPinHex)
 		case "clear":
@@ -270,11 +320,10 @@ func registerRoutes(port, panelPath string) {
 		if !strings.HasPrefix(t.WSPath, "/") {
 			t.WSPath = "/" + strings.Trim(t.WSPath, "/")
 		}
-		if t.WSSPort == "" {
-			t.WSSPort = "10201"
+		if t.TunnelPort == "" {
+			t.TunnelPort = "10201"
 		}
-		t.XUIPort = strings.Join(parsePortList(t.XUIPort), ", ")
-		t.ListenPort = strings.Join(parsePortList(t.ListenPort), ", ")
+		t.InboundPorts = strings.Join(parsePortList(t.InboundPorts), ", ")
 		if t.ID == "" {
 			t.ID = fmt.Sprintf("wss-%d", time.Now().Unix()%10000)
 		}
@@ -284,25 +333,23 @@ func registerRoutes(port, panelPath string) {
 		dstSrv := findServerByID(t.TargetServer)
 		mu.Unlock()
 
-		// Configure Exit Server & Entry Server cleanly without overwriting XUIPort!
 		if srcSrv != nil && dstSrv != nil && t.Role != "server" {
 			t.Role = "client"
-			t.RemoteAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.WSSPort)
+			t.RemoteAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.TunnelPort)
 			if t.CertPin == "" && dstSrv.CertPin != "" {
 				t.CertPin = dstSrv.CertPin
 			}
 
 			exitTunnel := Tunnel{
-				ID:         t.ID + "-exit",
-				Name:       t.Name + " (Exit)",
-				Role:       "server",
-				Method:     "wss",
-				WSSPort:    t.WSSPort,
-				ListenPort: t.WSSPort,
-				XUIPort:    t.XUIPort,
-				SNI:        t.SNI,
-				WSPath:     t.WSPath,
-				Status:     "Online",
+				ID:           t.ID + "-exit",
+				Name:         t.Name + " (Exit)",
+				Role:         "server",
+				Method:       "wss",
+				TunnelPort:   t.TunnelPort,
+				InboundPorts: t.InboundPorts,
+				SNI:          t.SNI,
+				WSPath:       t.WSPath,
+				Status:       "Online",
 			}
 
 			if dstSrv.IsLocal {
@@ -312,7 +359,9 @@ func registerRoutes(port, panelPath string) {
 				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
 				if err == nil {
 					resp.Body.Close()
-					addLog(fmt.Sprintf("EXIT-OK [%s]: WSS Bridge :%s -> 127.0.0.1:[%s] on %s", t.Name, t.WSSPort, t.XUIPort, dstSrv.Name))
+					addLog(fmt.Sprintf("EXIT-OK [%s]: Tunnel :%s -> 127.0.0.1:[%s] on %s", t.Name, t.TunnelPort, t.InboundPorts, dstSrv.Name))
+				} else {
+					addLog(fmt.Sprintf("EXIT-ERR [%s]: Could not reach Sentinel on %s:%s", t.Name, dstSrv.IP, dstSrv.PanelPort))
 				}
 			}
 		}
@@ -357,11 +406,17 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 
+		ports := parsePortList(tun.InboundPorts)
+		firstPort := "2053"
+		if len(ports) > 0 {
+			firstPort = ports[0]
+		}
+
 		start := time.Now()
 		tlsCfg := &tls.Config{ServerName: tun.SNI, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
 		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 		if err != nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Tunnel Offline"})
 			return
 		}
 		defer conn.Close()
@@ -369,18 +424,19 @@ func registerRoutes(port, panelPath string) {
 		keyBytes := make([]byte, 16)
 		rand.Read(keyBytes)
 		wsKey := base64.StdEncoding.EncodeToString(keyBytes)
-		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: ping\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
-			tun.WSPath, tun.SNI, wsKey)
+		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: probe:%s\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+			tun.WSPath, tun.SNI, firstPort, wsKey)
 		conn.Write([]byte(req))
 
 		br := bufio.NewReader(conn)
 		statusLine, err := br.ReadString('\n')
 		ms := time.Since(start).Milliseconds()
 		if err != nil || !strings.Contains(statusLine, "101") {
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "ms": ms})
+			addLog(fmt.Sprintf("PING-WARN [%s]: WSS Tunnel OK (%d ms), but X-UI port :%s refused!", tun.Name, ms, firstPort))
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "ms": ms, "error": "X-UI :" + firstPort + " Refused"})
 			return
 		}
-		addLog(fmt.Sprintf("PING-OK [%s]: %d ms", tun.Name, ms))
+		addLog(fmt.Sprintf("PING-OK [%s]: Tunnel + X-UI :%s verified in %d ms!", tun.Name, firstPort, ms))
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "ms": ms})
 	})
 

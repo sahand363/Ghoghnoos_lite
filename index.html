@@ -2,6 +2,7 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Ghoghnoos-lite (LiteTun)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
@@ -17,79 +18,87 @@
     body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.25s ease; }
     .card { background-color: var(--card); border: 1px solid var(--border); }
     .accent-border { border: 1px solid var(--accent); background: var(--accent-glow); }
-    .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
     .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
     input, select { background-color: #080d14; border: 1px solid var(--border); color: #f1f5f9; color-scheme: dark; }
     select option { background-color: #0b111a; color: #f1f5f9; padding: 8px; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
     .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
     [data-i18n] { unicode-bidi: plaintext; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
+  <!-- TOP NAVIGATION BAR (Mobile & Tablet Responsive) -->
+  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
       <div>
-        <span class="font-bold tracking-wide text-sm block leading-none">Ghoghnoos-lite</span>
-        <span class="text-[10px] text-slate-400 font-mono">LiteTun WSS Engine</span>
+        <span class="font-bold tracking-wide text-xs sm:text-sm block leading-none">Ghoghnoos-lite</span>
+        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun WSS Engine</span>
       </div>
     </div>
 
-    <!-- Menu Order: Servers - Config - Tunnels - Logs -->
-    <nav class="flex items-center gap-1 sm:gap-2">
-      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+    <!-- Scrollable Nav on Mobile: Servers - Config - Tunnels - Uptime/Logs -->
+    <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
+      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
         <span>🖥️</span><span data-i18n="servers">Servers</span>
       </button>
-      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
         <span>⚙️</span><span data-i18n="config">Config</span>
       </button>
-      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
         <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
       </button>
-      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-4 py-2 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-        <span>📋</span><span data-i18n="logs">Logs</span>
+      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
+        <span>📊</span><span data-i18n="logs">24h/7d Ping</span>
       </button>
     </nav>
 
-    <!-- Right Controls: Active Server Dropdown + Theme Dots + EN/FA -->
-    <div class="flex items-center gap-3">
-      <div class="flex items-center gap-1.5 bg-[#0b111a] border border-slate-700 rounded-xl px-2.5 py-1">
+    <!-- Right Controls: Live Server Clock + Server Selector + Theme Dots + EN/FA -->
+    <div class="flex items-center gap-2 order-2 md:order-3">
+      <!-- Live Server Time Badge -->
+      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2 py-1 text-[11px] font-mono text-emerald-400" title="Selected Server Time">
+        <span>🕒</span>
+        <span id="top-server-clock">--:--:--</span>
+      </div>
+
+      <!-- Active Server Dropdown -->
+      <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-700 rounded-xl px-2 py-1">
         <span class="text-xs text-slate-400">🖥️</span>
-        <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-[#0b111a] border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer pr-2">
+        <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-[#0b111a] border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-[160px] truncate">
           <option value="local">Master</option>
         </select>
       </div>
 
-      <div class="hidden sm:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
-        <button onclick="applyTheme('amber', true)" title="Midnight Amber" class="w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('cyan', true)" title="Nordic Cyan" class="w-3.5 h-3.5 rounded-full bg-sky-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('emerald', true)" title="Emerald Slate" class="w-3.5 h-3.5 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('indigo', true)" title="OLED Indigo" class="w-3.5 h-3.5 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
-        <button onclick="applyTheme('rose', true)" title="Sakura Rose" class="w-3.5 h-3.5 rounded-full bg-rose-400 hover:scale-125 transition"></button>
+      <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
+        <button onclick="applyTheme('amber', true)" class="w-3 h-3 rounded-full bg-amber-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('cyan', true)" class="w-3 h-3 rounded-full bg-sky-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('emerald', true)" class="w-3 h-3 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('indigo', true)" class="w-3 h-3 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('rose', true)" class="w-3 h-3 rounded-full bg-rose-400 hover:scale-125 transition"></button>
       </div>
 
-      <button onclick="toggleLang()" id="lang-btn" class="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
+      <button onclick="toggleLang()" id="lang-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
     </div>
   </header>
 
-  <!-- MAIN WORKSPACE -->
-  <main class="flex-1 max-w-[1440px] w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+  <!-- MAIN WORKSPACE (Stacks cleanly on Mobile/Tablet, 12-col split on Desktop) -->
+  <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
 
-    <!-- LEFT COLUMN (7 Cols) -->
-    <div class="lg:col-span-7 space-y-6">
+    <!-- LEFT COLUMN (7 Cols on Desktop, Full width on Mobile) -->
+    <div class="lg:col-span-7 space-y-4 sm:space-y-6">
 
       <!-- TAB 1: SERVERS -->
-      <section id="view-servers" class="space-y-6">
-        <div class="card rounded-2xl p-6 space-y-4">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+      <section id="view-servers" class="space-y-4 sm:space-y-6">
+        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
+          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
             <div>
-              <h3 class="font-bold text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enter SSH credentials to automatically install and link the Sentinel agent on the target server.</p>
+              <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enter SSH credentials to automatically install and link the Sentinel agent.</p>
             </div>
-            <span class="text-xs px-2.5 py-1 rounded-lg font-mono shrink-0" style="background: var(--accent-glow); color: var(--accent);">Native Go SSH</span>
+            <span class="text-[11px] px-2.5 py-1 rounded-lg font-mono" style="background: var(--accent-glow); color: var(--accent);">Native Go SSH</span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -118,16 +127,16 @@
             </div>
           </div>
 
-          <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel</button>
+          <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)</button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="server-cards-list"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4" id="server-cards-list"></div>
       </section>
 
       <!-- TAB 2: CONFIG -->
-      <section id="view-config" class="hidden card rounded-2xl p-6 space-y-5">
+      <section id="view-config" class="hidden card rounded-2xl p-4 sm:p-6 space-y-5">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-          <h3 class="font-bold text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
+          <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port & URL Configuration</h3>
           <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -140,26 +149,25 @@
             <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
           </div>
         </div>
-        <button onclick="saveConfig()" class="text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
+        <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
       </section>
 
-      <!-- TAB 3: TUNNELS (Clean 2-Port Design) -->
-      <section id="view-tunnels" class="hidden space-y-6">
-        <!-- Method Cards -->
-        <div class="card rounded-2xl p-5 space-y-3">
-          <h3 class="font-bold text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
+      <!-- TAB 3: TUNNELS -->
+      <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
+        <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
+          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="p-4 rounded-xl accent-border cursor-pointer flex items-center justify-between">
+            <div class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
                   <span>WSS</span>
                   <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">ACTIVE</span>
                 </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 with Pinned Certificate</div>
+                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 + Keep-Alive</div>
               </div>
               <span class="text-lg">🔒</span>
             </div>
-            <div class="p-4 rounded-xl border border-slate-800 bg-[#080d14]/60 opacity-50 cursor-not-allowed flex items-center justify-between">
+            <div class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/60 opacity-50 cursor-not-allowed flex items-center justify-between">
               <div>
                 <div class="font-bold text-sm text-slate-400">Next Method (Coming Soon)</div>
                 <div class="text-xs text-slate-500 mt-1">Additional transport protocols</div>
@@ -169,17 +177,15 @@
           </div>
         </div>
 
-        <!-- 2-Port Tunnel Form -->
-        <div class="card rounded-2xl p-6 space-y-4">
+        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
+            <h3 class="font-bold text-sm sm:text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
             <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
           </div>
 
           <input type="hidden" id="tun-id">
 
-          <!-- Server Dropdowns -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3.5 rounded-xl border border-slate-800">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3 rounded-xl border border-slate-800">
             <div>
               <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Iran Relay)</label>
               <select id="tun-src-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
@@ -190,7 +196,6 @@
             </div>
           </div>
 
-          <!-- Row 1: Tunnel Name + Single Tunnel Highway Port + Multi Inbound Ports -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name (Auto-filled)</label>
@@ -209,7 +214,6 @@
             </div>
           </div>
 
-          <!-- Row 2: SNI + WS Path + SHA-256 Pin -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
@@ -226,48 +230,94 @@
             <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
           </div>
 
-          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish WSS Tunnel Between Selected Servers</button>
+          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish WSS Tunnel Between Selected Servers</button>
         </div>
 
         <div class="space-y-3">
-          <h3 class="font-bold text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End X-UI Ping & Edit)</h3>
+          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End X-UI Ping & Edit)</h3>
           <div id="tunnel-list" class="space-y-3"></div>
         </div>
       </section>
 
-      <!-- TAB 4: LOGS -->
-      <section id="view-logs" class="hidden card rounded-2xl p-6 space-y-4">
-        <div class="flex justify-between items-center">
-          <div class="flex items-center gap-2">
-            <h3 class="font-bold text-base" data-i18n="logs_full">Server Log Archive</h3>
-            <span id="log-target-badge" class="text-xs px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
+      <!-- TAB 4: 24-HOUR & 7-DAY PING / UPTIME MONITOR -->
+      <section id="view-logs" class="hidden space-y-4 sm:space-y-6">
+        <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
+          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 class="font-bold text-sm sm:text-base" data-i18n="uptime_title">24-Hour & 7-Day Tunnel Ping & Uptime Monitor</h3>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="uptime_sub">Automatic every-60s health probes + manual ping checks.</p>
+            </div>
+            <span id="log-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">All Tunnels</span>
           </div>
-          <button onclick="sendCmd('clear')" class="px-3 py-1 rounded-lg bg-rose-950 text-rose-400 border border-rose-800 text-xs" data-i18n="clear_logs">Clear Logs</button>
+
+          <!-- 3 Summary KPI Cards -->
+          <div class="grid grid-cols-3 gap-2.5 sm:gap-4 text-center" dir="ltr">
+            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
+              <div class="text-[11px] text-slate-400">24h Uptime</div>
+              <div id="stat-24h" class="text-base sm:text-xl font-bold text-emerald-400 font-mono mt-1">100%</div>
+            </div>
+            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
+              <div class="text-[11px] text-slate-400">7-Day Uptime</div>
+              <div id="stat-7d" class="text-base sm:text-xl font-bold text-sky-400 font-mono mt-1">100%</div>
+            </div>
+            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
+              <div class="text-[11px] text-slate-400">Avg Ping</div>
+              <div id="stat-avg-ms" class="text-base sm:text-xl font-bold text-amber-400 font-mono mt-1">-- ms</div>
+            </div>
+          </div>
+
+          <!-- 24-Hour Hourly Status Bar -->
+          <div class="space-y-2" dir="ltr">
+            <div class="flex justify-between text-xs text-slate-400">
+              <span>Last 24 Hours (Hourly Health Blocks)</span>
+              <span>Now</span>
+            </div>
+            <div id="bar-24h" class="grid grid-cols-24 gap-1 h-7 items-center" style="grid-template-columns: repeat(24, minmax(0, 1fr));"></div>
+          </div>
+
+          <!-- 7-Day Daily Status Bar -->
+          <div class="space-y-2" dir="ltr">
+            <div class="flex justify-between text-xs text-slate-400">
+              <span>Last 7 Days (Daily Uptime Summary)</span>
+              <span>Today</span>
+            </div>
+            <div id="bar-7d" class="grid grid-cols-7 gap-2 h-8 items-center"></div>
+          </div>
+
+          <!-- Recent Outages & Ping Events -->
+          <div class="space-y-2 pt-2 border-t border-slate-800">
+            <h4 class="text-xs font-bold text-slate-300" data-i18n="outage_log">Recent Ping Events & Offline Incidents</h4>
+            <div id="incident-list" class="space-y-1.5 max-h-[240px] overflow-y-auto text-xs font-mono" dir="ltr"></div>
+          </div>
         </div>
-        <pre id="full-log-box" class="putty-win p-4 rounded-xl text-xs text-emerald-400 h-[460px] overflow-y-auto leading-relaxed"></pre>
       </section>
 
     </div>
 
-    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console -->
-    <aside class="lg:col-span-5 sticky top-20">
-      <div class="putty-win rounded-2xl overflow-hidden flex flex-col h-[600px]">
+    <!-- RIGHT COLUMN (5 Cols on Desktop, Collapsible on Mobile) -->
+    <aside class="lg:col-span-5 lg:sticky lg:top-20 w-full">
+      <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <span id="putty-title" class="text-xs font-bold text-slate-300 ml-2">root@Master — Ghoghnoos-lite Console</span>
+          <div class="flex items-center gap-2 truncate">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+            <span id="putty-title" class="text-xs font-bold text-slate-300 ml-1 truncate">root@Master — Ghoghnoos-lite</span>
           </div>
-          <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
+          <div class="flex items-center gap-3 shrink-0">
+            <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
+            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400">▼</button>
+          </div>
         </div>
 
-        <div id="putty-box" class="flex-1 p-4 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
+        <div id="putty-body" class="flex flex-col h-[340px] sm:h-[540px]">
+          <div id="putty-box" class="flex-1 p-3.5 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
 
-        <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
-          <span class="text-xs font-bold" style="color: var(--accent)">root@litetun:~#</span>
-          <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="type 'help', 'status', 'pin', 'clear', 'restart'..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
-          <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
+          <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
+            <span class="text-xs font-bold shrink-0" style="color: var(--accent)">root@litetun:~#</span>
+            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
+            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
+          </div>
         </div>
       </div>
     </aside>

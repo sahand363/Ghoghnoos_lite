@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -52,6 +54,18 @@ type PingPoint struct {
 	Error     string `json:"err,omitempty"`
 }
 
+type SystemMetrics struct {
+	CPUPercent  float64   `json:"cpu_pct"`
+	RAMUsedMB   uint64    `json:"ram_used_mb"`
+	RAMTotalMB  uint64    `json:"ram_total_mb"`
+	RAMPct      uint64    `json:"ram_pct"`
+	LiveRxMbps  float64   `json:"live_rx_mbps"`
+	LiveTxMbps  float64   `json:"live_tx_mbps"`
+	TpHistory   []float64 `json:"tp_history"`
+	AppTotalMB  uint64    `json:"app_total_mb"`
+	SrvTotalGB  float64   `json:"srv_total_gb"`
+}
+
 type UIPrefs struct {
 	Theme          string `json:"theme"`
 	Lang           string `json:"lang"`
@@ -63,12 +77,123 @@ type Database struct {
 	Servers     []ServerNode `json:"servers"`
 	Tunnels     []Tunnel     `json:"tunnels"`
 	PingHistory []PingPoint  `json:"ping_history"`
+	AppBaseBytes uint64      `json:"app_base_bytes"`
 	Prefs       UIPrefs      `json:"prefs"`
 }
 
 type ConfigReq struct {
 	Port string `json:"port"`
 	Path string `json:"path"`
+}
+
+func readCPUSample() (idle, total uint64) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, 0
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return 0, 0
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 {
+		return 0, 0
+	}
+	for i := 1; i < len(fields); i++ {
+		v, _ := strconv.ParseUint(fields[i], 10, 64)
+		total += v
+		if i == 4 {
+			idle = v
+		}
+	}
+	return idle, total
+}
+
+func readMemInfo() (usedMB, totalMB, pct uint64) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return m.Alloc / 1024 / 1024, 1024, 15
+	}
+	var memTotal, memAvail uint64
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MemTotal:") {
+			fmt.Sscanf(line, "MemTotal: %d kB", &memTotal)
+		} else if strings.HasPrefix(line, "MemAvailable:") {
+			fmt.Sscanf(line, "MemAvailable: %d kB", &memAvail)
+		}
+	}
+	if memTotal > 0 {
+		totalMB = memTotal / 1024
+		usedMB = (memTotal - memAvail) / 1024
+		pct = (usedMB * 100) / totalMB
+	}
+	return usedMB, totalMB, pct
+}
+
+func readNetDevBytes() (rx, tx uint64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return 0, 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "lo:") || !strings.Contains(line, ":") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		fields := strings.Fields(parts[1])
+		if len(fields) >= 9 {
+			r, _ := strconv.ParseUint(fields[0], 10, 64)
+			t, _ := strconv.ParseUint(fields[8], 10, 64)
+			rx += r
+			tx += t
+		}
+	}
+	return rx, tx
+}
+
+func startTelemetryMonitor() {
+	prevIdle, prevTotal := readCPUSample()
+	prevRx, prevTx := readNetDevBytes()
+	for {
+		time.Sleep(2 * time.Second)
+		idle, total := readCPUSample()
+		var cpuPct float64
+		if total > prevTotal {
+			cpuPct = float64((total-prevTotal)-(idle-prevIdle)) * 100.0 / float64(total-prevTotal)
+		}
+		prevIdle, prevTotal = idle, total
+
+		rx, tx := readNetDevBytes()
+		var rxMbps, txMbps float64
+		if rx >= prevRx {
+			rxMbps = float64((rx-prevRx)*8) / (2.0 * 1000000.0)
+		}
+		if tx >= prevTx {
+			txMbps = float64((tx-prevTx)*8) / (2.0 * 1000000.0)
+		}
+		prevRx, prevTx = rx, tx
+
+		usedMB, totalMB, ramPct := readMemInfo()
+		appBytes := db.AppBaseBytes + atomic.LoadUint64(&appRxBytes) + atomic.LoadUint64(&appTxBytes)
+
+		mu.Lock()
+		sysMetrics.CPUPercent = float64(int(cpuPct*10)) / 10.0
+		sysMetrics.RAMUsedMB = usedMB
+		sysMetrics.RAMTotalMB = totalMB
+		sysMetrics.RAMPct = ramPct
+		sysMetrics.LiveRxMbps = float64(int(rxMbps*100)) / 100.0
+		sysMetrics.LiveTxMbps = float64(int(txMbps*100)) / 100.0
+		sysMetrics.AppTotalMB = appBytes / (1024 * 1024)
+		sysMetrics.SrvTotalGB = float64(int((float64(rx+tx)/(1024*1024*1024))*100)) / 100.0
+		sysMetrics.TpHistory = append(sysMetrics.TpHistory, sysMetrics.LiveRxMbps+sysMetrics.LiveTxMbps)
+		if len(sysMetrics.TpHistory) > 75 {
+			sysMetrics.TpHistory = sysMetrics.TpHistory[len(sysMetrics.TpHistory)-75:]
+		}
+		mu.Unlock()
+	}
 }
 
 func detectLocalIP() string {

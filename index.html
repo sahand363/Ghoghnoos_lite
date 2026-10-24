@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Ghoghnoos-lite (LiteTun)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: dark;
@@ -30,7 +30,7 @@
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR (Mobile & Tablet Responsive) -->
+  <!-- TOP NAVIGATION BAR -->
   <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
     <div class="flex items-center gap-2.5">
       <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
@@ -40,7 +40,7 @@
       </div>
     </div>
 
-    <!-- Scrollable Nav on Mobile: Servers - Config - Tunnels - Uptime/Logs -->
+    <!-- Menu Order: Servers - Config - Tunnels - Log -->
     <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
       <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
         <span>🖥️</span><span data-i18n="servers">Servers</span>
@@ -52,19 +52,17 @@
         <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
       </button>
       <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
-        <span>📊</span><span data-i18n="logs">24h/7d Ping</span>
+        <span>📋</span><span data-i18n="logs">Log</span>
       </button>
     </nav>
 
     <!-- Right Controls: Live Server Clock + Server Selector + Theme Dots + EN/FA -->
     <div class="flex items-center gap-2 order-2 md:order-3">
-      <!-- Live Server Time Badge -->
       <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2 py-1 text-[11px] font-mono text-emerald-400" title="Selected Server Time">
         <span>🕒</span>
         <span id="top-server-clock">--:--:--</span>
       </div>
 
-      <!-- Active Server Dropdown -->
       <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-700 rounded-xl px-2 py-1">
         <span class="text-xs text-slate-400">🖥️</span>
         <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-[#0b111a] border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-[160px] truncate">
@@ -84,10 +82,10 @@
     </div>
   </header>
 
-  <!-- MAIN WORKSPACE (Stacks cleanly on Mobile/Tablet, 12-col split on Desktop) -->
+  <!-- MAIN WORKSPACE -->
   <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
 
-    <!-- LEFT COLUMN (7 Cols on Desktop, Full width on Mobile) -->
+    <!-- LEFT COLUMN (7 Cols) -->
     <div class="lg:col-span-7 space-y-4 sm:space-y-6">
 
       <!-- TAB 1: SERVERS -->
@@ -239,62 +237,91 @@
         </div>
       </section>
 
-      <!-- TAB 4: 24-HOUR & 7-DAY PING / UPTIME MONITOR -->
-      <section id="view-logs" class="hidden space-y-4 sm:space-y-6">
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
-          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <h3 class="font-bold text-sm sm:text-base" data-i18n="uptime_title">24-Hour & 7-Day Tunnel Ping & Uptime Monitor</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="uptime_sub">Automatic every-60s health probes + manual ping checks.</p>
+      <!-- TAB 4: LOG (Exact Telemetry & SVG Charts Dashboard from Screenshot) -->
+      <section id="view-logs" class="hidden space-y-3.5" dir="ltr">
+        <!-- Row 1: 4 Metric Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="card rounded-2xl p-4">
+            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">CPU USAGE</div>
+            <div id="m-cpu" class="text-xl sm:text-2xl font-bold text-sky-400 font-mono mt-1">1.2%</div>
+          </div>
+          <div class="card rounded-2xl p-4">
+            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">RAM USAGE</div>
+            <div id="m-ram" class="text-sm sm:text-lg font-bold text-indigo-400 font-mono mt-1.5 truncate">24% (240/980 MB)</div>
+          </div>
+          <div class="card rounded-2xl p-4">
+            <div class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">LIVE THROUGHPUT (8 MBPS = 1 MB/S)</div>
+            <div id="m-tp" class="text-xs sm:text-sm font-bold text-emerald-400 font-mono mt-2">↓ 0.00 Mbps | ↑ 0.00 Mbps</div>
+          </div>
+          <div class="card rounded-2xl p-4">
+            <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">REACHABLE / CHECKED</div>
+            <div id="m-reach" class="text-xl sm:text-2xl font-bold text-slate-100 font-mono mt-1">20 / 20</div>
+          </div>
+        </div>
+
+        <!-- Row 2: 2 Bandwidth Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="card rounded-2xl p-4 border-l-2 border-l-sky-400">
+            <div class="text-xs font-bold text-sky-400 font-mono">⚡ APP CUMULATIVE BANDWIDTH</div>
+            <div id="m-app-bw" class="text-xs font-mono text-slate-200 mt-1.5">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
+          </div>
+          <div class="card rounded-2xl p-4 border-l-2 border-l-indigo-400">
+            <div class="text-xs font-bold text-indigo-400 font-mono">🖥️ WHOLE SERVER BANDWIDTH</div>
+            <div id="m-srv-bw" class="text-xs font-mono text-slate-200 mt-1.5">24h: 1.20 GB | 7d: 1.20 GB | 30d: 1.20 GB</div>
+          </div>
+        </div>
+
+        <!-- Row 3: 2 Smooth Area Charts (Recent Ping + 150s Throughput) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="card rounded-2xl p-4 space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-slate-400">📈 RECENT PING</span>
+              <span id="chart-ping-now" class="text-sky-400 font-bold">-- ms</span>
             </div>
-            <span id="log-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">All Tunnels</span>
+            <div id="svg-recent-ping" class="w-full h-36"></div>
+            <div class="flex justify-between text-[10px] font-mono text-slate-500 pt-1">
+              <span>-120s</span><span>-60s</span><span class="text-sky-400">Now</span>
+            </div>
           </div>
 
-          <!-- 3 Summary KPI Cards -->
-          <div class="grid grid-cols-3 gap-2.5 sm:gap-4 text-center" dir="ltr">
-            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
-              <div class="text-[11px] text-slate-400">24h Uptime</div>
-              <div id="stat-24h" class="text-base sm:text-xl font-bold text-emerald-400 font-mono mt-1">100%</div>
+          <div class="card rounded-2xl p-4 space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-slate-400 truncate">📊 150-SECOND THROUGHPUT</span>
+              <span id="chart-tp-now" class="text-indigo-400 font-bold shrink-0">0.00 Mbps</span>
             </div>
-            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
-              <div class="text-[11px] text-slate-400">7-Day Uptime</div>
-              <div id="stat-7d" class="text-base sm:text-xl font-bold text-sky-400 font-mono mt-1">100%</div>
+            <div id="svg-recent-tp" class="w-full h-36"></div>
+            <div class="flex justify-between text-[10px] font-mono text-slate-500 pt-1">
+              <span>-150s</span><span>-75s</span><span class="text-indigo-400">Now</span>
             </div>
-            <div class="bg-[#080d14] border border-slate-800 p-3 rounded-xl">
-              <div class="text-[11px] text-slate-400">Avg Ping</div>
-              <div id="stat-avg-ms" class="text-base sm:text-xl font-bold text-amber-400 font-mono mt-1">-- ms</div>
+          </div>
+        </div>
+
+        <!-- Row 4: Full-Width 24-Hour & 7-Day Server Ping + Downtime History -->
+        <div class="card rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-wrap justify-between items-center gap-2">
+            <div class="text-xs sm:text-sm font-bold font-mono tracking-wide text-slate-100">🕒 24-HOUR & 7-DAY SERVER PING + DOWNTIME HISTORY</div>
+            <div class="flex items-center gap-1 bg-[#080d14] p-1 rounded-lg border border-slate-800 text-xs font-mono">
+              <button onclick="setHistoryRange('24h')" id="btn-rng-24h" class="px-2.5 py-1 rounded bg-sky-400 text-black font-bold">24h</button>
+              <button onclick="setHistoryRange('7d')" id="btn-rng-7d" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">7d</button>
             </div>
           </div>
 
-          <!-- 24-Hour Hourly Status Bar -->
-          <div class="space-y-2" dir="ltr">
-            <div class="flex justify-between text-xs text-slate-400">
-              <span>Last 24 Hours (Hourly Health Blocks)</span>
-              <span>Now</span>
-            </div>
-            <div id="bar-24h" class="grid grid-cols-24 gap-1 h-7 items-center" style="grid-template-columns: repeat(24, minmax(0, 1fr));"></div>
+          <!-- 4 Status Pills -->
+          <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+            <span id="pill-uptime" class="px-3 py-1 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">● Uptime: 100.0%</span>
+            <span id="pill-avg" class="px-3 py-1 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/80">⚡ Avg Latency: -- ms</span>
+            <span id="pill-down" class="px-3 py-1 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/80">● Downtime: 0m</span>
+            <span id="pill-inc" class="px-3 py-1 rounded-full bg-slate-900 text-slate-200 border border-slate-800">🕒 Incidents: 0 Incidents</span>
           </div>
 
-          <!-- 7-Day Daily Status Bar -->
-          <div class="space-y-2" dir="ltr">
-            <div class="flex justify-between text-xs text-slate-400">
-              <span>Last 7 Days (Daily Uptime Summary)</span>
-              <span>Today</span>
-            </div>
-            <div id="bar-7d" class="grid grid-cols-7 gap-2 h-8 items-center"></div>
-          </div>
-
-          <!-- Recent Outages & Ping Events -->
-          <div class="space-y-2 pt-2 border-t border-slate-800">
-            <h4 class="text-xs font-bold text-slate-300" data-i18n="outage_log">Recent Ping Events & Offline Incidents</h4>
-            <div id="incident-list" class="space-y-1.5 max-h-[240px] overflow-y-auto text-xs font-mono" dir="ltr"></div>
-          </div>
+          <!-- Full-Width Spike Line Chart -->
+          <div id="svg-history-chart" class="w-full h-44"></div>
         </div>
       </section>
 
     </div>
 
-    <!-- RIGHT COLUMN (5 Cols on Desktop, Collapsible on Mobile) -->
+    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console -->
     <aside class="lg:col-span-5 lg:sticky lg:top-20 w-full">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">

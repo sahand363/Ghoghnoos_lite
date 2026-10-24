@@ -22,11 +22,12 @@ const dict = {
     wss_desc: 'WebSocket over TLS 1.3 with Pinned Certificate',
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
     src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
-    tun_name: 'Tunnel Name (Auto-filled)', listen_port: 'Entry Port(s) (Iran)',
-    wss_port_lbl: 'WSS Bridge Port (Kharej)', xui_port_lbl: 'X-UI Port(s) (Comma separated)',
+    tun_name: 'Tunnel Name (Auto-filled)',
+    tun_port_lbl: 'Tunnel Port (WSS Highway)',
+    inb_port_lbl: 'X-UI Inbound Port(s)',
     cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
     create: '⚡ Establish WSS Tunnel Between Selected Servers',
-    active_tunnels: 'Active Tunnels (Full Details, Ping & Edit)',
+    active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)',
     logs_full: 'Server Log Archive', clear_logs: 'Clear Logs'
   },
   fa: {
@@ -42,11 +43,12 @@ const dict = {
     wss_desc: 'وب‌سوکت روی TLS 1.3 با گواهی پین‌شده',
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
     src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
-    tun_name: 'نام تانل (پیشنهاد خودکار)', listen_port: 'پورت(های) ورودی در ایران',
-    wss_port_lbl: 'پورت پل WSS در خارج', xui_port_lbl: 'پورت(های) X-UI (با کاما جدا کنید)',
+    tun_name: 'نام تانل (پیشنهاد خودکار)',
+    tun_port_lbl: 'پورت تانل (پل ارتباطی WSS)',
+    inb_port_lbl: 'پورت(های) اینباند X-UI (با کاما)',
     cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
     create: '⚡ برقراری تانل WSS بین دو سرور انتخاب‌شده',
-    active_tunnels: 'تانل‌های فعال (جزئیات کامل، تست پینگ و ویرایش)',
+    active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)',
     logs_full: 'آرشیو کامل لاگ‌های سرور', clear_logs: 'پاک کردن لاگ'
   }
 };
@@ -135,6 +137,11 @@ async function addAndDeployServer() {
   fetchState();
 }
 
+async function redeployServer(id) {
+  await fetch('/api/servers/deploy?id=' + id, { method: 'POST' });
+  fetchState();
+}
+
 async function deleteServer(id) {
   if (!confirm('Remove this server from panel?')) return;
   await fetch('/api/servers?id=' + id, { method: 'DELETE' });
@@ -156,9 +163,8 @@ function runConsoleInput() {
 function resetForm() {
   userEditedName = false;
   document.getElementById('tun-id').value = '';
-  document.getElementById('listen-port').value = '';
-  document.getElementById('wss-port').value = '10201';
-  document.getElementById('xui-port').value = '';
+  document.getElementById('tunnel-port').value = '10201';
+  document.getElementById('inbound-ports').value = '';
   document.getElementById('tun-sni').value = 'www.speedtest.net';
   document.getElementById('tun-path').value = '/ws';
   document.getElementById('tun-pin').value = '';
@@ -173,9 +179,8 @@ function editTunnel(id) {
   document.getElementById('tun-name').value = t.name || '';
   if (t.source_server) document.getElementById('tun-src-srv').value = t.source_server;
   if (t.target_server) document.getElementById('tun-dst-srv').value = t.target_server;
-  document.getElementById('listen-port').value = t.listen_port || '';
-  document.getElementById('wss-port').value = t.wss_port || '10201';
-  document.getElementById('xui-port').value = t.xui_port || '';
+  document.getElementById('tunnel-port').value = t.tunnel_port || '10201';
+  document.getElementById('inbound-ports').value = t.inbound_ports || '';
   document.getElementById('tun-sni').value = t.sni || 'www.speedtest.net';
   document.getElementById('tun-path').value = t.ws_path || '/ws';
   document.getElementById('tun-pin').value = t.cert_pin || '';
@@ -191,12 +196,11 @@ async function pingTunnel(id) {
   renderTunnels();
   const res = await fetch('/api/ping?id=' + id);
   const data = await res.json();
-  pingResults[id] = data.ok ? `✅ ${data.ms} ms` : `❌ Unreachable`;
+  pingResults[id] = data.ok ? `✅ ${data.ms} ms (X-UI OK)` : `❌ ${data.error || 'Failed'}`;
   renderTunnels();
   fetchState();
 }
 
-// Strip accidental IPs if user pastes "127.0.0.1:2053" into the port-only box
 function cleanPortsInput(raw) {
   return raw.split(',').map(p => {
     const trimmed = p.trim();
@@ -208,10 +212,10 @@ async function saveTunnel() {
   let pathVal = document.getElementById('tun-path').value.trim() || '/ws';
   if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
 
-  const cleanXUI = cleanPortsInput(document.getElementById('xui-port').value);
-  const cleanEntry = cleanPortsInput(document.getElementById('listen-port').value) || cleanXUI;
+  const cleanInbounds = cleanPortsInput(document.getElementById('inbound-ports').value);
+  const cleanTunPort = cleanPortsInput(document.getElementById('tunnel-port').value) || '10201';
 
-  if (!cleanXUI) return alert('Please enter at least one X-UI Port (e.g. 2053 or 2053, 7788)');
+  if (!cleanInbounds) return alert('Please enter at least one X-UI Inbound Port (e.g. 45454 or 45454, 2053)');
 
   const payload = {
     id: document.getElementById('tun-id').value,
@@ -219,9 +223,8 @@ async function saveTunnel() {
     method: 'wss',
     source_server: document.getElementById('tun-src-srv').value,
     target_server: document.getElementById('tun-dst-srv').value,
-    listen_port: cleanEntry,
-    wss_port: cleanPortsInput(document.getElementById('wss-port').value) || '10201',
-    xui_port: cleanXUI,
+    tunnel_port: cleanTunPort,
+    inbound_ports: cleanInbounds,
     sni: document.getElementById('tun-sni').value.trim() || 'www.speedtest.net',
     ws_path: pathVal,
     cert_pin: document.getElementById('tun-pin').value.trim()
@@ -273,6 +276,7 @@ function renderServers() {
   document.getElementById('server-cards-list').innerHTML = currentServers.map(s => {
     const isOnline = s.status === 'Online';
     const badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
+    const infoUrl = `http://${s.ip}:${s.panel_port || '8880'}/sentinel-info`;
     return `
       <div class="card rounded-2xl p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
         <div class="flex justify-between items-start">
@@ -288,11 +292,15 @@ function renderServers() {
         <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">
           Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 28) + '...' : 'Pending...'}</span>
         </div>
-        <div class="flex justify-between items-center pt-2 border-t border-slate-800/60">
-          <button onclick="changeSelectedServer('${s.id}')" class="text-xs font-semibold hover:underline" style="color: var(--accent)">
-            ${s.id === selectedServer ? '✓ Active in Top Bar' : 'Select in Top Bar'}
-          </button>
-          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️ Remove</button>` : ''}
+        <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60">
+          <div class="flex items-center gap-2">
+            <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">
+              ${s.id === selectedServer ? '✓ Selected' : 'Select'}
+            </button>
+            <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy & Verify</button>
+            <a href="${infoUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info Page</a>
+          </div>
+          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
         </div>
       </div>
     `;
@@ -321,12 +329,11 @@ function renderTunnels() {
           </div>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
-          <div>Entry Port(s): <b class="text-amber-300">:${t.listen_port}</b></div>
-          <div>WSS Bridge: <b class="text-sky-300">${t.remote_addr || (':' + t.wss_port)}</b></div>
-          <div>X-UI Inbound(s): <b class="text-emerald-400">127.0.0.1:[${t.xui_port || '2053'}]</b></div>
+          <div>Tunnel Port: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
+          <div>Inbound Port(s): <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
           <div>SNI / Host: <b class="text-slate-200">${t.sni}</b></div>
           <div>WS Path: <b class="text-slate-200">${t.ws_path}</b></div>
-          <div class="truncate">Cert Pin: <b class="text-slate-300">${t.cert_pin ? t.cert_pin.slice(0, 14) + '...' : 'Auto'}</b></div>
+          <div class="col-span-2 truncate">Cert Pin: <b class="text-slate-300">${t.cert_pin || 'Auto'}</b></div>
         </div>
       </div>
     `;

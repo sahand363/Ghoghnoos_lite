@@ -50,11 +50,34 @@ var (
 	localCert       tls.Certificate
 	localPinHex     string
 	localIP         string
+	panelUser       string
+	panelPass       string
 	appRxBytes      uint64
 	appTxBytes      uint64
 	sysMetrics      SystemMetrics
 	mu              sync.Mutex
 )
+
+func loadEnvFile() {
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			k := strings.TrimSpace(parts[0])
+			v := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			if os.Getenv(k) == "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
+}
 
 func initSelfSignedCert() {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -83,6 +106,8 @@ func initSelfSignedCert() {
 }
 
 func main() {
+	loadEnvFile()
+
 	port := os.Getenv("PANEL_PORT")
 	if port == "" || port == "8880" {
 		port = "6001"
@@ -92,6 +117,8 @@ func main() {
 		}
 	}
 	panelPath := strings.Trim(os.Getenv("PANEL_PATH"), "/")
+	panelUser = strings.TrimSpace(os.Getenv("PANEL_USER"))
+	panelPass = strings.TrimSpace(os.Getenv("PANEL_PASS"))
 
 	loadLogsFromDisk()
 	initSelfSignedCert()
@@ -100,7 +127,7 @@ func main() {
 	go startPingMonitor()
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("Ghoghnoos-lite running on port %s (Path: /%s/)\n", port, panelPath)
+	fmt.Printf("Ghoghnoos-lite running on port %s (Path: /%s/ | Auth: %v)\n", port, panelPath, panelUser != "")
 	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
 		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
 	} else {

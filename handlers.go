@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -195,6 +196,18 @@ func registerRoutes(port, panelPath string) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	http.HandleFunc("/api/uninstall", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			_ = exec.Command("bash", "-c", "systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun; systemctl stop litetun").Run()
+			os.Exit(0)
+		}()
+	})
+
 	http.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			id := r.URL.Query().Get("id")
@@ -202,9 +215,13 @@ func registerRoutes(port, panelPath string) {
 				return
 			}
 			mu.Lock()
+			var removedSrv *ServerNode
 			var updated []ServerNode
 			for _, s := range db.Servers {
-				if s.ID != id {
+				if s.ID == id {
+					sCopy := s
+					removedSrv = &sCopy
+				} else {
 					updated = append(updated, s)
 				}
 			}
@@ -214,7 +231,9 @@ func registerRoutes(port, panelPath string) {
 			}
 			saveDBLocked()
 			mu.Unlock()
-			addLog("SERVER: Removed server node " + id)
+			if removedSrv != nil {
+				go uninstallSentinelRemote(*removedSrv)
+			}
 			w.WriteHeader(http.StatusOK)
 			return
 		}

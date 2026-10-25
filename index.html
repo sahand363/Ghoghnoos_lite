@@ -173,12 +173,11 @@
         </div>
       </section>
 
-      <!-- TAB 3: TUNNELS (Method 1: WSS & Method 2: SNI Spoofing + Packet Injection) -->
+      <!-- TAB 3: TUNNELS -->
       <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
           <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <!-- Method 1: WSS -->
             <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
@@ -190,7 +189,6 @@
               <span class="text-lg">🔒</span>
             </div>
 
-            <!-- Method 2: SNI Spoofing + Packet Fragmentation -->
             <div id="method-card-spoof" onclick="selectTunnelMethod('spoof')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition hover:border-slate-700">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
@@ -223,21 +221,29 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <!-- 4-Col Row: Name + Tunnel Port + Inbound Ports + Speed Limit -->
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name (Auto-filled)</label>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
               <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-lg p-2.5 text-xs font-semibold">
             </div>
             <div>
-              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port (Highway)</label>
-              <input id="tunnel-port" value="10201" placeholder="e.g. 10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
+              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port</label>
+              <input id="tunnel-port" value="10201" placeholder="10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
               <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">X-UI Inbound Port(s)</label>
-              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden focus-within:border-amber-400">
-                <span class="px-2 py-2.5 text-[11px] font-mono text-slate-400 bg-slate-900/90 border-r border-slate-800 select-none">Ports:</span>
-                <input id="inbound-ports" placeholder="45454, 2053" class="w-full border-0 p-2.5 text-xs font-mono focus:outline-none">
-              </div>
+              <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-lg p-2.5 text-xs font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-amber-400 font-semibold block mb-1" data-i18n="spd_limit_lbl">Speed Limit</label>
+              <select id="tun-speed" class="w-full rounded-lg p-2.5 text-xs font-mono bg-[#080d14]">
+                <option value="0">Unlimited</option>
+                <option value="2">2 MB/s (16 Mbps)</option>
+                <option value="4">4 MB/s (32 Mbps)</option>
+                <option value="8">8 MB/s (64 Mbps)</option>
+                <option value="16">16 MB/s (128 Mbps)</option>
+              </select>
             </div>
           </div>
 
@@ -253,10 +259,10 @@
             </div>
           </div>
 
-          <!-- SNI Spoofing Specific Row (Shown when Method 2 is selected) -->
+          <!-- SNI Spoofing Specific Row -->
           <div id="row-spoof-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-amber-500/30">
             <div class="text-xs font-bold text-amber-400 flex items-center justify-between">
-              <span>🎭 Low-Level SNI Spoofing & Packet Fragmentation Engine</span>
+              <span>🎭 Low-Level SNI Spoofing & Packet Fragmentation Engine (`spoof.go`)</span>
               <span class="text-[10px] font-mono text-emerald-400">RFC-5246 Raw ClientHello</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -293,7 +299,7 @@
         </div>
       </section>
 
-      <!-- TAB 4: LOG (Telemetry & Ping Analytics Dashboard) -->
+      <!-- TAB 4: LOG -->
       <section id="view-logs" class="hidden space-y-4" dir="ltr">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div class="card rounded-2xl p-4">

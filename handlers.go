@@ -250,7 +250,7 @@ func registerRoutes(port, panelPath string) {
 			s.SSHUser = "root"
 		}
 		if s.PanelPort == "" {
-			s.PanelPort = generateRandomPort()
+			s.PanelPort = "6001"
 		}
 		s.ID = fmt.Sprintf("srv-%d", time.Now().Unix()%10000)
 		s.Status = "Deploying..."
@@ -382,8 +382,8 @@ func registerRoutes(port, panelPath string) {
 		var t Tunnel
 		json.NewDecoder(r.Body).Decode(&t)
 		t.Status = "Online"
-		if t.Method == "" || t.Method == "spoof" {
-			if t.Method == "spoof" {
+		if t.Method == "" || t.Method == "spoof" || t.Method == "tls" {
+			if t.Method == "spoof" || t.Method == "tls" {
 				t.Method = "direct"
 			} else {
 				t.Method = "wss"

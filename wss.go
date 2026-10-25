@@ -2,15 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/rand"
 	"crypto/sha1"
-	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -20,118 +16,60 @@ import (
 	"time"
 )
 
-type byteCounterWriter struct {
+type throttledWriter struct {
 	w       io.Writer
 	counter *uint64
+	bytesLimitPerSec int64
+	bytesSentThisSec int64
+	lastSecStart     time.Time
 }
 
-func (b *byteCounterWriter) Write(p []byte) (int, error) {
-	n, err := b.w.Write(p)
-	if n > 0 {
-		atomic.AddUint64(b.counter, uint64(n))
+func newThrottledWriter(w io.Writer, counter *uint64, mbPerSec int) io.Writer {
+	limit := int64(mbPerSec) * 1024 * 1024
+	return &throttledWriter{
+		w:                w,
+		counter:          counter,
+		bytesLimitPerSec: limit,
+		lastSecStart:     time.Now(),
 	}
-	return n, err
 }
 
-// Low-level packet fragmenter: splits outgoing TLS ClientHello records into small TCP segments to defeat DPI
-type fragmentConn struct {
-	net.Conn
-	fragSize   int
-	packetsOut int
-}
-
-func (f *fragmentConn) Write(b []byte) (int, error) {
-	f.packetsOut++
-	if f.fragSize <= 0 || f.packetsOut > 3 || len(b) <= f.fragSize {
-		return f.Conn.Write(b)
+func (t *throttledWriter) Write(p []byte) (int, error) {
+	if t.bytesLimitPerSec <= 0 {
+		n, err := t.w.Write(p)
+		if n > 0 {
+			atomic.AddUint64(t.counter, uint64(n))
+		}
+		return n, err
 	}
 	total := 0
-	for len(b) > 0 {
-		chunk := f.fragSize
-		if chunk > len(b) {
-			chunk = len(b)
+	for len(p) > 0 {
+		now := time.Now()
+		if now.Sub(t.lastSecStart) >= time.Second {
+			t.bytesSentThisSec = 0
+			t.lastSecStart = now
 		}
-		n, err := f.Conn.Write(b[:chunk])
+		avail := t.bytesLimitPerSec - t.bytesSentThisSec
+		if avail <= 0 {
+			time.Sleep(15 * time.Millisecond)
+			continue
+		}
+		chunk := int64(len(p))
+		if chunk > avail {
+			chunk = avail
+		}
+		n, err := t.w.Write(p[:chunk])
 		total += n
+		if n > 0 {
+			t.bytesSentThisSec += int64(n)
+			atomic.AddUint64(t.counter, uint64(n))
+		}
 		if err != nil {
 			return total, err
 		}
-		b = b[chunk:]
-		time.Sleep(2 * time.Millisecond)
+		p = p[chunk:]
 	}
 	return total, nil
-}
-
-// Crafts a real binary RFC-5246 TLS ClientHello packet carrying the decoy/whitelisted SNI
-func buildFakeClientHello(fakeSNI string) []byte {
-	if fakeSNI == "" {
-		fakeSNI = "ebank.bmi.ir"
-	}
-	sniBytes := []byte(fakeSNI)
-	var ext bytes.Buffer
-	// Extension: server_name (0x0000)
-	binary.Write(&ext, binary.BigEndian, uint16(0x0000))
-	binary.Write(&ext, binary.BigEndian, uint16(len(sniBytes)+5))
-	binary.Write(&ext, binary.BigEndian, uint16(len(sniBytes)+3))
-	ext.WriteByte(0x00)
-	binary.Write(&ext, binary.BigEndian, uint16(len(sniBytes)))
-	ext.Write(sniBytes)
-
-	var ch bytes.Buffer
-	ch.Write([]byte{0x03, 0x03}) // TLS 1.2 record version
-	rnd := make([]byte, 32)
-	rand.Read(rnd)
-	ch.Write(rnd)
-	ch.WriteByte(0x00)                                     // SessionID len 0
-	ch.Write([]byte{0x00, 0x04, 0x13, 0x01, 0xcca8, 0x01}) // Ciphers + Compression
-	binary.Write(&ch, binary.BigEndian, uint16(ext.Len()))
-	ch.Write(ext.Bytes())
-
-	var handshake bytes.Buffer
-	handshake.WriteByte(0x01) // ClientHello type
-	l := ch.Len()
-	handshake.Write([]byte{byte(l >> 16), byte(l >> 8), byte(l)})
-	handshake.Write(ch.Bytes())
-
-	var record bytes.Buffer
-	record.Write([]byte("SNISPOOF")) // 8-byte sync magic for Exit Sentinel
-	binary.Write(&record, binary.BigEndian, uint16(handshake.Len()))
-	record.Write(handshake.Bytes())
-	return record.Bytes()
-}
-
-func buildSpoofTLSConfig(t Tunnel) *tls.Config {
-	pinClean := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(t.CertPin, ":", "")))
-	cfg := &tls.Config{
-		ServerName:         t.SNI,
-		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS12,
-	}
-	switch strings.ToLower(t.Fingerprint) {
-	case "firefox":
-		cfg.CipherSuites = []uint16{tls.TLS_AES_128_GCM_SHA256, tls.TLS_CHACHA20_POLY1305_SHA256, tls.TLS_AES_256_GCM_SHA384, tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
-		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
-	case "safari":
-		cfg.CipherSuites = []uint16{tls.TLS_AES_128_GCM_SHA256, tls.TLS_AES_256_GCM_SHA384, tls.TLS_CHACHA20_POLY1305_SHA256, tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305}
-		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256}
-	default: // Chrome 120
-		cfg.CipherSuites = []uint16{tls.TLS_AES_128_GCM_SHA256, tls.TLS_AES_256_GCM_SHA384, tls.TLS_CHACHA20_POLY1305_SHA256, tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
-		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256}
-	}
-	if pinClean != "" {
-		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			if len(rawCerts) == 0 {
-				return fmt.Errorf("no peer certificate")
-			}
-			sum := sha256.Sum256(rawCerts[0])
-			if hex.EncodeToString(sum[:]) != pinClean {
-				addLog(fmt.Sprintf("SEC-ALERT [%s]: Cert Pin mismatch!", t.Name))
-				return fmt.Errorf("certificate pin mismatch")
-			}
-			return nil
-		}
-	}
-	return cfg
 }
 
 func computeWSAccept(key string) string {
@@ -234,7 +172,7 @@ func startTunnelEngine(t Tunnel) {
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
 
-		addLog(fmt.Sprintf("LISTEN [%s-Entry %s]: :%s -> %s (FakeSNI: %s)", strings.ToUpper(t.Method), t.Name, iPort, t.RemoteAddr, t.FakeSNI))
+		addLog(fmt.Sprintf("LISTEN [%s-Entry %s]: :%s -> %s (Limit: %s MB/s)", strings.ToUpper(t.Method), t.Name, iPort, t.RemoteAddr, t.SpeedLimit))
 
 		go func(l net.Listener, targetPort string) {
 			for {
@@ -257,7 +195,6 @@ func dialTunnelSession(t Tunnel, targetPort string) (net.Conn, *bufio.Reader, er
 	}
 	enableKeepAlive(rawConn)
 
-	// METHOD 2: SNI SPOOFING + DECOY CLIENTHELLO INJECTION + RECORD FRAGMENTATION
 	if t.Method == "spoof" {
 		if t.FakeSNI != "" {
 			_, _ = rawConn.Write(buildFakeClientHello(t.FakeSNI))
@@ -286,7 +223,6 @@ func dialTunnelSession(t Tunnel, targetPort string) (net.Conn, *bufio.Reader, er
 		return tlsConn, br, nil
 	}
 
-	// METHOD 1: WSS (WebSocket over TLS 1.3)
 	tlsConn := tls.Client(rawConn, buildSpoofTLSConfig(t))
 	if err := tlsConn.Handshake(); err != nil {
 		rawConn.Close()
@@ -332,16 +268,19 @@ func handleClientConn(client net.Conn, t Tunnel, targetPort string) {
 		client.Write(buf)
 	}
 
+	mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+	txW := newThrottledWriter(remoteTLS, &appTxBytes, mbLimit)
+	rxW := newThrottledWriter(client, &appRxBytes, mbLimit)
+
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(&byteCounterWriter{w: remoteTLS, counter: &appTxBytes}, client); done <- struct{}{} }()
-	go func() { io.Copy(&byteCounterWriter{w: client, counter: &appRxBytes}, remoteTLS); done <- struct{}{} }()
+	go func() { io.Copy(txW, client); done <- struct{}{} }()
+	go func() { io.Copy(rxW, remoteTLS); done <- struct{}{} }()
 	<-done
 }
 
 func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 	defer rawConn.Close()
 
-	// Strip injected SNISPOOF decoy ClientHello packet if present before starting real TLS Server
 	brRaw := bufio.NewReader(rawConn)
 	peek, err := brRaw.Peek(8)
 	if err == nil && string(peek) == "SNISPOOF" {
@@ -366,7 +305,6 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 		return
 	}
 
-	// Handle Method 2: Native SNI Spoof Stream ("LTUN|<port>\n")
 	if strings.HasPrefix(firstLine, "LTUN|") {
 		targetPort := strings.TrimSpace(strings.TrimPrefix(firstLine, "LTUN|"))
 		if strings.HasPrefix(targetPort, "probe:") {
@@ -386,11 +324,10 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 		}
 		defer target.Close()
 		conn.Write([]byte("OK\n"))
-		pipeStreams(conn, target, br)
+		pipeStreams(conn, target, br, t.SpeedLimit)
 		return
 	}
 
-	// Handle Method 1: WSS Stream
 	parts := strings.Fields(firstLine)
 	if len(parts) < 2 || parts[1] != t.WSPath {
 		conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>200 OK</h1></body></html>"))
@@ -426,7 +363,7 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 	}
 	defer target.Close()
 	conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
-	pipeStreams(conn, target, br)
+	pipeStreams(conn, target, br, t.SpeedLimit)
 }
 
 type bufferedConn struct {
@@ -436,15 +373,19 @@ type bufferedConn struct {
 
 func (b *bufferedConn) Read(p []byte) (int, error) { return b.r.Read(p) }
 
-func pipeStreams(conn net.Conn, target net.Conn, br *bufio.Reader) {
+func pipeStreams(conn net.Conn, target net.Conn, br *bufio.Reader, speedLimit string) {
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
 		br.Read(buf)
 		target.Write(buf)
 	}
+	mbLimit, _ := strconv.Atoi(speedLimit)
+	txW := newThrottledWriter(target, &appRxBytes, mbLimit)
+	rxW := newThrottledWriter(conn, &appTxBytes, mbLimit)
+
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(&byteCounterWriter{w: target, counter: &appRxBytes}, conn); done <- struct{}{} }()
-	go func() { io.Copy(&byteCounterWriter{w: conn, counter: &appTxBytes}, target); done <- struct{}{} }()
+	go func() { io.Copy(txW, conn); done <- struct{}{} }()
+	go func() { io.Copy(rxW, target); done <- struct{}{} }()
 	<-done
 }
 

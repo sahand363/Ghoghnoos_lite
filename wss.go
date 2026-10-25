@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -276,6 +277,17 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 			wsKey = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
 		} else if strings.HasPrefix(low, "x-target-port:") {
 			targetPort = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		} else if strings.HasPrefix(low, "x-enroll-payload:") {
+			rawB64 := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			if decoded, err := base64.StdEncoding.DecodeString(rawB64); err == nil {
+				var hb EnrollHeartbeat
+				if json.Unmarshal(decoded, &hb) == nil {
+					rep := processIncomingEnroll(hb)
+					b, _ := json.Marshal(rep)
+					conn.Write(append(b, '\n'))
+					return
+				}
+			}
 		}
 	}
 

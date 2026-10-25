@@ -39,10 +39,11 @@ type Tunnel struct {
 	TunnelPort   string `json:"tunnel_port"`
 	InboundPorts string `json:"inbound_ports"`
 	RemoteAddr   string `json:"remote_addr"`
-	SNI          string `json:"sni"`           // Target TLS SNI / Host
-	FakeSNI      string `json:"fake_sni"`      // Decoy Whitelisted SNI injected in packet 1
-	Fingerprint  string `json:"fingerprint"`   // "chrome", "firefox", "safari"
-	FragSize     string `json:"frag_size"`     // TLS record fragment size in bytes (e.g. "64")
+	SNI          string `json:"sni"`
+	FakeSNI      string `json:"fake_sni"`
+	Fingerprint  string `json:"fingerprint"`
+	FragSize     string `json:"frag_size"`
+	SpeedLimit   string `json:"speed_limit"`   // "0" (unlimited), "2", "4", "8" MB/s
 	WSPath       string `json:"ws_path"`
 	CertPin      string `json:"cert_pin"`
 	Status       string `json:"status"`

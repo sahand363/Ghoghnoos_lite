@@ -45,10 +45,14 @@ func registerRoutes(port, panelPath string) {
 			if mBadge == "" {
 				mBadge = "WSS"
 			}
+			limStr := "Unlimited"
+			if t.SpeedLimit != "" && t.SpeedLimit != "0" {
+				limStr = t.SpeedLimit + " MB/s"
+			}
 			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;">
-				<b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code><br>
+				<b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code> | Speed: <b>%s</b><br>
 				<div style="margin-top:6px;font-size:12px;">Local X-UI Check: %s</div>
-			</div>`, mBadge, t.Name, t.Role, t.TunnelPort, portBadges)
+			</div>`, mBadge, t.Name, t.Role, t.TunnelPort, limStr, portBadges)
 		}
 		if rows == "" {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
@@ -389,7 +393,7 @@ func registerRoutes(port, panelPath string) {
 				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
 				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
 				FakeSNI: t.FakeSNI, Fingerprint: t.Fingerprint, FragSize: t.FragSize,
-				WSPath: t.WSPath, Status: "Online",
+				SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
 			}
 
 			if dstSrv.IsLocal {

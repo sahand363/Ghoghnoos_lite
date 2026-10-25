@@ -2,6 +2,7 @@ let lang = 'en';
 let currentTheme = 'amber';
 let currentTab = 'servers';
 let selectedServer = 'local';
+let selectedMethod = 'wss';
 let currentServers = [];
 let currentTunnels = [];
 let pingHistory = [];
@@ -31,13 +32,14 @@ const dict = {
     btn_bbr: '⚡ Enable Google BBR + FQ on Selected Server',
     step1_method: '1. Select Tunnel Transport Method',
     wss_desc: 'WebSocket over TLS 1.3 + Keep-Alive',
+    spoof_desc: 'Decoy ClientHello Injection + TLS Fragmentation',
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
     src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
     tun_name: 'Tunnel Name (Auto-filled)',
-    tun_port_lbl: 'Tunnel Port (WSS Highway)',
+    tun_port_lbl: 'Tunnel Port (Highway)',
     inb_port_lbl: 'X-UI Inbound Port(s)',
     cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
-    create: '⚡ Establish WSS Tunnel Between Selected Servers',
+    create: '⚡ Establish Tunnel Between Selected Servers',
     active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)'
   },
   fa: {
@@ -54,16 +56,40 @@ const dict = {
     btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
     step1_method: '۱. انتخاب متد تانل',
     wss_desc: 'وب‌سوکت روی TLS 1.3 با اتصال پایدار ضد قطعی',
+    spoof_desc: 'تزریق پکت SNI دامنه مجاز + تکهتکه کردن پکت TLS',
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
     src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
     tun_name: 'نام تانل (پیشنهاد خودکار)',
-    tun_port_lbl: 'پورت تانل (پل ارتباطی WSS)',
+    tun_port_lbl: 'پورت تانل (پل ارتباطی)',
     inb_port_lbl: 'پورت(های) اینباند X-UI (با کاما)',
     cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
-    create: '⚡ برقراری تانل WSS بین دو سرور انتخاب‌شده',
+    create: '⚡ برقراری تانل بین دو سرور انتخاب‌شده',
     active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)'
   }
 };
+
+function selectTunnelMethod(m) {
+  selectedMethod = m || 'wss';
+  const cWss = el('method-card-wss'), cSpoof = el('method-card-spoof');
+  const bWss = el('badge-method-wss'), bSpoof = el('badge-method-spoof');
+  const rWss = el('row-wss-opts'), rSpoof = el('row-spoof-opts');
+
+  if (selectedMethod === 'spoof') {
+    if (cWss) cWss.className = 'p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition';
+    if (cSpoof) cSpoof.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition';
+    if (bWss) { bWss.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; bWss.innerText = 'READY'; }
+    if (bSpoof) { bSpoof.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800'; bSpoof.innerText = 'SELECTED'; }
+    if (rWss) rWss.classList.add('hidden');
+    if (rSpoof) rSpoof.classList.remove('hidden');
+  } else {
+    if (cWss) cWss.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition';
+    if (cSpoof) cSpoof.className = 'p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition';
+    if (bWss) { bWss.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800'; bWss.innerText = 'SELECTED'; }
+    if (bSpoof) { bSpoof.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; bSpoof.innerText = 'READY'; }
+    if (rWss) rWss.classList.remove('hidden');
+    if (rSpoof) rSpoof.classList.add('hidden');
+  }
+}
 
 function applyLangUI() {
   setText('lang-btn', lang === 'en' ? 'FA' : 'EN');
@@ -200,6 +226,9 @@ function resetForm() {
   if (el('tunnel-port')) el('tunnel-port').value = '10201';
   if (el('inbound-ports')) el('inbound-ports').value = '';
   if (el('tun-sni')) el('tun-sni').value = 'www.speedtest.net';
+  if (el('tun-fake-sni')) el('tun-fake-sni').value = 'ebank.bmi.ir';
+  if (el('tun-fp')) el('tun-fp').value = 'chrome';
+  if (el('tun-frag')) el('tun-frag').value = '64';
   if (el('tun-path')) el('tun-path').value = '/ws';
   if (el('tun-pin')) el('tun-pin').value = '';
   autoUpdateTunnelName();
@@ -209,6 +238,7 @@ function editTunnel(id) {
   const t = currentTunnels.find(x => x.id === id);
   if (!t) return;
   userEditedName = true;
+  selectTunnelMethod(t.method || 'wss');
   if (el('tun-id')) el('tun-id').value = t.id;
   if (el('tun-name')) el('tun-name').value = t.name || '';
   if (t.source_server && el('tun-src-srv')) el('tun-src-srv').value = t.source_server;
@@ -216,6 +246,9 @@ function editTunnel(id) {
   if (el('tunnel-port')) el('tunnel-port').value = t.tunnel_port || '10201';
   if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
   if (el('tun-sni')) el('tun-sni').value = t.sni || 'www.speedtest.net';
+  if (el('tun-fake-sni')) el('tun-fake-sni').value = t.fake_sni || 'ebank.bmi.ir';
+  if (el('tun-fp')) el('tun-fp').value = t.fingerprint || 'chrome';
+  if (el('tun-frag')) el('tun-frag').value = t.frag_size || '64';
   if (el('tun-path')) el('tun-path').value = t.ws_path || '/ws';
   if (el('tun-pin')) el('tun-pin').value = t.cert_pin || '';
 }
@@ -252,13 +285,16 @@ async function saveTunnel() {
 
   const payload = {
     id: el('tun-id')?.value || '',
-    name: (el('tun-name')?.value || '').trim() || 'WSS-Bridge',
-    method: 'wss',
+    name: (el('tun-name')?.value || '').trim() || 'Bridge',
+    method: selectedMethod,
     source_server: el('tun-src-srv')?.value || 'local',
     target_server: el('tun-dst-srv')?.value || 'local',
     tunnel_port: cleanTunPort,
     inbound_ports: cleanInbounds,
     sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
+    fake_sni: (el('tun-fake-sni')?.value || '').trim() || 'ebank.bmi.ir',
+    fingerprint: el('tun-fp')?.value || 'chrome',
+    frag_size: (el('tun-frag')?.value || '').trim() || '64',
     ws_path: pathVal,
     cert_pin: (el('tun-pin')?.value || '').trim()
   };
@@ -387,11 +423,16 @@ function renderTunnels() {
     const srcSrv = currentServers.find(s => s.id === t.source_server);
     const dstSrv = currentServers.find(s => s.id === t.target_server);
     const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
+    const isSpoof = t.method === 'spoof';
+    const mBadge = isSpoof ? '🎭 SNI-SPOOF' : '🔒 WSS';
+    const extraInfo = isSpoof
+      ? `<div>Fake SNI: <b class="text-amber-300">${t.fake_sni || 'ebank.bmi.ir'}</b> (${t.frag_size || '64'}B)</div>`
+      : `<div>SNI: <b class="text-slate-200">${t.sni}</b></div>`;
     return `
       <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
         <div class="flex flex-wrap justify-between items-center gap-2">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">WSS</span>
+            <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
             <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
             <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Entry'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
           </div>
@@ -404,7 +445,7 @@ function renderTunnels() {
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
           <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
           <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
-          <div>SNI: <b class="text-slate-200">${t.sni}</b></div>
+          ${extraInfo}
         </div>
       </div>`;
   }).join(''));

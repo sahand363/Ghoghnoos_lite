@@ -35,9 +35,10 @@ const dict = {
     spoof_desc: 'Decoy ClientHello Injection + TLS Fragmentation',
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
     src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
-    tun_name: 'Tunnel Name (Auto-filled)',
-    tun_port_lbl: 'Tunnel Port (Highway)',
+    tun_name: 'Tunnel Name',
+    tun_port_lbl: 'Tunnel Port',
     inb_port_lbl: 'X-UI Inbound Port(s)',
+    spd_limit_lbl: 'Speed Limit',
     cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)',
     create: '⚡ Establish Tunnel Between Selected Servers',
     active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)'
@@ -56,12 +57,13 @@ const dict = {
     btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
     step1_method: '۱. انتخاب متد تانل',
     wss_desc: 'وب‌سوکت روی TLS 1.3 با اتصال پایدار ضد قطعی',
-    spoof_desc: 'تزریق پکت SNI دامنه مجاز + تکهتکه کردن پکت TLS',
+    spoof_desc: 'تزریق پکت SNI دامنه مجاز + تکه‌تکه کردن پکت TLS',
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
     src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
-    tun_name: 'نام تانل (پیشنهاد خودکار)',
-    tun_port_lbl: 'پورت تانل (پل ارتباطی)',
-    inb_port_lbl: 'پورت(های) اینباند X-UI (با کاما)',
+    tun_name: 'نام تانل',
+    tun_port_lbl: 'پورت تانل',
+    inb_port_lbl: 'پورت(های) اینباند X-UI',
+    spd_limit_lbl: 'محدودیت سرعت',
     cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
     create: '⚡ برقراری تانل بین دو سرور انتخاب‌شده',
     active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)'
@@ -203,7 +205,7 @@ async function redeployServer(id) {
 }
 
 async function deleteServer(id) {
-  if (!confirm('Remove this server from panel?')) return;
+  if (!confirm('Remove this server AND completely uninstall Sentinel from the remote host?')) return;
   await fetch('/api/servers?id=' + id, { method: 'DELETE' });
   fetchState();
 }
@@ -225,6 +227,7 @@ function resetForm() {
   if (el('tun-id')) el('tun-id').value = '';
   if (el('tunnel-port')) el('tunnel-port').value = '10201';
   if (el('inbound-ports')) el('inbound-ports').value = '';
+  if (el('tun-speed')) el('tun-speed').value = '0';
   if (el('tun-sni')) el('tun-sni').value = 'www.speedtest.net';
   if (el('tun-fake-sni')) el('tun-fake-sni').value = 'ebank.bmi.ir';
   if (el('tun-fp')) el('tun-fp').value = 'chrome';
@@ -245,6 +248,7 @@ function editTunnel(id) {
   if (t.target_server && el('tun-dst-srv')) el('tun-dst-srv').value = t.target_server;
   if (el('tunnel-port')) el('tunnel-port').value = t.tunnel_port || '10201';
   if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
+  if (el('tun-speed')) el('tun-speed').value = t.speed_limit || '0';
   if (el('tun-sni')) el('tun-sni').value = t.sni || 'www.speedtest.net';
   if (el('tun-fake-sni')) el('tun-fake-sni').value = t.fake_sni || 'ebank.bmi.ir';
   if (el('tun-fp')) el('tun-fp').value = t.fingerprint || 'chrome';
@@ -291,6 +295,7 @@ async function saveTunnel() {
     target_server: el('tun-dst-srv')?.value || 'local',
     tunnel_port: cleanTunPort,
     inbound_ports: cleanInbounds,
+    speed_limit: el('tun-speed')?.value || '0',
     sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
     fake_sni: (el('tun-fake-sni')?.value || '').trim() || 'ebank.bmi.ir',
     fingerprint: el('tun-fp')?.value || 'chrome',
@@ -412,7 +417,7 @@ function renderServers() {
             <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
             <a href="${infoUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a>
           </div>
-          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
+          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
         </div>
       </div>`;
   }).join(''));
@@ -425,6 +430,7 @@ function renderTunnels() {
     const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
     const isSpoof = t.method === 'spoof';
     const mBadge = isSpoof ? '🎭 SNI-SPOOF' : '🔒 WSS';
+    const spdTxt = (t.speed_limit && t.speed_limit !== '0') ? `${t.speed_limit} MB/s` : 'Unlimited';
     const extraInfo = isSpoof
       ? `<div>Fake SNI: <b class="text-amber-300">${t.fake_sni || 'ebank.bmi.ir'}</b> (${t.frag_size || '64'}B)</div>`
       : `<div>SNI: <b class="text-slate-200">${t.sni}</b></div>`;
@@ -442,9 +448,10 @@ function renderTunnels() {
             <button onclick="deleteTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
           </div>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
           <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
           <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
+          <div>Speed: <b class="text-amber-400">${spdTxt}</b></div>
           ${extraInfo}
         </div>
       </div>`;

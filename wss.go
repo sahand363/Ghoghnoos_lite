@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -17,8 +16,8 @@ import (
 )
 
 type throttledWriter struct {
-	w       io.Writer
-	counter *uint64
+	w                io.Writer
+	counter          *uint64
 	bytesLimitPerSec int64
 	bytesSentThisSec int64
 	lastSecStart     time.Time
@@ -115,8 +114,12 @@ func startTunnelEngine(t Tunnel) {
 	stopTunnelIfRunning(t.ID)
 	mu.Unlock()
 
-	if t.Method == "" {
-		t.Method = "wss"
+	if t.Method == "" || t.Method == "spoof" {
+		if t.Method == "spoof" {
+			t.Method = "tls"
+		} else {
+			t.Method = "wss"
+		}
 	}
 	t.WSPath = strings.TrimSpace(t.WSPath)
 	if t.WSPath == "" {
@@ -139,24 +142,27 @@ func startTunnelEngine(t Tunnel) {
 	}
 
 	if t.Role == "server" {
-		ln, err := net.Listen("tcp", ":"+tunPort)
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{localCert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		ln, err := tls.Listen("tcp", ":"+tunPort, tlsCfg)
 		if err != nil {
-			addLog(fmt.Sprintf("ERR [Exit %s]: Cannot bind Tunnel Port :%s -> %v", t.Name, tunPort, err))
+			addLog(fmt.Sprintf("ERR [Exit %s]: Cannot bind TLS Port :%s -> %v", t.Name, tunPort, err))
 			return
 		}
 		mu.Lock()
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
-		addLog(fmt.Sprintf("LISTEN [%s-Exit %s]: :%s -> X-UI 127.0.0.1:[%s]", strings.ToUpper(t.Method), t.Name, tunPort, strings.Join(inboundPorts, ",")))
+		addLog(fmt.Sprintf("LISTEN [%s-Exit %s]: TLS :%s -> X-UI 127.0.0.1:[%s]", strings.ToUpper(t.Method), t.Name, tunPort, strings.Join(inboundPorts, ",")))
 
 		go func(l net.Listener, defPort string) {
 			for {
-				rawConn, err := l.Accept()
+				conn, err := l.Accept()
 				if err != nil {
 					return
 				}
-				enableKeepAlive(rawConn)
-				go handleServerConn(rawConn, t, defPort)
+				go handleServerConn(conn, t, defPort)
 			}
 		}(ln, inboundPorts[0])
 		return
@@ -172,7 +178,7 @@ func startTunnelEngine(t Tunnel) {
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
 
-		addLog(fmt.Sprintf("LISTEN [%s-Entry %s]: :%s -> %s (Limit: %s MB/s)", strings.ToUpper(t.Method), t.Name, iPort, t.RemoteAddr, t.SpeedLimit))
+		addLog(fmt.Sprintf("LISTEN [%s-Entry %s]: :%s -> %s (SNI: %s)", strings.ToUpper(t.Method), t.Name, iPort, t.RemoteAddr, t.SNI))
 
 		go func(l net.Listener, targetPort string) {
 			for {
@@ -195,16 +201,14 @@ func dialTunnelSession(t Tunnel, targetPort string) (net.Conn, *bufio.Reader, er
 	}
 	enableKeepAlive(rawConn)
 
-	if t.Method == "spoof" {
-		if t.FakeSNI != "" {
-			_, _ = rawConn.Write(buildFakeClientHello(t.FakeSNI))
-		}
+	// METHOD 2: DIRECT TLS STREAM RELAY (Zero HTTP/WS overhead, optional TCP segmentation)
+	if t.Method == "tls" || t.Method == "spoof" {
 		fragSz, _ := strconv.Atoi(t.FragSize)
-		if fragSz <= 0 {
-			fragSz = 64
+		var baseConn net.Conn = rawConn
+		if fragSz > 0 {
+			baseConn = &tcpSegmentConn{Conn: rawConn, fragSize: fragSz}
 		}
-		fConn := &fragmentConn{Conn: rawConn, fragSize: fragSz}
-		tlsConn := tls.Client(fConn, buildSpoofTLSConfig(t))
+		tlsConn := tls.Client(baseConn, buildTunnelTLSConfig(t))
 		if err := tlsConn.Handshake(); err != nil {
 			rawConn.Close()
 			return nil, nil, err
@@ -218,12 +222,13 @@ func dialTunnelSession(t Tunnel, targetPort string) (net.Conn, *bufio.Reader, er
 		reply, err := br.ReadString('\n')
 		if err != nil || !strings.HasPrefix(reply, "OK") {
 			tlsConn.Close()
-			return nil, nil, fmt.Errorf("spoof handshake rejected: %s", strings.TrimSpace(reply))
+			return nil, nil, fmt.Errorf("direct TLS relay rejected: %s", strings.TrimSpace(reply))
 		}
 		return tlsConn, br, nil
 	}
 
-	tlsConn := tls.Client(rawConn, buildSpoofTLSConfig(t))
+	// METHOD 1: WSS (WebSocket over TLS 1.3)
+	tlsConn := tls.Client(rawConn, buildTunnelTLSConfig(t))
 	if err := tlsConn.Handshake(); err != nil {
 		rawConn.Close()
 		return nil, nil, err
@@ -278,25 +283,7 @@ func handleClientConn(client net.Conn, t Tunnel, targetPort string) {
 	<-done
 }
 
-func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
-	defer rawConn.Close()
-
-	brRaw := bufio.NewReader(rawConn)
-	peek, err := brRaw.Peek(8)
-	if err == nil && string(peek) == "SNISPOOF" {
-		_, _ = brRaw.Discard(8)
-		var lenBuf [2]byte
-		if _, err := io.ReadFull(brRaw, lenBuf[:]); err == nil {
-			decoyLen := int(binary.BigEndian.Uint16(lenBuf[:]))
-			_, _ = io.CopyN(io.Discard, brRaw, int64(decoyLen))
-		}
-	}
-
-	tlsCfg := &tls.Config{Certificates: []tls.Certificate{localCert}, MinVersion: tls.VersionTLS12}
-	conn := tls.Server(&bufferedConn{Conn: rawConn, r: brRaw}, tlsCfg)
-	if err := conn.Handshake(); err != nil {
-		return
-	}
+func handleServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	defer conn.Close()
 
 	br := bufio.NewReader(conn)
@@ -305,6 +292,7 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 		return
 	}
 
+	// Method 2: Direct TLS Stream ("LTUN|<port>\n")
 	if strings.HasPrefix(firstLine, "LTUN|") {
 		targetPort := strings.TrimSpace(strings.TrimPrefix(firstLine, "LTUN|"))
 		if strings.HasPrefix(targetPort, "probe:") {
@@ -328,6 +316,7 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 		return
 	}
 
+	// Method 1: WSS Stream
 	parts := strings.Fields(firstLine)
 	if len(parts) < 2 || parts[1] != t.WSPath {
 		conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>200 OK</h1></body></html>"))
@@ -366,13 +355,6 @@ func handleServerConn(rawConn net.Conn, t Tunnel, defaultPort string) {
 	pipeStreams(conn, target, br, t.SpeedLimit)
 }
 
-type bufferedConn struct {
-	net.Conn
-	r *bufio.Reader
-}
-
-func (b *bufferedConn) Read(p []byte) (int, error) { return b.r.Read(p) }
-
 func pipeStreams(conn net.Conn, target net.Conn, br *bufio.Reader, speedLimit string) {
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
@@ -397,7 +379,7 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
-	tlsCfg := buildSpoofTLSConfig(tun)
+	tlsCfg := buildTunnelTLSConfig(tun)
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 	if err != nil {
 		pt.OK = false
@@ -408,7 +390,7 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	defer conn.Close()
 
 	rttStart := time.Now()
-	if tun.Method == "spoof" {
+	if tun.Method == "tls" || tun.Method == "spoof" {
 		conn.Write([]byte("LTUN|probe:" + firstPort + "\n"))
 		reply, err := bufio.NewReader(conn).ReadString('\n')
 		pt.LatencyMS = time.Since(rttStart).Milliseconds()

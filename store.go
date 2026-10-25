@@ -33,7 +33,7 @@ type Tunnel struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Role         string `json:"role"`
-	Method       string `json:"method"` // "wss", "direct", or "forward"
+	Method       string `json:"method"`
 	SourceServer string `json:"source_server"`
 	TargetServer string `json:"target_server"`
 	TunnelPort   string `json:"tunnel_port"`
@@ -89,6 +89,8 @@ type Database struct {
 type ConfigReq struct {
 	Port string `json:"port"`
 	Path string `json:"path"`
+	User string `json:"user"`
+	Pass string `json:"pass"`
 }
 
 func checkBBRStatus() (cc, qdisc string) {
@@ -349,20 +351,39 @@ func findServerByID(id string) *ServerNode {
 	return nil
 }
 
-func updateConfigFile(newPort, newPath string) error {
-	data, err := os.ReadFile(confPath)
-	if err != nil {
-		return err
-	}
+func updateConfigFile(newPort, newPath, newUser, newPass string) error {
+	data, _ := os.ReadFile(confPath)
 	lines := strings.Split(string(data), "\n")
+	hasPort, hasPath, hasUser, hasPass := false, false, false, false
+
 	for i, line := range lines {
-		if strings.HasPrefix(line, "PANEL_PORT=") {
+		if strings.HasPrefix(line, "PANEL_PORT=") && newPort != "" {
 			lines[i] = "PANEL_PORT=" + newPort
-		}
-		if strings.HasPrefix(line, "PANEL_PATH=") {
+			hasPort = true
+		} else if strings.HasPrefix(line, "PANEL_PATH=") {
 			lines[i] = "PANEL_PATH=" + strings.Trim(newPath, "/")
+			hasPath = true
+		} else if strings.HasPrefix(line, "PANEL_USER=") && newUser != "" {
+			lines[i] = "PANEL_USER=" + newUser
+			hasUser = true
+		} else if strings.HasPrefix(line, "PANEL_PASS=") && newPass != "" {
+			lines[i] = "PANEL_PASS=" + newPass
+			hasPass = true
 		}
 	}
+	if !hasPort && newPort != "" {
+		lines = append(lines, "PANEL_PORT="+newPort)
+	}
+	if !hasPath {
+		lines = append(lines, "PANEL_PATH="+strings.Trim(newPath, "/"))
+	}
+	if !hasUser && newUser != "" {
+		lines = append(lines, "PANEL_USER="+newUser)
+	}
+	if !hasPass && newPass != "" {
+		lines = append(lines, "PANEL_PASS="+newPass)
+	}
+	_ = os.MkdirAll("/opt/litetun", 0755)
 	return os.WriteFile(confPath, []byte(strings.Join(lines, "\n")), 0644)
 }
 

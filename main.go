@@ -45,17 +45,19 @@ var (
 			SelectedServer: "local",
 		},
 	}
-	activeListeners = make(map[string][]net.Listener)
-	logs            = []string{}
-	localCert       tls.Certificate
-	localPinHex     string
-	localIP         string
-	panelUser       string
-	panelPass       string
-	appRxBytes      uint64
-	appTxBytes      uint64
-	sysMetrics      SystemMetrics
-	mu              sync.Mutex
+	activeListeners   = make(map[string][]net.Listener)
+	remoteStateCache  = make(map[string]EnrollHeartbeat)
+	pendingRemoteCmds = make(map[string][]string)
+	logs              = []string{}
+	localCert         tls.Certificate
+	localPinHex       string
+	localIP           string
+	panelUser         string
+	panelPass         string
+	appRxBytes        uint64
+	appTxBytes        uint64
+	sysMetrics        SystemMetrics
+	mu                sync.Mutex
 )
 
 func loadEnvFile() {
@@ -108,6 +110,17 @@ func initSelfSignedCert() {
 func main() {
 	loadEnvFile()
 
+	// Check if launched in interactive CLI Reverse-Enrollment mode:
+	// ghoghnoos_lite --enroll <MasterIP:Port> <Token> [NodeName]
+	if len(os.Args) >= 4 && os.Args[1] == "--enroll" {
+		nodeName := ""
+		if len(os.Args) >= 5 {
+			nodeName = os.Args[4]
+		}
+		runCLIEnrollmentMatrix(os.Args[2], os.Args[3], nodeName)
+		return
+	}
+
 	port := os.Getenv("PANEL_PORT")
 	if port == "" || port == "8880" {
 		port = "6001"
@@ -123,8 +136,10 @@ func main() {
 	loadLogsFromDisk()
 	initSelfSignedCert()
 	loadDBFromDisk(port)
+	ensureEnrollToken()
 	go startTelemetryMonitor()
 	go startPingMonitor()
+	go startSentinelSurvivalLoop()
 	registerRoutes(port, panelPath)
 
 	fmt.Printf("Ghoghnoos-lite running on port %s (Path: /%s/ | Auth: %v)\n", port, panelPath, panelUser != "")

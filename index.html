@@ -36,7 +36,7 @@
       <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
       <div>
         <span class="font-bold tracking-wide text-xs sm:text-sm block leading-none">Ghoghnoos-lite</span>
-        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun WSS Engine</span>
+        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun Multi-Engine</span>
       </div>
     </div>
 
@@ -129,7 +129,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4" id="server-cards-list"></div>
       </section>
 
-      <!-- TAB 2: CONFIG (Includes BBR Check & 1-Click Optimizer for Selected Server) -->
+      <!-- TAB 2: CONFIG -->
       <section id="view-config" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -149,7 +149,6 @@
           <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
         </div>
 
-        <!-- BBR Kernel Congestion Control Card -->
         <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
           <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
             <div>
@@ -174,27 +173,33 @@
         </div>
       </section>
 
-      <!-- TAB 3: TUNNELS -->
+      <!-- TAB 3: TUNNELS (Method 1: WSS & Method 2: SNI Spoofing + Packet Injection) -->
       <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
           <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between">
+            <!-- Method 1: WSS -->
+            <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
                   <span>WSS</span>
-                  <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">ACTIVE</span>
+                  <span id="badge-method-wss" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">SELECTED</span>
                 </div>
                 <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 + Keep-Alive</div>
               </div>
               <span class="text-lg">🔒</span>
             </div>
-            <div class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/60 opacity-50 cursor-not-allowed flex items-center justify-between">
+
+            <!-- Method 2: SNI Spoofing + Packet Fragmentation -->
+            <div id="method-card-spoof" onclick="selectTunnelMethod('spoof')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition hover:border-slate-700">
               <div>
-                <div class="font-bold text-sm text-slate-400">Next Method (Coming Soon)</div>
-                <div class="text-xs text-slate-500 mt-1">Additional transport protocols</div>
+                <div class="font-bold text-sm flex items-center gap-2">
+                  <span>SNI Spoofing</span>
+                  <span id="badge-method-spoof" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
+                </div>
+                <div class="text-xs text-slate-300 mt-1" data-i18n="spoof_desc">Decoy ClientHello Injection + TLS Fragmentation</div>
               </div>
-              <span class="text-lg">⚡</span>
+              <span class="text-lg">🎭</span>
             </div>
           </div>
         </div>
@@ -224,7 +229,7 @@
               <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-lg p-2.5 text-xs font-semibold">
             </div>
             <div>
-              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port (WSS Highway)</label>
+              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port (Highway)</label>
               <input id="tunnel-port" value="10201" placeholder="e.g. 10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
@@ -236,7 +241,8 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- WSS Specific Row -->
+          <div id="row-wss-opts" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
               <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
@@ -247,12 +253,38 @@
             </div>
           </div>
 
+          <!-- SNI Spoofing Specific Row (Shown when Method 2 is selected) -->
+          <div id="row-spoof-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-amber-500/30">
+            <div class="text-xs font-bold text-amber-400 flex items-center justify-between">
+              <span>🎭 Low-Level SNI Spoofing & Packet Fragmentation Engine</span>
+              <span class="text-[10px] font-mono text-emerald-400">RFC-5246 Raw ClientHello</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="text-xs text-amber-300 font-semibold block mb-1">Fake / Decoy SNI (Whitelisted)</label>
+                <input id="tun-fake-sni" value="ebank.bmi.ir" placeholder="ebank.bmi.ir" class="w-full rounded-lg p-2.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-xs text-sky-300 font-semibold block mb-1">Browser TLS Fingerprint</label>
+                <select id="tun-fp" class="w-full rounded-lg p-2.5 text-xs font-mono bg-[#0b111a]">
+                  <option value="chrome">Chrome 120 (X25519)</option>
+                  <option value="firefox">Firefox 121 (ChaCha20)</option>
+                  <option value="safari">Safari iOS 17</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-emerald-300 font-semibold block mb-1">TLS Fragment Size (Bytes)</label>
+                <input id="tun-frag" value="64" placeholder="64" class="w-full rounded-lg p-2.5 text-xs font-mono">
+              </div>
+            </div>
+          </div>
+
           <div>
             <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)</label>
             <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
           </div>
 
-          <button onclick="saveTunnel()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish WSS Tunnel Between Selected Servers</button>
+          <button onclick="saveTunnel()" id="btn-save-tunnel" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish Tunnel Between Selected Servers</button>
         </div>
 
         <div class="space-y-3">

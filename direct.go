@@ -72,7 +72,7 @@ func buildTunnelTLSConfig(t Tunnel) *tls.Config {
 			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
 		}
 		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256}
-	default: // Chrome
+	default:
 		cfg.CipherSuites = []uint16{
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
@@ -197,7 +197,7 @@ func handleDirectTLSClientConn(client net.Conn, t Tunnel, targetPort string) {
 		return
 	}
 
-	mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+	mbLimit := parseSpeedLimit(t.SpeedLimit)
 	txW := newThrottledWriter(tlsConn, &appTxBytes, mbLimit)
 	rxW := newThrottledWriter(client, &appRxBytes, mbLimit)
 
@@ -237,7 +237,7 @@ func handleDirectTLSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		defer target.Close()
 		conn.Write([]byte("OK\n"))
 
-		mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+		mbLimit := parseSpeedLimit(t.SpeedLimit)
 		txW := newThrottledWriter(target, &appRxBytes, mbLimit)
 		rxW := newThrottledWriter(conn, &appTxBytes, mbLimit)
 

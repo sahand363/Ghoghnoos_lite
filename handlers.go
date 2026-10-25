@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -12,8 +13,30 @@ import (
 	"time"
 )
 
+func checkBasicAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
+	// Remote Sentinel nodes (PANEL_PATH=sentinel) allow Master API sync over their dedicated port
+	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
+		return true
+	}
+	if panelUser == "" && panelPass == "" {
+		return true
+	}
+	u, p, ok := r.BasicAuth()
+	uMatch := subtle.ConstantTimeCompare([]byte(u), []byte(panelUser)) == 1
+	pMatch := subtle.ConstantTimeCompare([]byte(p), []byte(panelPass)) == 1
+	if !ok || !uMatch || !pMatch {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Ghoghnoos-lite Control Panel"`)
+		http.Error(w, "401 Unauthorized — Please enter Panel Username & Password", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
 func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(appJS)
 	})
@@ -74,13 +97,16 @@ func registerRoutes(port, panelPath string) {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqPath := strings.Trim(r.URL.Path, "/")
+		if panelPath != "" && reqPath != "" && reqPath != panelPath && !strings.HasSuffix(reqPath, "app.js") {
+			http.NotFound(w, r)
+			return
+		}
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		if strings.HasSuffix(reqPath, "app.js") {
 			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 			w.Write(appJS)
-			return
-		}
-		if panelPath != "" && reqPath != "" && reqPath != panelPath {
-			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -88,6 +114,9 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		targetSrvID := r.URL.Query().Get("server_id")
 		ramMB, goroutines := getMemoryStats()
 
@@ -159,12 +188,13 @@ func registerRoutes(port, panelPath string) {
 			"logs":         activeLogs,
 			"panel_port":   activePort,
 			"panel_path":   activePath,
+			"panel_user":   panelUser,
 			"cert_pin":     activePin,
 		})
 	})
 
 	http.HandleFunc("/api/bbr", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
@@ -209,6 +239,9 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		if r.Method == http.MethodDelete {
 			id := r.URL.Query().Get("id")
 			if id == "local" {
@@ -265,6 +298,9 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/servers/deploy", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		id := r.URL.Query().Get("id")
 		mu.Lock()
 		srv := findServerByID(id)
@@ -283,7 +319,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/prefs", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var p UIPrefs
@@ -308,7 +344,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/cmd", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var req struct {
@@ -358,6 +394,9 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		if r.Method == http.MethodDelete {
 			id := r.URL.Query().Get("id")
 			mu.Lock()
@@ -457,6 +496,9 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
 		id := r.URL.Query().Get("id")
 		mu.Lock()
 		var tun *Tunnel
@@ -484,12 +526,12 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var req ConfigReq
 		json.NewDecoder(r.Body).Decode(&req)
-		_ = updateConfigFile(req.Port, req.Path)
+		_ = updateConfigFile(req.Port, req.Path, req.User, req.Pass)
 		w.WriteHeader(http.StatusOK)
 		go func() { time.Sleep(1 * time.Second); os.Exit(0) }()
 	})

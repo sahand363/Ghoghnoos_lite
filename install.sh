@@ -1,182 +1,144 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-REPO="sahand363/ghoghnoos_light"
-APP_DIR="/opt/litetun"
-BIN_PATH="$APP_DIR/ghoghnoos_lite"
-CONF_FILE="$APP_DIR/config.env"
+INSTALL_DIR="/opt/litetun"
+BIN_PATH="$INSTALL_DIR/ghoghnoos_lite"
+CONF_FILE="$INSTALL_DIR/config.env"
 SERVICE_FILE="/etc/systemd/system/litetun.service"
+REPO_URL="https://github.com/sahand363/ghoghnoos_light"
 
-if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root (sudo -i)"
-  exit 1
-fi
+mkdir -p "$INSTALL_DIR"
 
-install_base() {
-  mkdir -p "$APP_DIR"
-  apt-get update -y >/dev/null 2>&1
-  apt-get install -y curl openssl sshpass >/dev/null 2>&1
-
-  if [ ! -f "$CONF_FILE" ]; then
-    RAND_PATH=$(openssl rand -hex 4)
-    cat <<EOF > "$CONF_FILE"
-PANEL_PORT=6001
-PANEL_PATH=$RAND_PATH
-PANEL_USER=admin
-PANEL_PASS=admin
-EOF
-  fi
-
-  if [ ! -f "$BIN_PATH" ]; then
-    echo "Downloading latest binary from GitHub..."
-    curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH.tmp"
-    mv -f "$BIN_PATH.tmp" "$BIN_PATH"
-    chmod +x "$BIN_PATH"
-  fi
-
-  if [ ! -f "$SERVICE_FILE" ]; then
-    cat <<EOF > "$SERVICE_FILE"
+write_systemd_unit() {
+cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=LiteTun WSS Tunnel Panel
+Description=Ghoghnoos-lite (LiteTun) Multi-Engine Service
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$APP_DIR
-EnvironmentFile=$CONF_FILE
+WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=-$CONF_FILE
 ExecStart=$BIN_PATH
 Restart=always
-RestartSec=2
+RestartSec=3
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload
-    systemctl enable litetun >/dev/null 2>&1
-    systemctl start litetun
-  fi
+systemctl daemon-reload
+systemctl enable litetun >/dev/null 2>&1 || true
+}
 
-  curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
+# 1. Reverse Sentinel Enrollment Mode:
+# curl -Ls .../install.sh | bash -s -- --enroll <MasterIP:Port> <Token> [NodeName]
+if [[ "$1" == "--enroll" ]]; then
+  MASTER_TARGET="$2"
+  TOKEN="$3"
+  NODE_NAME="${4:-Sentinel-Node}"
+  echo -e "\033[1;36m[*] Downloading Ghoghnoos-lite Sentinel Agent...\033[0m"
+  systemctl stop litetun 2>/dev/null || true
+  curl -Ls "$REPO_URL/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH.tmp"
+  mv -f "$BIN_PATH.tmp" "$BIN_PATH"
+  chmod +x "$BIN_PATH"
+  curl -Ls "$REPO_URL/raw/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
   chmod +x /usr/local/bin/litetun
-}
 
-get_panel_url() {
-  source "$CONF_FILE"
-  IP=$(hostname -I | awk '{print $1}')
-  echo "http://${IP}:${PANEL_PORT}/${PANEL_PATH}/"
-}
+  # Run interactive ANSI Dial-In Matrix (tests Direct-TLS -> WSS -> L4 Control API)
+  "$BIN_PATH" --enroll "$MASTER_TARGET" "$TOKEN" "$NODE_NAME"
 
-show_menu() {
-  while true; do
-    clear
-    source "$CONF_FILE"
-    STATUS=$(systemctl is-active litetun)
-    echo "=========================================================="
-    echo "                 LITETUN MANAGEMENT MENU                  "
-    echo "=========================================================="
-    echo " Status    : $STATUS"
-    echo " Panel Port: $PANEL_PORT"
-    echo " Panel URL : $(get_panel_url)"
-    echo " Command   : litetun"
-    echo "=========================================================="
-    echo "1) Start / Restart"
-    echo "2) Stop"
-    echo "3) View Logs"
-    echo "4) Update"
-    echo "5) Uninstall"
-    echo "6) Set Custom URL Path"
-    echo "7) Set Custom Panel Port"
-    echo "8) Set / Change Username & Password"
-    echo "9) Enable / Disable Domain SSL (Port 5001)"
-    echo "0) Exit"
-    echo "=========================================================="
-    read -p "Select [0-9]: " choice < /dev/tty
-
-    case $choice in
-      1)
-        systemctl restart litetun
-        echo "✅ Service restarted!"
-        sleep 1
-        ;;
-      2)
-        systemctl stop litetun
-        echo "🛑 Service stopped."
-        sleep 1
-        ;;
-      3)
-        journalctl -u litetun -f -n 50
-        ;;
-      4)
-        echo "⬇️ Stopping service and updating binary..."
-        apt-get install -y sshpass >/dev/null 2>&1
-        systemctl stop litetun
-        curl -L "https://github.com/$REPO/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH.tmp"
-        mv -f "$BIN_PATH.tmp" "$BIN_PATH"
-        chmod +x "$BIN_PATH"
-        curl -Ls "https://raw.githubusercontent.com/$REPO/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
-        chmod +x /usr/local/bin/litetun
-        systemctl start litetun
-        echo "✅ Updated and restarted cleanly!"
-        sleep 2
-        ;;
-      5)
-        systemctl stop litetun
-        systemctl disable litetun
-        rm -rf "$APP_DIR" "$SERVICE_FILE" /usr/local/bin/litetun
-        systemctl daemon-reload
-        echo "🗑️ Uninstalled."
-        exit 0
-        ;;
-      6)
-        read -p "Enter new URL Path: " input_path < /dev/tty
-        [ -z "$input_path" ] && input_path=$(openssl rand -hex 4)
-        sed -i "s/^PANEL_PATH=.*/PANEL_PATH=$input_path/" "$CONF_FILE"
-        systemctl restart litetun
-        echo "🔗 New URL: $(get_panel_url)"
-        read -p "Press Enter..." < /dev/tty
-        ;;
-      7)
-        read -p "Enter new Port: " new_port < /dev/tty
-        if [ -n "$new_port" ]; then
-          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=$new_port/" "$CONF_FILE"
-          systemctl restart litetun
-          echo "🔗 New URL: $(get_panel_url)"
-          read -p "Press Enter..." < /dev/tty
-        fi
-        ;;
-      8)
-        read -p "Enter new Username: " new_user < /dev/tty
-        read -p "Enter new Password: " new_pass < /dev/tty
-        sed -i "s/^PANEL_USER=.*/PANEL_USER=$new_user/" "$CONF_FILE"
-        sed -i "s/^PANEL_PASS=.*/PANEL_PASS=$new_pass/" "$CONF_FILE"
-        systemctl restart litetun
-        sleep 1
-        ;;
-      9)
-        read -p "Enable HTTPS on Port 5001? (y/n): " ssl_yn < /dev/tty
-        if [ "$ssl_yn" = "y" ]; then
-          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=5001/" "$CONF_FILE"
-          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout "$APP_DIR/server.key" -out "$APP_DIR/server.crt" \
-            -subj "/CN=litetun" >/dev/null 2>&1
-        else
-          sed -i "s/^PANEL_PORT=.*/PANEL_PORT=8880/" "$CONF_FILE"
-          rm -f "$APP_DIR/server.key" "$APP_DIR/server.crt"
-        fi
-        systemctl restart litetun
-        sleep 1
-        ;;
-      0)
-        exit 0
-        ;;
-    esac
-  done
-}
-
-# Support silent install when called by Sentinel Deployer
-if [ "$1" = "--sentinel" ]; then
-  install_base
+  write_systemd_unit
+  systemctl restart litetun
+  echo -e "\033[1;32m[✓] Sentinel enrolled & background Survival Loop daemonized!\033[0m"
   exit 0
 fi
 
-install_base
-show_menu
+# 2. Automated SSH Sentinel Mode
+if [[ "$1" == "--sentinel" ]]; then
+  if [[ ! -f "$CONF_FILE" ]]; then
+    echo -e "PANEL_PORT=6001\nPANEL_PATH=sentinel\nPANEL_USER=admin\nPANEL_PASS=admin" > "$CONF_FILE"
+  fi
+  write_systemd_unit
+  exit 0
+fi
+
+# 3. Interactive CLI Management Menu (`litetun`)
+if [[ ! -f "$BIN_PATH" ]]; then
+  echo -e "\033[1;36m[*] Installing Ghoghnoos-lite for the first time...\033[0m"
+  curl -Ls "$REPO_URL/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH"
+  chmod +x "$BIN_PATH"
+  RAND_PATH=$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "admin88")
+  echo -e "PANEL_PORT=6001\nPANEL_PATH=$RAND_PATH\nPANEL_USER=admin\nPANEL_PASS=admin" > "$CONF_FILE"
+  curl -Ls "$REPO_URL/raw/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
+  chmod +x /usr/local/bin/litetun
+  write_systemd_unit
+  systemctl restart litetun
+fi
+
+source "$CONF_FILE" 2>/dev/null || true
+SERVER_IP=$(hostname -I | awk '{print $1}')
+
+echo -e "\033[1;36m====================================================\033[0m"
+echo -e "\033[1;33m   🦅 Ghoghnoos-lite (LiteTun) Management CLI       \033[0m"
+echo -e "\033[1;36m====================================================\033[0m"
+echo -e " Panel URL  : \033[1;32mhttp://${SERVER_IP}:${PANEL_PORT:-6001}/${PANEL_PATH}/\033[0m"
+echo -e " Username   : \033[1;37m${PANEL_USER:-admin}\033[0m"
+echo -e "----------------------------------------------------"
+echo -e " 1) Restart Service"
+echo -e " 2) Change Panel Port / Path / Credentials"
+echo -e " 3) View Live Service Logs"
+echo -e " 4) Update Binary from GitHub Releases"
+echo -e " 5) Uninstall Ghoghnoos-lite"
+echo -e " 0) Exit"
+echo -e "----------------------------------------------------"
+read -rp "Select option [0-5]: " OPT
+
+case "$OPT" in
+  1)
+    systemctl restart litetun
+    echo -e "\033[1;32m[✓] Service restarted.\033[0m"
+    ;;
+  2)
+    read -rp "New Panel Port [${PANEL_PORT:-6001}]: " NEW_PORT
+    read -rp "New Secret Path [${PANEL_PATH}]: " NEW_PATH
+    read -rp "New Username [${PANEL_USER:-admin}]: " NEW_USER
+    read -rp "New Password [${PANEL_PASS:-admin}]: " NEW_PASS
+    PANEL_PORT="${NEW_PORT:-${PANEL_PORT:-6001}}"
+    PANEL_PATH="${NEW_PATH:-$PANEL_PATH}"
+    PANEL_USER="${NEW_USER:-${PANEL_USER:-admin}}"
+    PANEL_PASS="${NEW_PASS:-${PANEL_PASS:-admin}}"
+    cat > "$CONF_FILE" <<EOF
+PANEL_PORT=$PANEL_PORT
+PANEL_PATH=$PANEL_PATH
+PANEL_USER=$PANEL_USER
+PANEL_PASS=$PANEL_PASS
+EOF
+    systemctl restart litetun
+    echo -e "\033[1;32m[✓] Updated! New URL: http://${SERVER_IP}:${PANEL_PORT}/${PANEL_PATH}/\033[0m"
+    ;;
+  3)
+    journalctl -u litetun -n 40 --no-pager
+    ;;
+  4)
+    echo -e "\033[1;36m[*] Downloading latest release from GitHub...\033[0m"
+    systemctl stop litetun 2>/dev/null || true
+    curl -Ls "$REPO_URL/releases/latest/download/ghoghnoos_lite" -o "$BIN_PATH.tmp"
+    mv -f "$BIN_PATH.tmp" "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    curl -Ls "$REPO_URL/raw/main/install.sh" | tr -d '\r' > /usr/local/bin/litetun
+    chmod +x /usr/local/bin/litetun
+    systemctl restart litetun
+    echo -e "\033[1;32m[✓] Updated and restarted!\033[0m"
+    ;;
+  5)
+    systemctl stop litetun 2>/dev/null || true
+    systemctl disable litetun 2>/dev/null || true
+    rm -rf "$SERVICE_FILE" "$INSTALL_DIR" /usr/local/bin/litetun
+    systemctl daemon-reload
+    echo -e "\033[1;31m[✓] Uninstalled completely.\033[0m"
+    ;;
+  *)
+    exit 0
+    ;;
+esac

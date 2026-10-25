@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="en" dir="ltr" class="overflow-y-scroll">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -9,13 +9,13 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0b111a;
-      --card: #111a27;
-      --border: #1e293b;
-      --accent: #facc15;
-      --accent-glow: rgba(250, 204, 21, 0.12);
+      --bg: #0c131f;
+      --card: #131e2f;
+      --border: #1e2e46;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.14);
     }
-    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.25s ease; }
+    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.2s ease; }
     .card { background-color: var(--card); border: 1px solid var(--border); }
     .accent-border { border: 1px solid var(--accent); background: var(--accent-glow); }
     .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
@@ -25,7 +25,8 @@
     input:focus, select:focus { border-color: var(--accent); outline: none; }
     .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
     [data-i18n] { unicode-bidi: plaintext; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .help-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 9999px; background: #1e293b; color: #38bdf8; font-size: 10px; font-weight: bold; border: 1px solid #334155; }
+    .help-btn:hover { background: #38bdf8; color: #000; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
@@ -36,7 +37,7 @@
       <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
       <div>
         <span class="font-bold tracking-wide text-xs sm:text-sm block leading-none">Ghoghnoos-lite</span>
-        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun Dual-Engine</span>
+        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun 3-Engine Relay</span>
       </div>
     </div>
 
@@ -69,9 +70,9 @@
       </div>
 
       <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
-        <button onclick="applyTheme('amber', true)" class="w-3 h-3 rounded-full bg-amber-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('cyan', true)" class="w-3 h-3 rounded-full bg-sky-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('emerald', true)" class="w-3 h-3 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
+        <button onclick="applyTheme('amber', true)" class="w-3 h-3 rounded-full bg-amber-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('indigo', true)" class="w-3 h-3 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
         <button onclick="applyTheme('rose', true)" class="w-3 h-3 rounded-full bg-rose-400 hover:scale-125 transition"></button>
       </div>
@@ -138,11 +139,17 @@
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
+              <div class="flex items-center gap-1.5 mb-1">
+                <label class="text-xs text-slate-400" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
+                <button type="button" onclick="showHelpModal('port')" class="help-btn">?</button>
+              </div>
               <input id="cfg-port" class="w-full rounded-lg p-2.5 text-sm font-mono">
             </div>
             <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_path">Secret URL Path</label>
+              <div class="flex items-center gap-1.5 mb-1">
+                <label class="text-xs text-slate-400" data-i18n="lbl_panel_path">Secret URL Path</label>
+                <button type="button" onclick="showHelpModal('path')" class="help-btn">?</button>
+              </div>
               <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
             </div>
           </div>
@@ -152,8 +159,11 @@
         <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
           <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
             <div>
-              <h3 class="font-bold text-sm sm:text-base" data-i18n="bbr_title">TCP BBR & FQ Kernel Acceleration</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="bbr_sub">Boosts tunnel throughput and reduces packet-loss throttling on the selected server.</p>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-sm sm:text-base" data-i18n="bbr_title">TCP BBR & FQ Kernel Acceleration</h3>
+                <button type="button" onclick="showHelpModal('bbr')" class="help-btn">?</button>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="bbr_sub">Boosts tunnel throughput and eliminates packet-loss throttling on the selected server.</p>
             </div>
             <span id="bbr-status-badge" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300">Checking...</span>
           </div>
@@ -164,7 +174,10 @@
               <b id="bbr-cc-val" class="text-sm text-sky-400 mt-1 block">--</b>
             </div>
             <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
-              <span class="text-slate-400 block">Default Packet Scheduler (qdisc):</span>
+              <div class="flex items-center gap-1.5">
+                <span class="text-slate-400 block">Default Packet Scheduler (qdisc):</span>
+                <button type="button" onclick="showHelpModal('fq')" class="help-btn">?</button>
+              </div>
               <b id="bbr-qdisc-val" class="text-sm text-indigo-400 mt-1 block">--</b>
             </div>
           </div>
@@ -177,27 +190,32 @@
       <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
           <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition">
-              <div>
-                <div class="font-bold text-sm flex items-center gap-2">
-                  <span>WSS (WebSocket + TLS)</span>
-                  <span id="badge-method-wss" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">SELECTED</span>
-                </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">HTTP/1.1 WebSocket Upgrade over TLS 1.3</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- Method 1: WSS -->
+            <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between transition">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm">WSS</span>
+                <span id="badge-method-wss" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">SELECTED</span>
               </div>
-              <span class="text-lg">🌐</span>
+              <div class="text-[11px] text-slate-400 mt-1.5 leading-snug">HTTP/1.1 WebSocket Upgrade over TLS 1.3</div>
             </div>
 
-            <div id="method-card-spoof" onclick="selectTunnelMethod('tls')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition hover:border-slate-700">
-              <div>
-                <div class="font-bold text-sm flex items-center gap-2">
-                  <span>Direct TLS Stream</span>
-                  <span id="badge-method-spoof" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
-                </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="spoof_desc">Zero-HTTP Raw TLS 1.3 Stream + Custom SNI & Pinning</div>
+            <!-- Method 2: Direct TLS -->
+            <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between transition hover:border-slate-700">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm">Direct TLS</span>
+                <span id="badge-method-direct" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
               </div>
-              <span class="text-lg">⚡</span>
+              <div class="text-[11px] text-slate-400 mt-1.5 leading-snug">Zero-HTTP Raw TLS 1.3 Stream Relay</div>
+            </div>
+
+            <!-- Method 3: Port Forwarding (L4 Relay) -->
+            <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between transition hover:border-slate-700">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm">Port Forward</span>
+                <span id="badge-method-forward" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-1.5 leading-snug">Raw L4 TCP Relay (Native socat-like stream)</div>
             </div>
           </div>
         </div>
@@ -246,22 +264,22 @@
             </div>
           </div>
 
-          <!-- Shared SNI + Method-Specific Options -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- WSS Specific Row -->
+          <div id="row-wss-opts" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">TLS SNI Hostname (ServerName)</label>
               <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
-            <div id="row-wss-opts">
+            <div>
               <label class="text-xs text-slate-400 block mb-1">WebSocket Path (WSS Mode)</label>
               <input id="tun-path" value="/ws" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
           </div>
 
-          <!-- Direct TLS Stream Options (Shown when Method 2 is selected) -->
-          <div id="row-spoof-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-sky-500/30">
+          <!-- Direct TLS Options -->
+          <div id="row-direct-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-sky-500/30">
             <div class="text-xs font-bold text-sky-400 flex items-center justify-between">
-              <span>⚡ Direct TLS 1.3 Stream Relay (`spoof.go`)</span>
+              <span>⚡ Direct TLS 1.3 Stream Relay (`direct.go`)</span>
               <span class="text-[10px] font-mono text-emerald-400">Zero HTTP Overhead</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -274,14 +292,32 @@
                 </select>
               </div>
               <div>
-                <label class="text-xs text-emerald-300 font-semibold block mb-1">TCP ClientHello Segment Size (0 = Off)</label>
-                <input id="tun-frag" value="0" placeholder="0 (Standard) or 64" class="w-full rounded-lg p-2.5 text-xs font-mono">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <label class="text-xs text-emerald-300 font-semibold">TCP ClientHello Segment Size</label>
+                  <button type="button" onclick="showHelpModal('seg')" class="help-btn">?</button>
+                </div>
+                <input id="tun-frag" value="0" placeholder="0 = Off, or 64" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
             </div>
           </div>
 
-          <div>
-            <label class="text-xs text-slate-400 block mb-1" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server if blank)</label>
+          <!-- Port Forward Options -->
+          <div id="row-forward-opts" class="hidden space-y-2 bg-[#080d14]/90 p-3.5 rounded-xl border border-emerald-500/30">
+            <div class="flex items-center justify-between text-xs font-bold text-emerald-400">
+              <div class="flex items-center gap-1.5">
+                <span>🔄 Raw L4 TCP Stream Forwarder (`portforward.go`)</span>
+                <button type="button" onclick="showHelpModal('forward')" class="help-btn">?</button>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Native socat replacement</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Direct byte relay from Entry port straight to Exit port without TLS termination. Uses native Go buffer pools.</p>
+          </div>
+
+          <div id="row-cert-pin">
+            <div class="flex items-center gap-1.5 mb-1">
+              <label class="text-xs text-slate-400" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server)</label>
+              <button type="button" onclick="showHelpModal('pin')" class="help-btn">?</button>
+            </div>
             <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
           </div>
 
@@ -380,7 +416,7 @@
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
-            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400">▼</button>
+            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
           </div>
         </div>
 
@@ -397,6 +433,20 @@
     </aside>
 
   </main>
+
+  <!-- HELP EXPLANATION MODAL -->
+  <div id="help-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="card max-w-md w-full rounded-2xl p-5 border border-slate-700 space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h4 id="help-modal-title" class="text-sm font-bold text-sky-400">Option Explanation</h4>
+        <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-lg">&times;</button>
+      </div>
+      <p id="help-modal-body" class="text-xs text-slate-300 leading-relaxed font-mono"></p>
+      <div class="pt-2 text-right">
+        <button onclick="closeHelpModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700">Understood</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>

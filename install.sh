@@ -19,7 +19,7 @@ install_base() {
   if [ ! -f "$CONF_FILE" ]; then
     RAND_PATH=$(openssl rand -hex 4)
     cat <<EOF > "$CONF_FILE"
-PANEL_PORT=8880
+PANEL_PORT=6001
 PANEL_PATH=$RAND_PATH
 PANEL_USER=admin
 PANEL_PASS=admin

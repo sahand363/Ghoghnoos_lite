@@ -84,8 +84,8 @@
   <!-- MAIN WORKSPACE -->
   <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
 
-    <!-- LEFT COLUMN (7 Cols) -->
-    <div class="lg:col-span-7 space-y-4 sm:space-y-6">
+    <!-- LEFT COLUMN (7 Cols) - No outer space-y so all 4 tabs align flush with PuTTY window top! -->
+    <div class="lg:col-span-7">
 
       <!-- TAB 1: SERVERS -->
       <section id="view-servers" class="space-y-4 sm:space-y-6">
@@ -95,7 +95,7 @@
               <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
               <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enter SSH credentials to automatically install and link the Sentinel agent.</p>
             </div>
-            <span class="text-[11px] px-2.5 py-1 rounded-lg font-mono" style="background: var(--accent-glow); color: var(--accent);">Port 6001 Default</span>
+            <span class="text-[11px] px-2.5 py-1 rounded-lg font-mono" style="background: var(--accent-glow); color: var(--accent);">Native Go SSH</span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -287,18 +287,18 @@
               <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
-              <label class="text-xs text-amber-400 font-semibold block mb-1" data-i18n="spd_limit_lbl">Speed Limit</label>
-              <select id="tun-speed" class="w-full rounded-lg p-2.5 text-xs font-mono bg-[#080d14]">
-                <option value="0">Unlimited</option>
-                <option value="2">2 MB/s (16 Mbps)</option>
-                <option value="4">4 MB/s (32 Mbps)</option>
-                <option value="8">8 MB/s (64 Mbps)</option>
-                <option value="16">16 MB/s (128 Mbps)</option>
-              </select>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs text-amber-400 font-semibold" data-i18n="spd_limit_lbl">Speed (MB/s)</label>
+                <span id="spd-badge" class="text-[10px] font-mono text-slate-400">Unlimited</span>
+              </div>
+              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden">
+                <button type="button" onclick="stepSpeed(-0.5)" class="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-300">-</button>
+                <input id="tun-speed" type="number" step="0.5" min="0" value="0" oninput="updateSpeedBadge()" class="w-full border-0 text-center p-2 text-xs font-mono focus:outline-none">
+                <button type="button" onclick="stepSpeed(0.5)" class="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-sky-400">+</button>
+              </div>
             </div>
           </div>
 
-          <!-- Shared SNI Box (Visible for BOTH WSS and Direct TLS!) + WebSocket Path (Visible for WSS only) -->
           <div id="row-tls-sni-wrap" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div id="row-sni-box">
               <div class="flex items-center gap-1.5 mb-1">

@@ -36,7 +36,7 @@
       <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
       <div>
         <span class="font-bold tracking-wide text-xs sm:text-sm block leading-none">Ghoghnoos-lite</span>
-        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun Multi-Engine</span>
+        <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun Dual-Engine</span>
       </div>
     </div>
 
@@ -181,23 +181,23 @@
             <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
-                  <span>WSS</span>
+                  <span>WSS (WebSocket + TLS)</span>
                   <span id="badge-method-wss" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">SELECTED</span>
                 </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">WebSocket over TLS 1.3 + Keep-Alive</div>
+                <div class="text-xs text-slate-300 mt-1" data-i18n="wss_desc">HTTP/1.1 WebSocket Upgrade over TLS 1.3</div>
               </div>
-              <span class="text-lg">🔒</span>
+              <span class="text-lg">🌐</span>
             </div>
 
-            <div id="method-card-spoof" onclick="selectTunnelMethod('spoof')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition hover:border-slate-700">
+            <div id="method-card-spoof" onclick="selectTunnelMethod('tls')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition hover:border-slate-700">
               <div>
                 <div class="font-bold text-sm flex items-center gap-2">
-                  <span>SNI Spoofing</span>
+                  <span>Direct TLS Stream</span>
                   <span id="badge-method-spoof" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
                 </div>
-                <div class="text-xs text-slate-300 mt-1" data-i18n="spoof_desc">Decoy ClientHello Injection + TLS Fragmentation</div>
+                <div class="text-xs text-slate-300 mt-1" data-i18n="spoof_desc">Zero-HTTP Raw TLS 1.3 Stream + Custom SNI & Pinning</div>
               </div>
-              <span class="text-lg">🎭</span>
+              <span class="text-lg">⚡</span>
             </div>
           </div>
         </div>
@@ -221,7 +221,6 @@
             </div>
           </div>
 
-          <!-- 4-Col Row: Name + Tunnel Port + Inbound Ports + Speed Limit -->
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
@@ -247,40 +246,36 @@
             </div>
           </div>
 
-          <!-- WSS Specific Row -->
-          <div id="row-wss-opts" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Shared SNI + Method-Specific Options -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="text-xs text-slate-400 block mb-1">SNI / Host Header</label>
+              <label class="text-xs text-slate-400 block mb-1">TLS SNI Hostname (ServerName)</label>
               <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1">WebSocket Path</label>
+            <div id="row-wss-opts">
+              <label class="text-xs text-slate-400 block mb-1">WebSocket Path (WSS Mode)</label>
               <input id="tun-path" value="/ws" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
           </div>
 
-          <!-- SNI Spoofing Specific Row -->
-          <div id="row-spoof-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-amber-500/30">
-            <div class="text-xs font-bold text-amber-400 flex items-center justify-between">
-              <span>🎭 Low-Level SNI Spoofing & Packet Fragmentation Engine (`spoof.go`)</span>
-              <span class="text-[10px] font-mono text-emerald-400">RFC-5246 Raw ClientHello</span>
+          <!-- Direct TLS Stream Options (Shown when Method 2 is selected) -->
+          <div id="row-spoof-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-sky-500/30">
+            <div class="text-xs font-bold text-sky-400 flex items-center justify-between">
+              <span>⚡ Direct TLS 1.3 Stream Relay (`spoof.go`)</span>
+              <span class="text-[10px] font-mono text-emerald-400">Zero HTTP Overhead</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="text-xs text-amber-300 font-semibold block mb-1">Fake / Decoy SNI (Whitelisted)</label>
-                <input id="tun-fake-sni" value="ebank.bmi.ir" placeholder="ebank.bmi.ir" class="w-full rounded-lg p-2.5 text-xs font-mono">
-              </div>
-              <div>
-                <label class="text-xs text-sky-300 font-semibold block mb-1">Browser TLS Fingerprint</label>
+                <label class="text-xs text-sky-300 font-semibold block mb-1">TLS Cipher Suite Profile</label>
                 <select id="tun-fp" class="w-full rounded-lg p-2.5 text-xs font-mono bg-[#0b111a]">
-                  <option value="chrome">Chrome 120 (X25519)</option>
-                  <option value="firefox">Firefox 121 (ChaCha20)</option>
-                  <option value="safari">Safari iOS 17</option>
+                  <option value="chrome">Chrome Modern (AES-GCM / X25519)</option>
+                  <option value="firefox">Firefox (ChaCha20-Poly1305)</option>
+                  <option value="safari">Safari iOS</option>
                 </select>
               </div>
               <div>
-                <label class="text-xs text-emerald-300 font-semibold block mb-1">TLS Fragment Size (Bytes)</label>
-                <input id="tun-frag" value="64" placeholder="64" class="w-full rounded-lg p-2.5 text-xs font-mono">
+                <label class="text-xs text-emerald-300 font-semibold block mb-1">TCP ClientHello Segment Size (0 = Off)</label>
+                <input id="tun-frag" value="0" placeholder="0 (Standard) or 64" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
             </div>
           </div>

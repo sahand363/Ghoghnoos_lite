@@ -31,8 +31,8 @@ const dict = {
     bbr_sub: 'Boosts tunnel throughput and reduces packet-loss throttling on the selected server.',
     btn_bbr: '⚡ Enable Google BBR + FQ on Selected Server',
     step1_method: '1. Select Tunnel Transport Method',
-    wss_desc: 'WebSocket over TLS 1.3 + Keep-Alive',
-    spoof_desc: 'Decoy ClientHello Injection + TLS Fragmentation',
+    wss_desc: 'HTTP/1.1 WebSocket Upgrade over TLS 1.3',
+    spoof_desc: 'Zero-HTTP Raw TLS 1.3 Stream + Custom SNI & Pinning',
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
     src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
     tun_name: 'Tunnel Name',
@@ -56,8 +56,8 @@ const dict = {
     bbr_sub: 'افزایش سرعت تانل و جلوگیری از افت سرعت در سرور انتخاب‌شده.',
     btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
     step1_method: '۱. انتخاب متد تانل',
-    wss_desc: 'وب‌سوکت روی TLS 1.3 با اتصال پایدار ضد قطعی',
-    spoof_desc: 'تزریق پکت SNI دامنه مجاز + تکه‌تکه کردن پکت TLS',
+    wss_desc: 'ارتقای وب‌سوکت HTTP/1.1 روی بستر TLS 1.3',
+    spoof_desc: 'استریم مستقیم TLS 1.3 بدون سربار HTTP با پین گواهی',
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
     src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
     tun_name: 'نام تانل',
@@ -71,12 +71,13 @@ const dict = {
 };
 
 function selectTunnelMethod(m) {
+  if (m === 'spoof') m = 'tls';
   selectedMethod = m || 'wss';
   const cWss = el('method-card-wss'), cSpoof = el('method-card-spoof');
   const bWss = el('badge-method-wss'), bSpoof = el('badge-method-spoof');
   const rWss = el('row-wss-opts'), rSpoof = el('row-spoof-opts');
 
-  if (selectedMethod === 'spoof') {
+  if (selectedMethod === 'tls') {
     if (cWss) cWss.className = 'p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex items-center justify-between transition';
     if (cSpoof) cSpoof.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex items-center justify-between transition';
     if (bWss) { bWss.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; bWss.innerText = 'READY'; }
@@ -229,9 +230,8 @@ function resetForm() {
   if (el('inbound-ports')) el('inbound-ports').value = '';
   if (el('tun-speed')) el('tun-speed').value = '0';
   if (el('tun-sni')) el('tun-sni').value = 'www.speedtest.net';
-  if (el('tun-fake-sni')) el('tun-fake-sni').value = 'ebank.bmi.ir';
   if (el('tun-fp')) el('tun-fp').value = 'chrome';
-  if (el('tun-frag')) el('tun-frag').value = '64';
+  if (el('tun-frag')) el('tun-frag').value = '0';
   if (el('tun-path')) el('tun-path').value = '/ws';
   if (el('tun-pin')) el('tun-pin').value = '';
   autoUpdateTunnelName();
@@ -250,9 +250,8 @@ function editTunnel(id) {
   if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
   if (el('tun-speed')) el('tun-speed').value = t.speed_limit || '0';
   if (el('tun-sni')) el('tun-sni').value = t.sni || 'www.speedtest.net';
-  if (el('tun-fake-sni')) el('tun-fake-sni').value = t.fake_sni || 'ebank.bmi.ir';
   if (el('tun-fp')) el('tun-fp').value = t.fingerprint || 'chrome';
-  if (el('tun-frag')) el('tun-frag').value = t.frag_size || '64';
+  if (el('tun-frag')) el('tun-frag').value = t.frag_size || '0';
   if (el('tun-path')) el('tun-path').value = t.ws_path || '/ws';
   if (el('tun-pin')) el('tun-pin').value = t.cert_pin || '';
 }
@@ -297,9 +296,8 @@ async function saveTunnel() {
     inbound_ports: cleanInbounds,
     speed_limit: el('tun-speed')?.value || '0',
     sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
-    fake_sni: (el('tun-fake-sni')?.value || '').trim() || 'ebank.bmi.ir',
     fingerprint: el('tun-fp')?.value || 'chrome',
-    frag_size: (el('tun-frag')?.value || '').trim() || '64',
+    frag_size: (el('tun-frag')?.value || '').trim() || '0',
     ws_path: pathVal,
     cert_pin: (el('tun-pin')?.value || '').trim()
   };
@@ -428,12 +426,9 @@ function renderTunnels() {
     const srcSrv = currentServers.find(s => s.id === t.source_server);
     const dstSrv = currentServers.find(s => s.id === t.target_server);
     const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
-    const isSpoof = t.method === 'spoof';
-    const mBadge = isSpoof ? '🎭 SNI-SPOOF' : '🔒 WSS';
+    const isDirectTLS = t.method === 'tls' || t.method === 'spoof';
+    const mBadge = isDirectTLS ? '⚡ DIRECT-TLS' : '🌐 WSS';
     const spdTxt = (t.speed_limit && t.speed_limit !== '0') ? `${t.speed_limit} MB/s` : 'Unlimited';
-    const extraInfo = isSpoof
-      ? `<div>Fake SNI: <b class="text-amber-300">${t.fake_sni || 'ebank.bmi.ir'}</b> (${t.frag_size || '64'}B)</div>`
-      : `<div>SNI: <b class="text-slate-200">${t.sni}</b></div>`;
     return `
       <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
         <div class="flex flex-wrap justify-between items-center gap-2">
@@ -452,7 +447,7 @@ function renderTunnels() {
           <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
           <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
           <div>Speed: <b class="text-amber-400">${spdTxt}</b></div>
-          ${extraInfo}
+          <div>SNI: <b class="text-slate-200">${t.sni}</b></div>
         </div>
       </div>`;
   }).join(''));

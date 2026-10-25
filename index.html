@@ -152,6 +152,18 @@
               </div>
               <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
             </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">Panel Username</label>
+              <input id="cfg-user" placeholder="admin" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">New Panel Password (leave blank to keep current)</label>
+              <input id="cfg-pass" type="password" placeholder="••••••••" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
+          </div>
+            
           </div>
           <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
         </div>

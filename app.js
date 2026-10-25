@@ -3,6 +3,10 @@ let currentTheme = 'cyan';
 let currentTab = 'servers';
 let selectedServer = 'local';
 let selectedMethod = 'wss';
+let deployMode = 'ssh';
+let enrollToken = '';
+let masterIP = '';
+let dialPort = '6001';
 let currentServers = [];
 let currentTunnels = [];
 let pingHistory = [];
@@ -16,6 +20,60 @@ let historyRange = '24h';
 const el = id => document.getElementById(id);
 const setText = (id, val) => { const e = el(id); if (e) e.innerText = val; };
 const setHTML = (id, val) => { const e = el(id); if (e) e.innerHTML = val; };
+
+function setDeployMode(mode) {
+  deployMode = mode;
+  const bSsh = el('btn-mode-ssh'), bEnr = el('btn-mode-enroll');
+  const boxSsh = el('box-deploy-ssh'), boxEnr = el('box-deploy-enroll');
+  if (mode === 'enroll') {
+    if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+    if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
+    if (boxSsh) boxSsh.classList.add('hidden');
+    if (boxEnr) boxEnr.classList.remove('hidden');
+    updateEnrollCommandUI();
+  } else {
+    if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
+    if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+    if (boxSsh) boxSsh.classList.remove('hidden');
+    if (boxEnr) boxEnr.classList.add('hidden');
+  }
+}
+
+function updateEnrollCommandUI() {
+  const addrIn = el('enroll-master-addr');
+  if (addrIn && !addrIn.value && masterIP) {
+    addrIn.value = `${masterIP}:${dialPort || '6001'}`;
+  }
+  const targetAddr = (addrIn?.value || `${masterIP || window.location.hostname}:${dialPort || '6001'}`).trim();
+  const nodeName = (el('enroll-node-name')?.value || 'US-Sentinel').trim().replace(/\s+/g, '-');
+  const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | bash -s -- --enroll ${targetAddr} ${enrollToken} ${nodeName}`;
+  setText('enroll-cmd-box', cmd);
+}
+
+async function copyEnrollCommand() {
+  const cmd = el('enroll-cmd-box')?.innerText || '';
+  if (!cmd) return;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    const btn = el('btn-copy-enroll');
+    if (btn) {
+      const old = btn.innerText;
+      btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور خارج اجرا کنید' : '✅ Copied! Paste in Remote VPS Terminal';
+      setTimeout(() => { btn.innerText = old; }, 2500);
+    }
+  } catch (e) {
+    prompt('Copy command:', cmd);
+  }
+}
+
+async function rotateEnrollToken() {
+  const res = await fetch('/api/enroll/token', { method: 'POST' });
+  const data = await res.json();
+  if (data.enroll_token) {
+    enrollToken = data.enroll_token;
+    updateEnrollCommandUI();
+  }
+}
 
 function stepSpeed(delta) {
   const inp = el('tun-speed');
@@ -39,6 +97,10 @@ function updateSpeedBadge() {
 
 const helpTexts = {
   en: {
+    enroll: {
+      title: '🔑 Reverse Sentinel Dial-In & Survival Loop',
+      body: 'When SSH from Iran to Kharej is blocked or filtered, run this one-liner on the remote server.\n\n1. The Sentinel tests Direct-TLS ➔ WSS ➔ L4 API until it reaches your Master.\n2. Once connected, it runs a background Survival Loop with a randomized 60–85 second jittered heartbeat.\n3. If a transport ever gets blocked later, it automatically hunts for another working method.'
+    },
     stealth: {
       title: '🛡️ Method Stealth Percentage Explained',
       body: '• WSS (85% Stealth): Wraps traffic in TLS 1.3 + HTTP/1.1 WebSocket headers and serves a decoy 200 OK HTML webpage if probed.\n\n• Direct TLS (75% Stealth): Pure TLS 1.3 encrypted stream with browser cipher-suite profiles and TCP ClientHello segmentation, without HTTP header overhead.\n\n• Port Forward (20% Stealth): Raw L4 TCP forwarding (like socat). Has no outer encryption of its own—best used when your X-UI inbound already uses VLESS-REALITY or TLS.'
@@ -77,6 +139,10 @@ const helpTexts = {
     }
   },
   fa: {
+    enroll: {
+      title: '🔑 اتصال معکوس سنتینل (Reverse Dial-In) و حلقه بقا',
+      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. سنتینل به ترتیب متدهای Direct-TLS، سپس WSS و L4 API را تست می‌کند تا به سرور مستر متصل شود.\n۲. پس از اتصال، هر ۶۰ تا ۸۵ ثانیه (با زمان‌بندی تصادفی ضد تشخیص DPI) وضعیت را همگام‌سازی می‌کند.\n۳. اگر متد فعلی مسدود شود، به صورت خودکار متدهای دیگر را تست و جایگزین می‌کند.'
+    },
     stealth: {
       title: '🛡️ راهنمای درصد مخفی‌سازی (Stealth) متدها',
       body: '• متد WSS (۸۵٪ مخفی‌سازی): ترافیک را داخل TLS 1.3 و هدرهای وب‌سوکت HTTP/1.1 قرار می‌دهد و در صورت بررسی فعال، صفحه وب معمولی (200 OK) نمایش می‌دهد.\n\n• متد Direct TLS (۷۵٪ مخفی‌سازی): استریم مستقیم رمزنگاری‌شده TLS 1.3 بدون سربار HTTP همراه با پروفایل رمزنگاری مرورگر و قابلیت قطعه‌بندی پکت ClientHello.\n\n• متد Port Forward (۲۰٪ مخفی‌سازی): انتقال مستقیم لایه ۴ (مشابه socat) بدون رمزنگاری بیرونی. مناسب زمانی که کانفیگ X-UI شما خودش دارای REALITY یا TLS است.'
@@ -136,12 +202,21 @@ const dict = {
   en: {
     servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Log',
     add_srv_title: 'Connect Remote Server & Deploy Sentinel',
-    add_srv_sub: 'Enter SSH credentials to automatically install and link the Sentinel agent.',
+    add_srv_sub: 'Choose Direct SSH Push or Reverse Token Dial-In (when SSH is filtered).',
+    mode_ssh_btn: '🚀 Method A: SSH Push', mode_enroll_btn: '🔑 Method B: Reverse Dial-In',
     srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
     srv_user: 'SSH Username', srv_pass: 'SSH Password',
     btn_deploy: '🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)',
-    network_settings: 'Server Port & URL Configuration', lbl_panel_port: 'Panel / Sentinel Port',
-    lbl_panel_path: 'Secret URL Path', save_restart: 'Save & Restart Selected Server',
+    enroll_title: '🔑 Autonomous Reverse Sentinel Enrollment (Survival Loop)',
+    enroll_sub: 'If outbound SSH from Master is blocked, run this command on your remote VPS. The Sentinel will test Direct-TLS ➔ WSS ➔ L4 API until it breaks through and registers itself automatically.',
+    enroll_node_lbl: 'New Sentinel Name (for One-Liner)',
+    enroll_addr_lbl: 'Master Dial-In Target (IP:Port)',
+    enroll_cmd_lbl: 'Paste this One-Liner on your Remote Server Terminal:',
+    btn_rotate_tok: '🔄 Rotate Token',
+    btn_copy_enroll: '📋 Copy Reverse Enrollment One-Liner Command',
+    network_settings: 'Server Port, URL & Login Configuration', lbl_panel_port: 'Panel / Sentinel Port',
+    lbl_panel_path: 'Secret URL Path', lbl_panel_user: 'Panel Username',
+    lbl_panel_pass: 'New Panel Password (blank = keep current)', save_restart: 'Save & Restart Selected Server',
     bbr_title: 'TCP BBR & FQ Kernel Acceleration',
     bbr_sub: 'Boosts tunnel throughput and eliminates packet-loss throttling on the selected server.',
     btn_bbr: '⚡ Enable Google BBR + FQ on Selected Server',
@@ -163,13 +238,22 @@ const dict = {
   },
   fa: {
     servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ',
-    add_srv_title: 'اتصال به سرور جدید و نصب خودکار سنتینل',
-    add_srv_sub: 'مشخصات SSH را وارد کنید تا سنتینل با نمایش درصد پیشرفت نصب شود.',
+    add_srv_title: 'اتصال به سرور جدید و نصب سنتینل',
+    add_srv_sub: 'نصب مستقیم با SSH یا اتصال معکوس با توکن (زمانی که SSH مسدود است).',
+    mode_ssh_btn: '🚀 روش اول: نصب با SSH', mode_enroll_btn: '🔑 روش دوم: اتصال معکوس (Dial-In)',
     srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
     srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
     btn_deploy: '🚀 اتصال با SSH و نصب سنتینل (۰٪ تا ۱۰۰٪)',
-    network_settings: 'تنظیمات پورت و آدرس سرور انتخاب‌شده', lbl_panel_port: 'پورت پنل / سنتینل',
-    lbl_panel_path: 'آدرس مخفی پنل', save_restart: 'ذخیره و ری‌استارت سرور انتخاب‌شده',
+    enroll_title: '🔑 ثبت‌نام معکوس و خودکار سنتینل (مجهز به حلقه بقا)',
+    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب Direct-TLS، سپس WSS و L4 API را تست می‌کند تا متصل شود.',
+    enroll_node_lbl: 'نام دلخواه سرور سنتینل',
+    enroll_addr_lbl: 'آدرس و پورت سرور مستر (IP:Port)',
+    enroll_cmd_lbl: 'این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید:',
+    btn_rotate_tok: '🔄 تغییر توکن',
+    btn_copy_enroll: '📋 کپی دستور تک‌خطی اتصال معکوس سنتینل',
+    network_settings: 'تنظیمات پورت، آدرس و رمز ورود پنل', lbl_panel_port: 'پورت پنل / سنتینل',
+    lbl_panel_path: 'آدرس مخفی پنل', lbl_panel_user: 'نام کاربری پنل',
+    lbl_panel_pass: 'رمز عبور جدید پنل (خالی = بدون تغییر)', save_restart: 'ذخیره و ری‌استارت سرور انتخاب‌شده',
     bbr_title: 'شتاب‌دهنده کرنل TCP BBR و FQ',
     bbr_sub: 'افزایش سرعت تانل و جلوگیری از افت سرعت در سرور انتخاب‌شده.',
     btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
@@ -518,7 +602,8 @@ function renderServers() {
 
   const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];
   if (activeSrv) {
-    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})`);
+    const viaSuffix = activeSrv.via_method ? ` [via ${activeSrv.via_method}]` : '';
+    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})${viaSuffix}`);
     setText('cfg-target-badge', `${activeSrv.name} (${activeSrv.ip})`);
   }
 
@@ -541,13 +626,17 @@ function renderServers() {
     const isOnline = s.status === 'Online';
     const badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
     const infoUrl = `http://${s.ip}:${s.panel_port || '6001'}/sentinel-info`;
+    const viaBadge = (!s.is_local && s.via_method)
+      ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>`
+      : '';
     return `
       <div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
         <div class="flex justify-between items-start">
           <div>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-1.5">
               <h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
               ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}
+              ${viaBadge}
             </div>
             <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port || '6001'}</b></div>
           </div>
@@ -657,6 +746,12 @@ async function fetchState() {
     const data = await res.json();
 
     if (data.server_time) setText('top-server-clock', data.server_time);
+    if (data.enroll_token && data.enroll_token !== enrollToken) {
+      enrollToken = data.enroll_token;
+      masterIP = data.master_ip || window.location.hostname;
+      dialPort = data.dial_port || data.panel_port || '6001';
+      updateEnrollCommandUI();
+    }
 
     if (!initialLoaded && data.prefs) {
       initialLoaded = true;

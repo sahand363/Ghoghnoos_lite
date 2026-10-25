@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 )
 
-// startPortForwardEngine implements L4 raw TCP relaying (native socat-like stream)
-// Supports both Entry (Iran) -> Exit (Kharej Tunnel Port) -> Local X-UI Inbound Port
 func startPortForwardEngine(t Tunnel) {
 	mu.Lock()
 	stopTunnelIfRunning(t.ID)
@@ -26,7 +23,6 @@ func startPortForwardEngine(t Tunnel) {
 		tunPort = "10202"
 	}
 
-	// EXIT SERVER (Kharej): Listen on TunnelPort (:10202) and forward raw TCP to 127.0.0.1:<X-UI Port>
 	if t.Role == "server" {
 		ln, err := net.Listen("tcp", ":"+tunPort)
 		if err != nil {
@@ -51,7 +47,6 @@ func startPortForwardEngine(t Tunnel) {
 		return
 	}
 
-	// ENTRY SERVER (Iran): Listen on each Inbound Port (:45455) and relay to Exit Server (:10202)
 	remoteHost := t.RemoteAddr
 	if !strings.Contains(remoteHost, ":") && tunPort != "" {
 		remoteHost = net.JoinHostPort(remoteHost, tunPort)
@@ -93,12 +88,11 @@ func handlePortForwardClient(client net.Conn, targetAddr, xuiPort, speedLimit st
 	defer remote.Close()
 	enableKeepAlive(remote)
 
-	// Send lightweight L4 routing header so Exit node knows which local X-UI port to dial
 	if _, err := remote.Write([]byte("FWD|" + xuiPort + "\n")); err != nil {
 		return
 	}
 
-	mbLimit, _ := strconv.Atoi(speedLimit)
+	mbLimit := parseSpeedLimit(speedLimit)
 	txW := newThrottledWriter(remote, &appTxBytes, mbLimit)
 	rxW := newThrottledWriter(client, &appRxBytes, mbLimit)
 
@@ -147,7 +141,7 @@ func handlePortForwardServer(conn net.Conn, t Tunnel, defaultPort string) {
 		target.Write(buf)
 	}
 
-	mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+	mbLimit := parseSpeedLimit(t.SpeedLimit)
 	txW := newThrottledWriter(target, &appRxBytes, mbLimit)
 	rxW := newThrottledWriter(conn, &appTxBytes, mbLimit)
 

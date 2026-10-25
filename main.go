@@ -110,8 +110,6 @@ func initSelfSignedCert() {
 func main() {
 	loadEnvFile()
 
-	// Check if launched in interactive CLI Reverse-Enrollment mode:
-	// ghoghnoos_lite --enroll <MasterIP:Port> <Token> [NodeName]
 	if len(os.Args) >= 4 && os.Args[1] == "--enroll" {
 		nodeName := ""
 		if len(os.Args) >= 5 {
@@ -137,6 +135,7 @@ func main() {
 	initSelfSignedCert()
 	loadDBFromDisk(port)
 	ensureEnrollToken()
+	startMasterControlListeners(port)
 	go startTelemetryMonitor()
 	go startPingMonitor()
 	go startSentinelSurvivalLoop()

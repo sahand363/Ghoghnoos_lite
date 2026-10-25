@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,7 +60,106 @@ func regenerateEnrollToken() string {
 	return db.EnrollToken
 }
 
-// Handles an incoming reverse enrollment / heartbeat frame on Master
+// Starts dedicated Master Control Listeners on BasePort+1 (:6002 Direct-TLS) and BasePort+2 (:6003 WSS)
+func startMasterControlListeners(basePortStr string) {
+	// Do not start Master ingress listeners if this node is a remote Sentinel
+	if strings.Trim(os.Getenv("PANEL_PATH"), "/") == "sentinel" || os.Getenv("MASTER_ADDR") != "" {
+		return
+	}
+
+	basePort, err := strconv.Atoi(strings.TrimSpace(basePortStr))
+	if err != nil || basePort <= 0 {
+		basePort = 6001
+	}
+	directPort := strconv.Itoa(basePort + 1) // 6002
+	wssPort := strconv.Itoa(basePort + 2)    // 6003
+
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{localCert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// 1. Dedicated Direct-TLS 1.3 Control Listener (:6002)
+	go func() {
+		ln, err := tls.Listen("tcp", ":"+directPort, tlsCfg)
+		if err != nil {
+			addLog(fmt.Sprintf("WARN [Control-DirectTLS]: Could not bind :%s -> %v", directPort, err))
+			return
+		}
+		addLog(fmt.Sprintf("CONTROL-READY: Direct-TLS 1.3 Ingress listening on :%s", directPort))
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go handleMasterControlConn(conn, "direct")
+		}
+	}()
+
+	// 2. Dedicated WSS WebSocket Control Listener (:6003)
+	go func() {
+		ln, err := tls.Listen("tcp", ":"+wssPort, tlsCfg)
+		if err != nil {
+			addLog(fmt.Sprintf("WARN [Control-WSS]: Could not bind :%s -> %v", wssPort, err))
+			return
+		}
+		addLog(fmt.Sprintf("CONTROL-READY: WSS WebSocket Ingress listening on :%s", wssPort))
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go handleMasterControlConn(conn, "wss")
+		}
+	}()
+}
+
+func handleMasterControlConn(conn net.Conn, mode string) {
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+	br := bufio.NewReader(conn)
+
+	if mode == "direct" {
+		line, err := br.ReadString('\n')
+		if err != nil || !strings.HasPrefix(line, "ENROLL|") {
+			return
+		}
+		rawB64 := strings.TrimSpace(strings.TrimPrefix(line, "ENROLL|"))
+		if decoded, err := base64.StdEncoding.DecodeString(rawB64); err == nil {
+			var hb EnrollHeartbeat
+			if json.Unmarshal(decoded, &hb) == nil {
+				hb.ViaMethod = "DIRECT"
+				rep := processIncomingEnroll(hb)
+				b, _ := json.Marshal(rep)
+				conn.Write(append(b, '\n'))
+			}
+		}
+		return
+	}
+
+	// mode == "wss": Read HTTP/1.1 Upgrade headers and extract X-Enroll-Payload
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil || line == "\r\n" || line == "\n" {
+			break
+		}
+		low := strings.ToLower(line)
+		if strings.HasPrefix(low, "x-enroll-payload:") {
+			rawB64 := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			if decoded, err := base64.StdEncoding.DecodeString(rawB64); err == nil {
+				var hb EnrollHeartbeat
+				if json.Unmarshal(decoded, &hb) == nil {
+					hb.ViaMethod = "WSS"
+					rep := processIncomingEnroll(hb)
+					b, _ := json.Marshal(rep)
+					conn.Write(append(b, '\n'))
+					return
+				}
+			}
+		}
+	}
+}
+
 func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 	mu.Lock()
 	defer mu.Unlock()
@@ -116,13 +216,11 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 	}
 
-	// Cache latest telemetry & logs pushed by the reverse-enrolled Sentinel
 	if remoteStateCache == nil {
 		remoteStateCache = make(map[string]EnrollHeartbeat)
 	}
 	remoteStateCache[targetSrv.ID] = hb
 
-	// Gather any Exit Tunnels assigned to this Sentinel so it stays synced even without inbound HTTP
 	var assignedExitTunnels []Tunnel
 	for _, t := range db.Tunnels {
 		if t.TargetServer == targetSrv.ID && t.Role != "server" {
@@ -159,10 +257,32 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 	}
 }
 
-// Try dialing Master using a specific transport method ("direct", "wss", or "forward")
+// Resolves the exact target port for each method based on Master's base port:
+// direct -> basePort+1 (:6002), wss -> basePort+2 (:6003), forward -> basePort (:6001)
+func resolveControlTarget(masterAddr, method string) string {
+	host, portStr, err := net.SplitHostPort(strings.TrimSpace(masterAddr))
+	if err != nil {
+		host = strings.TrimSpace(masterAddr)
+		portStr = "6001"
+	}
+	basePort, err := strconv.Atoi(portStr)
+	if err != nil || basePort <= 0 {
+		basePort = 6001
+	}
+	switch method {
+	case "direct":
+		return net.JoinHostPort(host, strconv.Itoa(basePort+1))
+	case "wss":
+		return net.JoinHostPort(host, strconv.Itoa(basePort+2))
+	default:
+		return net.JoinHostPort(host, strconv.Itoa(basePort))
+	}
+}
+
 func tryDialMasterControl(masterAddr, token, nodeName, method string) (EnrollReply, int64, error) {
 	var empty EnrollReply
 	start := time.Now()
+	targetAddr := resolveControlTarget(masterAddr, method)
 
 	mu.Lock()
 	logsCopy := append([]string{}, logs...)
@@ -185,10 +305,9 @@ func tryDialMasterControl(masterAddr, token, nodeName, method string) (EnrollRep
 	}
 	payloadBytes, _ := json.Marshal(hb)
 
-	// Transport 1 & 2: Direct-TLS or WSS over TLS 1.3
 	if method == "direct" || method == "wss" {
 		dialer := &net.Dialer{Timeout: 6 * time.Second}
-		rawConn, err := dialer.Dial("tcp", masterAddr)
+		rawConn, err := dialer.Dial("tcp", targetAddr)
 		if err != nil {
 			return empty, 0, err
 		}
@@ -227,14 +346,13 @@ func tryDialMasterControl(masterAddr, token, nodeName, method string) (EnrollRep
 		}
 		var rep EnrollReply
 		if err := json.Unmarshal([]byte(strings.TrimSpace(replyLine)), &rep); err != nil || !rep.OK {
-			return empty, 0, fmt.Errorf(" handshake rejected")
+			return empty, 0, fmt.Errorf("handshake rejected")
 		}
 		return rep, time.Since(start).Milliseconds(), nil
 	}
 
-	// Transport 3: HTTP / L4 Control Fallback on Master Panel Port
 	client := &http.Client{Timeout: 6 * time.Second}
-	resp, err := client.Post(fmt.Sprintf("http://%s/api/enroll", masterAddr), "application/json", strings.NewReader(string(payloadBytes)))
+	resp, err := client.Post(fmt.Sprintf("http://%s/api/enroll", targetAddr), "application/json", strings.NewReader(string(payloadBytes)))
 	if err != nil {
 		return empty, 0, err
 	}
@@ -246,7 +364,7 @@ func tryDialMasterControl(masterAddr, token, nodeName, method string) (EnrollRep
 	return rep, time.Since(start).Milliseconds(), nil
 }
 
-// Interactive ANSI CLI Matrix executed when user runs `--enroll <MasterIP:Port> <Token> [NodeName]`
+// Interactive ANSI CLI Matrix with 3-Attempt Retry Loop (20s pause between rounds)
 func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 	initSelfSignedCert()
 	localIP = detectLocalIP()
@@ -254,39 +372,61 @@ func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 		nodeName = "Sentinel-" + localIP
 	}
 
+	dTarget := resolveControlTarget(masterAddr, "direct")
+	wTarget := resolveControlTarget(masterAddr, "wss")
+	fTarget := resolveControlTarget(masterAddr, "forward")
+
 	fmt.Println("\033[1;36m┌── Ghoghnoos Sentinel Dial-In Matrix ────────────────────────────┐\033[0m")
-	fmt.Printf("\033[1;36m│\033[0m Master Target : %-47s \033[1;36m│\033[0m\n", masterAddr)
+	fmt.Printf("\033[1;36m│\033[0m Master Base   : %-47s \033[1;36m│\033[0m\n", masterAddr)
 	fmt.Printf("\033[1;36m│\033[0m Sentinel Node : %-47s \033[1;36m│\033[0m\n", nodeName+" ("+localIP+")")
 	fmt.Println("\033[1;36m│                                                                 │\033[0m")
 
 	methods := []struct {
-		id    string
-		label string
+		id     string
+		label  string
+		target string
 	}{
-		{"direct", "Direct-TLS 1.3"},
-		{"wss", "WSS WebSocket "},
-		{"forward", "L4 Control API"},
+		{"direct", "Direct-TLS 1.3", dTarget},
+		{"wss", "WSS WebSocket ", wTarget},
+		{"forward", "L4 Control API", fTarget},
 	}
 
 	var winningMethod string
 	var winningReply EnrollReply
+	maxAttempts := 3
 
-	for idx, m := range methods {
-		fmt.Printf("\033[1;36m│\033[0m [%d/%d] Testing %-15s ... ", idx+1, len(methods), m.label)
-		rep, ms, err := tryDialMasterControl(masterAddr, token, nodeName, m.id)
-		if err == nil && rep.OK {
-			fmt.Printf("\033[1;32m[✔ Handshake OK | %d ms]\033[0m      \033[1;36m│\033[0m\n", ms)
-			winningMethod = m.id
-			winningReply = rep
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			fmt.Printf("\033[1;36m│\033[0m \033[1;33m» Retry Attempt %d of %d: Testing transports again...\033[0m            \033[1;36m│\033[0m\n", attempt, maxAttempts)
+		}
+
+		for idx, m := range methods {
+			_, portOnly, _ := net.SplitHostPort(m.target)
+			fmt.Printf("\033[1;36m│\033[0m [%d/3] %-14s (:%-5s) ... ", idx+1, m.label, portOnly)
+			rep, ms, err := tryDialMasterControl(masterAddr, token, nodeName, m.id)
+			if err == nil && rep.OK {
+				fmt.Printf("\033[1;32m[✔ Handshake OK | %d ms]\033[0m   \033[1;36m│\033[0m\n", ms)
+				winningMethod = m.id
+				winningReply = rep
+				break
+			} else {
+				fmt.Printf("\033[1;31m[✘ Filtered / Timeout]\033[0m     \033[1;36m│\033[0m\n")
+			}
+		}
+
+		if winningMethod != "" {
 			break
-		} else {
-			fmt.Printf("\033[1;31m[✘ Filtered / Timeout]\033[0m        \033[1;36m│\033[0m\n")
+		}
+
+		if attempt < maxAttempts {
+			fmt.Println("\033[1;36m│\033[0m \033[1;33m! All 3 transports failed. Waiting 20s before retry...\033[0m          \033[1;36m│\033[0m")
+			time.Sleep(20 * time.Second)
 		}
 	}
 
 	fmt.Println("\033[1;36m│                                                                 │\033[0m")
 	if winningMethod == "" {
-		fmt.Println("\033[1;31m│ ✘ All transport methods failed to reach Master.                 │\033[0m")
+		fmt.Println("\033[1;31m│ ✘ All 3 attempts failed. Check Master firewall (ports 6001-6003)│\033[0m")
 		fmt.Println("\033[1;36m└─────────────────────────────────────────────────────────────────┘\033[0m")
 		os.Exit(1)
 	}
@@ -295,7 +435,6 @@ func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 	fmt.Printf("\033[1;36m│\033[0m \033[1;32m» Active Control Highway: %-37s\033[0m \033[1;36m│\033[0m\n", strings.ToUpper(winningMethod))
 	fmt.Println("\033[1;36m└─────────────────────────────────────────────────────────────────┘\033[0m")
 
-	// Save enrollment state to config.env so background systemd service maintains the Survival Loop
 	saveEnrollmentConfig(masterAddr, token, nodeName, winningMethod)
 }
 
@@ -310,7 +449,6 @@ func saveEnrollmentConfig(masterAddr, token, nodeName, activeMethod string) {
 	_ = os.WriteFile(confPath, []byte(content), 0644)
 }
 
-// Background Survival Loop on Sentinel: jittered 60-85s heartbeat + auto-transport hunting if blocked
 func startSentinelSurvivalLoop() {
 	masterAddr := strings.TrimSpace(os.Getenv("MASTER_ADDR"))
 	token := strings.TrimSpace(os.Getenv("ENROLL_TOKEN"))
@@ -343,11 +481,9 @@ func startSentinelSurvivalLoop() {
 		}
 
 		if err == nil && rep.OK {
-			// Execute any console commands queued from Master's PuTTY window
 			for _, cmd := range rep.PendingCmds {
 				executeLocalConsoleCmd(cmd, os.Getenv("PANEL_PORT"))
 			}
-			// Ensure all Exit Tunnels assigned to this Sentinel are running
 			for _, et := range rep.ExitTunnels {
 				sig := fmt.Sprintf("%s:%s:%s:%s", et.Method, et.TunnelPort, et.InboundPorts, et.SpeedLimit)
 				if appliedExits[et.ID] != sig {
@@ -357,7 +493,6 @@ func startSentinelSurvivalLoop() {
 			}
 		}
 
-		// Jittered sleep: 60s + random(0..25s) to prevent DPI periodic-beacon detection
 		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(25))
 		sleepSec := 60 + int(jitterBig.Int64())
 		time.Sleep(time.Duration(sleepSec) * time.Second)

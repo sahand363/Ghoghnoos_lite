@@ -33,7 +33,7 @@ type Tunnel struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Role         string `json:"role"`
-	Method       string `json:"method"`        // "wss" or "spoof"
+	Method       string `json:"method"`
 	SourceServer string `json:"source_server"`
 	TargetServer string `json:"target_server"`
 	TunnelPort   string `json:"tunnel_port"`
@@ -43,7 +43,7 @@ type Tunnel struct {
 	FakeSNI      string `json:"fake_sni"`
 	Fingerprint  string `json:"fingerprint"`
 	FragSize     string `json:"frag_size"`
-	SpeedLimit   string `json:"speed_limit"`   // "0" (unlimited), "2", "4", "8" MB/s
+	SpeedLimit   string `json:"speed_limit"`
 	WSPath       string `json:"ws_path"`
 	CertPin      string `json:"cert_pin"`
 	Status       string `json:"status"`
@@ -471,6 +471,34 @@ func deploySentinelSSH(s ServerNode) {
 	}
 	mu.Unlock()
 	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel verified & online on :%s!", s.Name, detectedPort))
+}
+
+func uninstallSentinelRemote(s ServerNode) {
+	pPort := s.PanelPort
+	if pPort == "" {
+		pPort = "8880"
+	}
+	addLog(fmt.Sprintf("UNINSTALL [%s]: Sending remote uninstall signal to %s...", s.Name, s.IP))
+	client := &http.Client{Timeout: 3 * time.Second}
+	if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/uninstall", s.IP, pPort), "application/json", nil); err == nil {
+		resp.Body.Close()
+	}
+	if s.SSHPass != "" {
+		sshCfg := &ssh.ClientConfig{
+			User:            s.SSHUser,
+			Auth:            []ssh.AuthMethod{ssh.Password(s.SSHPass)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Timeout:         8 * time.Second,
+		}
+		if sc, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshCfg); err == nil {
+			defer sc.Close()
+			purgeCmd := "systemctl stop litetun 2>/dev/null; systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun"
+			_, _ = runSSHStep(sc, purgeCmd)
+			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel completely removed from %s via SSH!", s.Name, s.IP))
+			return
+		}
+	}
+	addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel self-destruct triggered on %s!", s.Name, s.IP))
 }
 
 func getMemoryStats() (uint64, int) {

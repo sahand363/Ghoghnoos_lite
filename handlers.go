@@ -63,7 +63,7 @@ func registerRoutes(port, panelPath string) {
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sentinel Node Info</title>
 		<style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}
 		.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}
-		h2{color:#facc15;margin-top:0;}</style></head><body>
+		h2{color:#38bdf8;margin-top:0;}</style></head><body>
 		<div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2>
 		<p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s) | <b>Time:</b> %s</p>
 		<p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div>
@@ -250,7 +250,7 @@ func registerRoutes(port, panelPath string) {
 			s.SSHUser = "root"
 		}
 		if s.PanelPort == "" {
-			s.PanelPort = "8880"
+			s.PanelPort = generateRandomPort()
 		}
 		s.ID = fmt.Sprintf("srv-%d", time.Now().Unix()%10000)
 		s.Status = "Deploying..."
@@ -382,8 +382,12 @@ func registerRoutes(port, panelPath string) {
 		var t Tunnel
 		json.NewDecoder(r.Body).Decode(&t)
 		t.Status = "Online"
-		if t.Method == "" {
-			t.Method = "wss"
+		if t.Method == "" || t.Method == "spoof" {
+			if t.Method == "spoof" {
+				t.Method = "direct"
+			} else {
+				t.Method = "wss"
+			}
 		}
 		if !strings.HasPrefix(t.WSPath, "/") {
 			t.WSPath = "/" + strings.Trim(t.WSPath, "/")
@@ -411,12 +415,12 @@ func registerRoutes(port, panelPath string) {
 			exitTunnel := Tunnel{
 				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
 				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
-				FakeSNI: t.FakeSNI, Fingerprint: t.Fingerprint, FragSize: t.FragSize,
+				Fingerprint: t.Fingerprint, FragSize: t.FragSize,
 				SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
 			}
 
 			if dstSrv.IsLocal {
-				go startTunnelEngine(exitTunnel)
+				dispatchTunnelEngine(exitTunnel)
 			} else {
 				body, _ := json.Marshal(exitTunnel)
 				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
@@ -443,7 +447,7 @@ func registerRoutes(port, panelPath string) {
 		mu.Unlock()
 
 		if srcSrv == nil || srcSrv.IsLocal {
-			go startTunnelEngine(t)
+			dispatchTunnelEngine(t)
 			go probeTunnelOnce(t)
 		} else {
 			body, _ := json.Marshal(t)

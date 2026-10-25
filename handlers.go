@@ -225,12 +225,6 @@ func registerRoutes(port, panelPath string) {
 
 		// Choose recommended Dial-In Port (if Master has an active WSS or Direct-TLS Exit listener, show it, else panel port)
 		dialPort := port
-		for _, t := range tunnelsCopy {
-			if t.Role == "server" && (t.Method == "direct" || t.Method == "wss") && t.TunnelPort != "" {
-				dialPort = t.TunnelPort
-				break
-			}
-		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

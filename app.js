@@ -452,7 +452,12 @@ async function saveTunnel() {
 async function saveConfig() {
   const port = (el('cfg-port')?.value || '').trim() || '6001';
   const path = (el('cfg-path')?.value || '').trim();
-  await fetch('/api/config?server_id=' + selectedServer, { method: 'POST', body: JSON.stringify({ port, path }) });
+  const user = (el('cfg-user')?.value || '').trim();
+  const pass = (el('cfg-pass')?.value || '').trim();
+  await fetch('/api/config?server_id=' + selectedServer, {
+    method: 'POST',
+    body: JSON.stringify({ port, path, user, pass })
+  });
   if (selectedServer === 'local') {
     setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
   } else {

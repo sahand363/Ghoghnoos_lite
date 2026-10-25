@@ -17,6 +17,26 @@ const el = id => document.getElementById(id);
 const setText = (id, val) => { const e = el(id); if (e) e.innerText = val; };
 const setHTML = (id, val) => { const e = el(id); if (e) e.innerHTML = val; };
 
+function stepSpeed(delta) {
+  const inp = el('tun-speed');
+  if (!inp) return;
+  let cur = parseFloat(inp.value) || 0;
+  cur = Math.max(0, Math.round((cur + delta) * 10) / 10);
+  inp.value = cur;
+  updateSpeedBadge();
+}
+
+function updateSpeedBadge() {
+  const inp = el('tun-speed');
+  if (!inp) return;
+  const val = parseFloat(inp.value) || 0;
+  if (val <= 0) {
+    setText('spd-badge', lang === 'fa' ? 'نامحدود' : 'Unlimited');
+  } else {
+    setText('spd-badge', `${val} MB/s (${(val * 8).toFixed(0)} Mbps)`);
+  }
+}
+
 const helpTexts = {
   en: {
     stealth: {
@@ -133,7 +153,7 @@ const dict = {
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
     src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
     tun_name: 'Tunnel Name', tun_port_lbl: 'Tunnel Port',
-    inb_port_lbl: 'X-UI Inbound Port(s)', spd_limit_lbl: 'Speed Limit',
+    inb_port_lbl: 'X-UI Inbound Port(s)', spd_limit_lbl: 'Speed (MB/s)',
     sni_lbl: 'TLS SNI Hostname (ServerName)', wspath_lbl: 'WebSocket Path (WSS Mode)',
     fp_lbl: 'TLS Cipher Suite Profile', seg_lbl: 'TCP ClientHello Segment Size',
     forward_note: 'Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your X-UI inbound already uses REALITY or TLS.',
@@ -161,7 +181,7 @@ const dict = {
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
     src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
     tun_name: 'نام تانل', tun_port_lbl: 'پورت تانل',
-    inb_port_lbl: 'پورت(های) اینباند X-UI', spd_limit_lbl: 'محدودیت سرعت',
+    inb_port_lbl: 'پورت(های) اینباند X-UI', spd_limit_lbl: 'سرعت (MB/s)',
     sni_lbl: 'دامنه TLS SNI (قابل تغییر)', wspath_lbl: 'مسیر وب‌سوکت (مخصوص WSS)',
     fp_lbl: 'پروفایل رمزنگاری مرورگر', seg_lbl: 'اندازه قطعه‌بندی ClientHello',
     forward_note: 'انتقال مستقیم بایت‌های TCP از پورت ورودی به خروجی بدون رمزنگاری بیرونی. بالاترین سرعت زمانی که اینباند X-UI شما خودش دارای REALITY یا TLS باشد.',
@@ -199,7 +219,6 @@ function selectTunnelMethod(m) {
     if (rForward) rForward.classList.remove('hidden');
     if (rPin) rPin.classList.add('hidden');
   } else if (selectedMethod === 'direct') {
-    // Keep SNI box visible so user can change www.speedtest.net in Direct-TLS!
     if (rSniWrap) rSniWrap.classList.remove('hidden');
     if (rWsPath) rWsPath.classList.add('hidden');
     if (rDirect) rDirect.classList.remove('hidden');
@@ -220,6 +239,7 @@ function applyLangUI() {
     const key = node.getAttribute('data-i18n');
     if (dict[lang] && dict[lang][key]) node.innerText = dict[lang][key];
   });
+  updateSpeedBadge();
 }
 
 function toggleLang() {
@@ -349,6 +369,7 @@ function resetForm() {
   if (el('tunnel-port')) el('tunnel-port').value = '10201';
   if (el('inbound-ports')) el('inbound-ports').value = '';
   if (el('tun-speed')) el('tun-speed').value = '0';
+  updateSpeedBadge();
   if (el('tun-sni')) el('tun-sni').value = 'www.speedtest.net';
   if (el('tun-fp')) el('tun-fp').value = 'chrome';
   if (el('tun-frag')) el('tun-frag').value = '0';
@@ -369,6 +390,7 @@ function editTunnel(id) {
   if (el('tunnel-port')) el('tunnel-port').value = t.tunnel_port || '10201';
   if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
   if (el('tun-speed')) el('tun-speed').value = t.speed_limit || '0';
+  updateSpeedBadge();
   if (el('tun-sni')) el('tun-sni').value = t.sni || 'www.speedtest.net';
   if (el('tun-fp')) el('tun-fp').value = t.fingerprint || 'chrome';
   if (el('tun-frag')) el('tun-frag').value = t.frag_size || '0';
@@ -414,7 +436,7 @@ async function saveTunnel() {
     target_server: el('tun-dst-srv')?.value || 'local',
     tunnel_port: cleanTunPort,
     inbound_ports: cleanInbounds,
-    speed_limit: el('tun-speed')?.value || '0',
+    speed_limit: String(parseFloat(el('tun-speed')?.value) || 0),
     sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
     fingerprint: el('tun-fp')?.value || 'chrome',
     frag_size: (el('tun-frag')?.value || '').trim() || '0',
@@ -550,7 +572,7 @@ function renderTunnels() {
     let stealthBadge = '🛡️ 85%';
     if (t.method === 'direct' || t.method === 'spoof') { mBadge = '⚡ DIRECT-TLS'; stealthBadge = '🛡️ 75%'; }
     if (t.method === 'forward') { mBadge = '🔄 FORWARD'; stealthBadge = '🛡️ 20%'; }
-    const spdTxt = (t.speed_limit && t.speed_limit !== '0') ? `${t.speed_limit} MB/s` : 'Unlimited';
+    const spdTxt = (t.speed_limit && parseFloat(t.speed_limit) > 0) ? `${t.speed_limit} MB/s` : 'Unlimited';
     return `
       <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
         <div class="flex flex-wrap justify-between items-center gap-2">

@@ -23,14 +23,22 @@ type throttledWriter struct {
 	lastSecStart     time.Time
 }
 
-func newThrottledWriter(w io.Writer, counter *uint64, mbPerSec int) io.Writer {
-	limit := int64(mbPerSec) * 1024 * 1024
+func newThrottledWriter(w io.Writer, counter *uint64, mbPerSec float64) io.Writer {
+	limit := int64(mbPerSec * 1024.0 * 1024.0)
 	return &throttledWriter{
 		w:                w,
 		counter:          counter,
 		bytesLimitPerSec: limit,
 		lastSecStart:     time.Now(),
 	}
+}
+
+func parseSpeedLimit(raw string) float64 {
+	val, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || val < 0 {
+		return 0
+	}
+	return val
 }
 
 func (t *throttledWriter) Write(p []byte) (int, error) {
@@ -231,7 +239,7 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 		client.Write(buf)
 	}
 
-	mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+	mbLimit := parseSpeedLimit(t.SpeedLimit)
 	txW := newThrottledWriter(tlsConn, &appTxBytes, mbLimit)
 	rxW := newThrottledWriter(client, &appRxBytes, mbLimit)
 
@@ -295,7 +303,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		target.Write(buf)
 	}
 
-	mbLimit, _ := strconv.Atoi(t.SpeedLimit)
+	mbLimit := parseSpeedLimit(t.SpeedLimit)
 	txW := newThrottledWriter(target, &appRxBytes, mbLimit)
 	rxW := newThrottledWriter(conn, &appTxBytes, mbLimit)
 
@@ -313,7 +321,6 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
-	// Method 3: L4 Port Forward End-to-End Probe
 	if tun.Method == "forward" {
 		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
 		if err != nil {
@@ -335,7 +342,6 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 		return pt
 	}
 
-	// Method 1 & 2 TLS Probing
 	tlsCfg := buildTunnelTLSConfig(tun)
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 	if err != nil {

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"encoding/base64"
+	"encoding/json"
 )
 
 type tcpSegmentConn struct {
@@ -216,6 +218,19 @@ func handleDirectTLSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		return
 	}
 
+if strings.HasPrefix(firstLine, "ENROLL|") {
+		rawB64 := strings.TrimSpace(strings.TrimPrefix(firstLine, "ENROLL|"))
+		if decoded, err := base64.StdEncoding.DecodeString(rawB64); err == nil {
+			var hb EnrollHeartbeat
+			if json.Unmarshal(decoded, &hb) == nil {
+				rep := processIncomingEnroll(hb)
+				b, _ := json.Marshal(rep)
+				conn.Write(append(b, '\n'))
+			}
+		}
+		return
+	}
+	
 	if strings.HasPrefix(firstLine, "LTUN|") {
 		targetPort := strings.TrimSpace(strings.TrimPrefix(firstLine, "LTUN|"))
 		if strings.HasPrefix(targetPort, "probe:") {

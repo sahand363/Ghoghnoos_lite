@@ -1,10 +1,8 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -91,14 +89,6 @@ type Database struct {
 type ConfigReq struct {
 	Port string `json:"port"`
 	Path string `json:"path"`
-}
-
-func generateRandomPort() string {
-	n, err := rand.Int(rand.Reader, big.NewInt(48000))
-	if err != nil {
-		return "28443"
-	}
-	return strconv.Itoa(int(n.Int64()) + 11000)
 }
 
 func checkBBRStatus() (cc, qdisc string) {
@@ -389,7 +379,7 @@ func runSSHStep(client *ssh.Client, cmd string) (string, error) {
 func deploySentinelSSH(s ServerNode) {
 	detectedPort := s.PanelPort
 	if detectedPort == "" {
-		detectedPort = generateRandomPort()
+		detectedPort = "6001"
 	}
 
 	addLog(fmt.Sprintf("[10%%] [%s]: Checking Sentinel connection on %s:%s...", s.Name, s.IP, detectedPort))
@@ -496,7 +486,7 @@ func deploySentinelSSH(s ServerNode) {
 func uninstallSentinelRemote(s ServerNode) {
 	pPort := s.PanelPort
 	if pPort == "" {
-		pPort = "8880"
+		pPort = "6001"
 	}
 	addLog(fmt.Sprintf("UNINSTALL [%s]: Sending remote uninstall signal to %s...", s.Name, s.IP))
 	client := &http.Client{Timeout: 3 * time.Second}

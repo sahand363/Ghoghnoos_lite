@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -33,14 +35,13 @@ type Tunnel struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Role         string `json:"role"`
-	Method       string `json:"method"`
+	Method       string `json:"method"` // "wss", "direct", or "forward"
 	SourceServer string `json:"source_server"`
 	TargetServer string `json:"target_server"`
 	TunnelPort   string `json:"tunnel_port"`
 	InboundPorts string `json:"inbound_ports"`
 	RemoteAddr   string `json:"remote_addr"`
 	SNI          string `json:"sni"`
-	FakeSNI      string `json:"fake_sni"`
 	Fingerprint  string `json:"fingerprint"`
 	FragSize     string `json:"frag_size"`
 	SpeedLimit   string `json:"speed_limit"`
@@ -90,6 +91,14 @@ type Database struct {
 type ConfigReq struct {
 	Port string `json:"port"`
 	Path string `json:"path"`
+}
+
+func generateRandomPort() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(48000))
+	if err != nil {
+		return "28443"
+	}
+	return strconv.Itoa(int(n.Int64()) + 11000)
 }
 
 func checkBBRStatus() (cc, qdisc string) {
@@ -274,7 +283,7 @@ func loadLogsFromDisk() {
 			}
 		}
 	}
-	addLog("SYS: Ghoghnoos-lite (LiteTun) initialized.")
+	addLog("SYS: Ghoghnoos-lite initialized.")
 }
 
 func saveDBLocked() {
@@ -290,7 +299,7 @@ func loadDBFromDisk(port string) {
 		_ = json.Unmarshal(data, &db)
 	}
 	if db.Prefs.Theme == "" {
-		db.Prefs.Theme = "amber"
+		db.Prefs.Theme = "cyan"
 	}
 	if db.Prefs.Lang == "" {
 		db.Prefs.Lang = "en"
@@ -325,8 +334,19 @@ func loadDBFromDisk(port string) {
 
 	for _, t := range db.Tunnels {
 		if t.SourceServer == "" || t.SourceServer == "local" {
-			go startTunnelEngine(t)
+			dispatchTunnelEngine(t)
 		}
+	}
+}
+
+func dispatchTunnelEngine(t Tunnel) {
+	switch t.Method {
+	case "direct", "spoof":
+		go startDirectTLSEngine(t)
+	case "forward":
+		go startPortForwardEngine(t)
+	default:
+		go startWSSEngine(t)
 	}
 }
 
@@ -369,10 +389,10 @@ func runSSHStep(client *ssh.Client, cmd string) (string, error) {
 func deploySentinelSSH(s ServerNode) {
 	detectedPort := s.PanelPort
 	if detectedPort == "" {
-		detectedPort = "8880"
+		detectedPort = generateRandomPort()
 	}
 
-	addLog(fmt.Sprintf("[10%%] [%s]: Checking existing Sentinel on %s:%s...", s.Name, s.IP, detectedPort))
+	addLog(fmt.Sprintf("[10%%] [%s]: Checking Sentinel connection on %s:%s...", s.Name, s.IP, detectedPort))
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	if s.SSHPass == "" {
 		if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
@@ -426,18 +446,18 @@ func deploySentinelSSH(s ServerNode) {
 	}
 	defer sshClient.Close()
 
-	addLog(fmt.Sprintf("[50%%] SSH [%s]: Downloading latest Ghoghnoos-lite binary...", s.Name))
-	step1 := "export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/litetun; " +
-		"if [ ! -f /opt/litetun/config.env ]; then echo -e 'PANEL_PORT=8880\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin' > /opt/litetun/config.env; fi; " +
-		"systemctl stop litetun 2>/dev/null || true; " +
-		"curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.tmp && " +
-		"mv -f /opt/litetun/ghoghnoos_lite.tmp /opt/litetun/ghoghnoos_lite && chmod +x /opt/litetun/ghoghnoos_lite"
+	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary...", s.Name))
+	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/litetun; "+
+		"if [ ! -f /opt/litetun/config.env ]; then echo -e 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin' > /opt/litetun/config.env; fi; "+
+		"systemctl stop litetun 2>/dev/null || true; "+
+		"curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.tmp && "+
+		"mv -f /opt/litetun/ghoghnoos_lite.tmp /opt/litetun/ghoghnoos_lite && chmod +x /opt/litetun/ghoghnoos_lite", detectedPort)
 	if _, err := runSSHStep(sshClient, step1); err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Binary download failed -> %v", s.Name, err))
 		return
 	}
 
-	addLog(fmt.Sprintf("[75%%] SSH [%s]: Configuring systemd service & starting Sentinel...", s.Name))
+	addLog(fmt.Sprintf("[75%%] SSH [%s]: Starting Sentinel service...", s.Name))
 	step2 := "curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | tr -d '\\r' > /usr/local/bin/litetun && " +
 		"chmod +x /usr/local/bin/litetun && /usr/local/bin/litetun --sentinel && systemctl restart litetun && " +
 		"grep '^PANEL_PORT=' /opt/litetun/config.env | cut -d= -f2"
@@ -451,7 +471,7 @@ func deploySentinelSSH(s ServerNode) {
 		detectedPort = strings.TrimSpace(lines[len(lines)-1])
 	}
 
-	addLog(fmt.Sprintf("[90%%] [%s]: Verifying Sentinel handshake & syncing SHA-256 Pin...", s.Name))
+	addLog(fmt.Sprintf("[90%%] [%s]: Syncing TLS Certificate Fingerprint...", s.Name))
 	time.Sleep(2 * time.Second)
 
 	remotePin := ""

@@ -26,6 +26,8 @@ type ServerNode struct {
 	PanelPort string `json:"panel_port"`
 	CertPin   string `json:"cert_pin"`
 	Status    string `json:"status"`
+	ViaMethod string `json:"via_method,omitempty"` // "SSH", "DIRECT", "WSS", "FORWARD"
+	LastSeen  int64  `json:"last_seen,omitempty"`
 	IsLocal   bool   `json:"is_local"`
 }
 
@@ -83,6 +85,7 @@ type Database struct {
 	Tunnels      []Tunnel     `json:"tunnels"`
 	PingHistory  []PingPoint  `json:"ping_history"`
 	AppBaseBytes uint64       `json:"app_base_bytes"`
+	EnrollToken  string       `json:"enroll_token"`
 	Prefs        UIPrefs      `json:"prefs"`
 }
 
@@ -116,6 +119,34 @@ func enableLocalBBR() error {
 		"echo 'net.ipv4.tcp_congestion_control=bbr' >> /etc/sysctl.conf; " +
 		"sysctl -p"
 	return exec.Command("bash", "-c", cmd).Run()
+}
+
+func executeLocalConsoleCmd(cmd, port string) {
+	cmd = strings.TrimSpace(cmd)
+	addLog("root@litetun:~# " + cmd)
+	switch strings.ToLower(cmd) {
+	case "help":
+		addLog("Commands: status | bbr | pin | clear | restart")
+	case "status":
+		ram, goCnt := getMemoryStats()
+		addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", goCnt, ram, port))
+	case "bbr":
+		cc, qd := checkBBRStatus()
+		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
+	case "pin":
+		addLog("SHA256-PIN: " + localPinHex)
+	case "clear":
+		mu.Lock()
+		logs = []string{"[SYSTEM] Terminal cleared."}
+		_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
+		mu.Unlock()
+	case "restart":
+		go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
+	default:
+		if cmd != "" {
+			addLog("bash: " + cmd + ": command not found")
+		}
+	}
 }
 
 func readCPUSample() (idle, total uint64) {
@@ -416,6 +447,9 @@ func deploySentinelSSH(s ServerNode) {
 					srv.PanelPort = detectedPort
 					srv.CertPin = remotePin
 					srv.Status = "Online"
+					if srv.ViaMethod == "" {
+						srv.ViaMethod = "SSH"
+					}
 					saveDBLocked()
 				}
 				mu.Unlock()
@@ -498,6 +532,7 @@ func deploySentinelSSH(s ServerNode) {
 		srv.PanelPort = detectedPort
 		srv.CertPin = remotePin
 		srv.Status = "Online"
+		srv.ViaMethod = "SSH"
 		saveDBLocked()
 	}
 	mu.Unlock()

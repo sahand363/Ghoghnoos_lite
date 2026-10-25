@@ -687,6 +687,7 @@ async function fetchState() {
     if (el('cfg-port') && !el('cfg-port').value) {
       el('cfg-port').value = data.panel_port || '6001';
       if (el('cfg-path')) el('cfg-path').value = data.panel_path || '';
+      if (el('cfg-user') && data.panel_user) el('cfg-user').value = data.panel_user;
     }
   } catch (err) {
     console.error('State sync error:', err);

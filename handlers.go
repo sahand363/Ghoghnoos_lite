@@ -14,7 +14,6 @@ import (
 )
 
 func checkBasicAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
-	// Remote Sentinel nodes (PANEL_PATH=sentinel) allow Master API sync over their dedicated port
 	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
 		return true
 	}
@@ -39,6 +38,37 @@ func registerRoutes(port, panelPath string) {
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(appJS)
+	})
+
+	// Public Control Endpoint for Reverse Sentinel Dial-In (Authenticated via EnrollToken)
+	http.HandleFunc("/api/enroll", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var hb EnrollHeartbeat
+		if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		rep := processIncomingEnroll(hb)
+		if !rep.OK {
+			http.Error(w, "Invalid enrollment token", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(rep)
+	})
+
+	// Rotate / Regenerate Master Enrollment Token
+	http.HandleFunc("/api/enroll/token", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+			return
+		}
+		newTok := regenerateEnrollToken()
+		addLog("SECURITY: Regenerated Reverse Enrollment Token.")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"enroll_token": newTok})
 	})
 
 	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +155,7 @@ func registerRoutes(port, panelPath string) {
 		tunnelsCopy := append([]Tunnel{}, db.Tunnels...)
 		historyCopy := append([]PingPoint{}, db.PingHistory...)
 		prefsCopy := db.Prefs
+		enrollTok := db.EnrollToken
 		localLogs := append([]string{}, logs...)
 		metricsCopy := sysMetrics
 		mu.Unlock()
@@ -138,9 +169,11 @@ func registerRoutes(port, panelPath string) {
 		if targetSrvID != "" && targetSrvID != "local" {
 			mu.Lock()
 			srv := findServerByID(targetSrvID)
+			cachedHB, hasCached := remoteStateCache[targetSrvID]
 			mu.Unlock()
+
 			if srv != nil && srv.IP != "" {
-				client := &http.Client{Timeout: 3 * time.Second}
+				client := &http.Client{Timeout: 2500 * time.Millisecond}
 				resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort))
 				if err == nil {
 					defer resp.Body.Close()
@@ -169,9 +202,33 @@ func registerRoutes(port, panelPath string) {
 							srvTime = rtime
 						}
 					}
+				} else if hasCached {
+					// Fallback to Reverse Dial-In Heartbeat Cache when direct HTTP is blocked!
+					if len(cachedHB.Logs) > 0 {
+						activeLogs = cachedHB.Logs
+					}
+					metricsCopy = cachedHB.Metrics
+					if cachedHB.PanelPort != "" {
+						activePort = cachedHB.PanelPort
+					}
+					if cachedHB.CertPin != "" {
+						activePin = cachedHB.CertPin
+					}
+					if cachedHB.ServerTime != "" {
+						srvTime = cachedHB.ServerTime
+					}
 				} else {
 					activeLogs = append(localLogs, fmt.Sprintf("[WARN] Remote node %s (%s:%s) unreachable: %v", srv.Name, srv.IP, srv.PanelPort, err))
 				}
+			}
+		}
+
+		// Choose recommended Dial-In Port (if Master has an active WSS or Direct-TLS Exit listener, show it, else panel port)
+		dialPort := port
+		for _, t := range tunnelsCopy {
+			if t.Role == "server" && (t.Method == "direct" || t.Method == "wss") && t.TunnelPort != "" {
+				dialPort = t.TunnelPort
+				break
 			}
 		}
 
@@ -190,6 +247,9 @@ func registerRoutes(port, panelPath string) {
 			"panel_path":   activePath,
 			"panel_user":   panelUser,
 			"cert_pin":     activePin,
+			"enroll_token": enrollTok,
+			"master_ip":    localIP,
+			"dial_port":    dialPort,
 		})
 	})
 
@@ -358,38 +418,25 @@ func registerRoutes(port, panelPath string) {
 			srv := findServerByID(req.ServerID)
 			mu.Unlock()
 			if srv != nil {
+				client := &http.Client{Timeout: 2500 * time.Millisecond}
 				body, _ := json.Marshal(map[string]string{"cmd": req.Cmd})
-				http.Post(fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body))
+				resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body))
+				if err == nil {
+					resp.Body.Close()
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				// Queue command for next Reverse Survival Loop sync if direct HTTP is blocked
+				mu.Lock()
+				pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], req.Cmd)
+				mu.Unlock()
+				addLog(fmt.Sprintf("CMD-QUEUED [%s]: '%s' queued for Reverse Control Link", srv.Name, req.Cmd))
 				w.WriteHeader(http.StatusOK)
 				return
 			}
 		}
 
-		cmd := strings.TrimSpace(req.Cmd)
-		addLog("root@litetun:~# " + cmd)
-		switch strings.ToLower(cmd) {
-		case "help":
-			addLog("Commands: status | bbr | pin | clear | restart")
-		case "status":
-			ram, goCnt := getMemoryStats()
-			addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", goCnt, ram, port))
-		case "bbr":
-			cc, qd := checkBBRStatus()
-			addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
-		case "pin":
-			addLog("SHA256-PIN: " + localPinHex)
-		case "clear":
-			mu.Lock()
-			logs = []string{"[SYSTEM] Terminal cleared."}
-			_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
-			mu.Unlock()
-		case "restart":
-			go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
-		default:
-			if cmd != "" {
-				addLog("bash: " + cmd + ": command not found")
-			}
-		}
+		executeLocalConsoleCmd(req.Cmd, port)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -461,11 +508,14 @@ func registerRoutes(port, panelPath string) {
 			if dstSrv.IsLocal {
 				dispatchTunnelEngine(exitTunnel)
 			} else {
+				client := &http.Client{Timeout: 3 * time.Second}
 				body, _ := json.Marshal(exitTunnel)
-				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
+				resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
 				if err == nil {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
+				} else {
+					addLog(fmt.Sprintf("EXIT-SYNC [%s]: Queued Exit listener for %s via Reverse Control Link", t.Name, dstSrv.Name))
 				}
 			}
 		}

@@ -85,7 +85,7 @@ func initSelfSignedCert() {
 func main() {
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
-		port = "8880"
+		port = "6001"
 	}
 	panelPath := strings.Trim(os.Getenv("PANEL_PATH"), "/")
 

@@ -313,17 +313,23 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
-	// Method 3: Direct Port Forward Ping
+	// Method 3: L4 Port Forward End-to-End Probe
 	if tun.Method == "forward" {
-		start := time.Now()
 		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
 		if err != nil {
 			pt.OK = false
-			pt.Error = "Port Closed"
-		} else {
-			pt.LatencyMS = time.Since(start).Milliseconds()
-			pt.OK = true
-			c.Close()
+			pt.Error = "Tunnel Port Closed"
+			recordPingPoint(pt)
+			return pt
+		}
+		defer c.Close()
+		rttStart := time.Now()
+		c.Write([]byte("FWD|probe:" + firstPort + "\n"))
+		reply, err := bufio.NewReader(c).ReadString('\n')
+		pt.LatencyMS = time.Since(rttStart).Milliseconds()
+		pt.OK = err == nil && strings.HasPrefix(reply, "OK")
+		if !pt.OK {
+			pt.Error = "X-UI :" + firstPort + " Refused"
 		}
 		recordPingPoint(pt)
 		return pt

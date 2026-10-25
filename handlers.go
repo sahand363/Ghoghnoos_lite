@@ -41,10 +41,14 @@ func registerRoutes(port, panelPath string) {
 					portBadges += fmt.Sprintf(`<span style="color:#f43f5e;margin-right:8px;">● 127.0.0.1:%s (REFUSED)</span>`, p)
 				}
 			}
+			mBadge := strings.ToUpper(t.Method)
+			if mBadge == "" {
+				mBadge = "WSS"
+			}
 			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;">
-				<b>%s</b> (%s) | Tunnel Port: <code>:%s</code> | WS Path: <code>%s</code><br>
+				<b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code><br>
 				<div style="margin-top:6px;font-size:12px;">Local X-UI Check: %s</div>
-			</div>`, t.Name, t.Role, t.TunnelPort, t.WSPath, portBadges)
+			</div>`, mBadge, t.Name, t.Role, t.TunnelPort, portBadges)
 		}
 		if rows == "" {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
@@ -355,6 +359,9 @@ func registerRoutes(port, panelPath string) {
 		var t Tunnel
 		json.NewDecoder(r.Body).Decode(&t)
 		t.Status = "Online"
+		if t.Method == "" {
+			t.Method = "wss"
+		}
 		if !strings.HasPrefix(t.WSPath, "/") {
 			t.WSPath = "/" + strings.Trim(t.WSPath, "/")
 		}
@@ -363,7 +370,7 @@ func registerRoutes(port, panelPath string) {
 		}
 		t.InboundPorts = strings.Join(parsePortList(t.InboundPorts), ", ")
 		if t.ID == "" {
-			t.ID = fmt.Sprintf("wss-%d", time.Now().Unix()%10000)
+			t.ID = fmt.Sprintf("%s-%d", t.Method, time.Now().Unix()%10000)
 		}
 
 		mu.Lock()
@@ -379,8 +386,10 @@ func registerRoutes(port, panelPath string) {
 			}
 
 			exitTunnel := Tunnel{
-				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: "wss",
-				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI, WSPath: t.WSPath, Status: "Online",
+				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
+				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
+				FakeSNI: t.FakeSNI, Fingerprint: t.Fingerprint, FragSize: t.FragSize,
+				WSPath: t.WSPath, Status: "Online",
 			}
 
 			if dstSrv.IsLocal {
@@ -390,7 +399,7 @@ func registerRoutes(port, panelPath string) {
 				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
 				if err == nil {
 					resp.Body.Close()
-					addLog(fmt.Sprintf("EXIT-OK [%s]: Tunnel :%s -> 127.0.0.1:[%s] on %s", t.Name, t.TunnelPort, t.InboundPorts, dstSrv.Name))
+					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
 				}
 			}
 		}

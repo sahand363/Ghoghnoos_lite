@@ -39,7 +39,7 @@ var (
 		Tunnels:     []Tunnel{},
 		PingHistory: []PingPoint{},
 		Prefs: UIPrefs{
-			Theme:          "amber",
+			Theme:          "cyan",
 			Lang:           "en",
 			ActiveTab:      "servers",
 			SelectedServer: "local",
@@ -96,7 +96,7 @@ func main() {
 	go startPingMonitor()
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("Ghoghnoos-lite (LiteTun) running on port %s (Path: /%s/)\n", port, panelPath)
+	fmt.Printf("Ghoghnoos-lite running on port %s (Path: /%s/)\n", port, panelPath)
 	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
 		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
 	} else {

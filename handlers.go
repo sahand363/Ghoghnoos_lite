@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,27 +13,28 @@ import (
 	"time"
 )
 
-func checkBasicAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
-	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
-		return true
-	}
-	if panelUser == "" && panelPass == "" {
-		return true
-	}
-	u, p, ok := r.BasicAuth()
-	uMatch := subtle.ConstantTimeCompare([]byte(u), []byte(panelUser)) == 1
-	pMatch := subtle.ConstantTimeCompare([]byte(p), []byte(panelPass)) == 1
-	if !ok || !uMatch || !pMatch {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Ghoghnoos-lite Control Panel"`)
-		http.Error(w, "401 Unauthorized — Please enter Panel Username & Password", http.StatusUnauthorized)
-		return false
-	}
-	return true
-}
-
 func registerRoutes(port, panelPath string) {
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		handleLoginRoute(w, r, panelPath)
+	})
+	http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		handleLogoutRoute(w, r, panelPath)
+	})
+	if panelPath != "" {
+		http.HandleFunc("/"+panelPath+"/login", func(w http.ResponseWriter, r *http.Request) {
+			handleLoginRoute(w, r, panelPath)
+		})
+		http.HandleFunc("/"+panelPath+"/logout", func(w http.ResponseWriter, r *http.Request) {
+			handleLogoutRoute(w, r, panelPath)
+		})
+	}
+
+	http.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
+		handleSelfUpdateRoute(w, r, panelPath)
+	})
+
 	http.HandleFunc("/i18n.js", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -42,7 +42,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -50,7 +50,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/logs/download", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
@@ -100,7 +100,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/enroll/token", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+		if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		newTok := regenerateEnrollToken()
@@ -137,16 +137,24 @@ func registerRoutes(port, panelPath string) {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite %s — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, appVersion, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqPath := strings.Trim(r.URL.Path, "/")
+		if strings.HasSuffix(reqPath, "login") {
+			handleLoginRoute(w, r, panelPath)
+			return
+		}
+		if strings.HasSuffix(reqPath, "logout") {
+			handleLogoutRoute(w, r, panelPath)
+			return
+		}
 		if panelPath != "" && reqPath != "" && reqPath != panelPath && !strings.HasSuffix(reqPath, ".js") {
 			http.NotFound(w, r)
 			return
 		}
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		if strings.HasSuffix(reqPath, "i18n.js") {
@@ -164,7 +172,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
@@ -243,16 +251,16 @@ func registerRoutes(port, panelPath string) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ram_mb": ramMB, "goroutines": goroutines, "server_time": srvTime, "metrics": metricsCopy,
-			"servers": serversCopy, "tunnels": tunnelsCopy, "ping_history": historyCopy, "prefs": prefsCopy,
-			"logs": activeLogs, "panel_port": activePort, "panel_path": activePath, "panel_user": panelUser,
-			"cert_pin": activePin, "enroll_token": enrollTok, "master_ip": localIP, "dial_port": port,
-			"ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
+			"version": appVersion, "ram_mb": ramMB, "goroutines": goroutines, "server_time": srvTime,
+			"metrics": metricsCopy, "servers": serversCopy, "tunnels": tunnelsCopy, "ping_history": historyCopy,
+			"prefs": prefsCopy, "logs": activeLogs, "panel_port": activePort, "panel_path": activePath,
+			"panel_user": panelUser, "cert_pin": activePin, "enroll_token": enrollTok, "master_ip": localIP,
+			"dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
 		})
 	})
 
 	http.HandleFunc("/api/bbr", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+		if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
@@ -293,7 +301,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		if r.Method == http.MethodDelete {
@@ -348,7 +356,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/servers/deploy", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		id := r.URL.Query().Get("id")
@@ -372,7 +380,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/prefs", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+		if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var p UIPrefs
@@ -397,7 +405,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/cmd", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+		if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var req struct {
@@ -430,7 +438,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/tunnel", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		if r.Method == http.MethodDelete {
@@ -525,7 +533,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) {
+		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
 		id := r.URL.Query().Get("id")
@@ -554,7 +562,7 @@ func registerRoutes(port, panelPath string) {
 	})
 
 	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
-		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+		if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
 		}
 		var req ConfigReq

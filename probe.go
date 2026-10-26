@@ -83,11 +83,11 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	return pt
 }
 
-// Relaxed automated background probe: runs every ~5 minutes (270s-330s with jitter)
+// Ultra-relaxed background probe: runs every ~10 to 12 minutes (600s to 720s with jitter)
 func startPingMonitor() {
 	for {
-		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(60))
-		sleepSec := 270 + int(jitterBig.Int64()) // 4.5 to 5.5 minutes
+		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(120))
+		sleepSec := 600 + int(jitterBig.Int64()) // 10 to 12 minutes
 		time.Sleep(time.Duration(sleepSec) * time.Second)
 
 		mu.Lock()

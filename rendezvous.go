@@ -14,7 +14,7 @@ import (
 var activeProbeCancels = make(map[string]chan struct{})
 
 func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath string) {
-	if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
+	if !checkSessionAuth(w, r, panelPath) || r.Method != http.MethodPost {
 		return
 	}
 	var req struct {

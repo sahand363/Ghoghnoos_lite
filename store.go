@@ -272,25 +272,32 @@ func detectLocalIP() string {
 	return "127.0.0.1"
 }
 
+// Retains an in-memory view for UI while persisting a 24-hour log on disk (up to 5,000 lines)
 func addLog(msg string) {
 	mu.Lock()
 	defer mu.Unlock()
-	timestamp := time.Now().Format("15:04:05")
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	line := fmt.Sprintf("[%s] %s", timestamp, msg)
+
 	logs = append(logs, line)
-	if len(logs) > 250 {
-		logs = logs[len(logs)-250:]
+	if len(logs) > 5000 {
+		logs = logs[len(logs)-5000:]
 	}
+
 	_ = os.MkdirAll("/opt/litetun", 0755)
-	_ = os.WriteFile(logPath, []byte(strings.Join(logs, "\n")+"\n"), 0644)
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		_, _ = f.WriteString(line + "\n")
+		f.Close()
+	}
 }
 
 func recordPingPoint(pt PingPoint) {
 	mu.Lock()
 	defer mu.Unlock()
 	db.PingHistory = append(db.PingHistory, pt)
-	if len(db.PingHistory) > 2000 {
-		db.PingHistory = db.PingHistory[len(db.PingHistory)-2000:]
+	if len(db.PingHistory) > 3000 {
+		db.PingHistory = db.PingHistory[len(db.PingHistory)-3000:]
 	}
 	saveDBLocked()
 }
@@ -298,13 +305,17 @@ func recordPingPoint(pt PingPoint) {
 func loadLogsFromDisk() {
 	data, err := os.ReadFile(logPath)
 	if err == nil {
-		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-		if len(lines) > 0 && lines[0] != "" {
-			logs = lines
-			if len(logs) > 250 {
-				logs = logs[len(logs)-250:]
+		rawLines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		var valid []string
+		for _, l := range rawLines {
+			if strings.TrimSpace(l) != "" {
+				valid = append(valid, l)
 			}
 		}
+		if len(valid) > 5000 {
+			valid = valid[len(valid)-5000:]
+		}
+		logs = valid
 	}
 	addLog("SYS: Ghoghnoos-lite initialized.")
 }

@@ -112,6 +112,7 @@ func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
 		ramMB, _ := getMemoryStats()
 		cc, qd := checkBBRStatus()
+		l4, dir, wss := getControlPorts()
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		recentLogs := append([]string{}, logs...)
@@ -136,7 +137,7 @@ func registerRoutes(port, panelPath string) {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, localIP, port, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +169,7 @@ func registerRoutes(port, panelPath string) {
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
 		ramMB, goroutines := getMemoryStats()
+		l4Port, dirPort, wssPort := getControlPorts()
 
 		mu.Lock()
 		serversCopy := append([]ServerNode{}, db.Servers...)
@@ -245,6 +247,7 @@ func registerRoutes(port, panelPath string) {
 			"servers": serversCopy, "tunnels": tunnelsCopy, "ping_history": historyCopy, "prefs": prefsCopy,
 			"logs": activeLogs, "panel_port": activePort, "panel_path": activePath, "panel_user": panelUser,
 			"cert_pin": activePin, "enroll_token": enrollTok, "master_ip": localIP, "dial_port": port,
+			"ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
 		})
 	})
 
@@ -413,7 +416,7 @@ func registerRoutes(port, panelPath string) {
 				mu.Lock()
 				pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], req.Cmd)
 				mu.Unlock()
-				addLog(fmt.Sprintf("CMD-QUEUED [%s]: '%s' queued for Reverse Control Link", srv.Name, req.Cmd))
+				addLog(fmt.Sprintf("CMD-QUEUED [%s]: '%s' queued for Control Link", srv.Name, req.Cmd))
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -489,7 +492,7 @@ func registerRoutes(port, panelPath string) {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
 				} else {
-					addLog(fmt.Sprintf("EXIT-SYNC [%s]: Queued Exit listener for %s via Reverse Control Link", t.Name, dstSrv.Name))
+					addLog(fmt.Sprintf("EXIT-SYNC [%s]: Queued Exit listener for %s via Control Link", t.Name, dstSrv.Name))
 				}
 			}
 		}
@@ -552,7 +555,19 @@ func registerRoutes(port, panelPath string) {
 		}
 		var req ConfigReq
 		json.NewDecoder(r.Body).Decode(&req)
-		_ = updateConfigFile(req.Port, req.Path, req.User, req.Pass)
+		mu.Lock()
+		if req.CtrlL4 != "" {
+			db.CtrlL4Port = req.CtrlL4
+		}
+		if req.CtrlDirect != "" {
+			db.CtrlDirectPort = req.CtrlDirect
+		}
+		if req.CtrlWSS != "" {
+			db.CtrlWSSPort = req.CtrlWSS
+		}
+		saveDBLocked()
+		mu.Unlock()
+		_ = updateConfigFile(req)
 		w.WriteHeader(http.StatusOK)
 		go func() { time.Sleep(1 * time.Second); os.Exit(0) }()
 	})

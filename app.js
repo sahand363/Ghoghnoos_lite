@@ -16,10 +16,53 @@ let initialLoaded = false;
 let userEditedName = false;
 let consoleCollapsed = false;
 let historyRange = '24h';
+let pollIntervalMs = 10000; // 10 seconds baseline
+let pollTimer = null;
 
 const el = id => document.getElementById(id);
 const setText = (id, val) => { const e = el(id); if (e) e.innerText = val; };
 const setHTML = (id, val) => { const e = el(id); if (e) e.innerHTML = val; };
+
+function togglePollRate() {
+  if (pollIntervalMs === 10000) {
+    pollIntervalMs = 300000; // 5 minutes (Eco mode)
+  } else {
+    pollIntervalMs = 10000; // 10 seconds (Live mode)
+  }
+  updatePollRateUI();
+  restartPolling();
+}
+
+function updatePollRateUI() {
+  const btn = el('btn-poll-rate');
+  if (!btn) return;
+  if (pollIntervalMs === 10000) {
+    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/80 hover:scale-105 transition';
+    btn.innerText = '⚡ 10s Live';
+  } else {
+    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800/80 hover:scale-105 transition';
+    btn.innerText = '🐢 5m Eco';
+  }
+}
+
+function restartPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if (!document.hidden) {
+      fetchState();
+    }
+  }, pollIntervalMs);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    fetchState();
+  }
+});
+
+function downloadLogs24h() {
+  window.location.href = `/api/logs/download?server_id=${selectedServer}`;
+}
 
 function setDeployMode(mode) {
   deployMode = mode;
@@ -103,7 +146,7 @@ const helpTexts = {
     },
     stealth: {
       title: '🛡️ Method Stealth Percentage Explained',
-      body: '• WSS (85% Stealth): Wraps traffic in TLS 1.3 + HTTP/1.1 WebSocket headers and serves a decoy 200 OK HTML webpage if probed.\n\n• Direct TLS (75% Stealth): Pure TLS 1.3 encrypted stream with browser cipher-suite profiles and TCP ClientHello segmentation, without HTTP header overhead.\n\n• Port Forward (20% Stealth): Raw L4 TCP forwarding (like socat). Has no outer encryption of its own—best used when your X-UI inbound already uses VLESS-REALITY or TLS.'
+      body: '• WSS (85% Stealth): Wraps traffic in TLS 1.3 + HTTP/1.1 WebSocket headers and serves a decoy 200 OK HTML webpage if probed.\n\n• Direct TLS (75% Stealth): Pure TLS 1.3 encrypted stream with browser cipher-suite profiles and TCP ClientHello segmentation, without HTTP header overhead.\n\n• Port Forward (20% Stealth): Raw L4 TCP forwarding (like socat). Has no outer encryption of its own—best used when your inbound service already uses REALITY or TLS.'
     },
     sni: {
       title: 'TLS SNI Hostname (ServerName)',
@@ -123,15 +166,15 @@ const helpTexts = {
     },
     pin: {
       title: 'SHA-256 Certificate Pinning',
-      body: 'Verifies the exact cryptographic SHA-256 fingerprint of your Exit server leaf certificate. Any ISP attempting to intercept or MITM the TLS connection is blocked immediately.'
+      body: 'Verifies the exact cryptographic SHA-256 fingerprint of your Exit server leaf certificate. Any intermediary attempting to intercept or MITM the TLS connection is blocked immediately.'
     },
     forward: {
       title: 'Raw Port Forwarding (L4 TCP Relay)',
-      body: 'Pipes raw TCP bytes directly from the Entry port to the Exit X-UI port (native Go replacement for socat) with integrated speed limiting and live latency monitoring.'
+      body: 'Pipes raw TCP bytes directly from the Entry port to the Exit service port (native Go replacement for socat) with integrated speed limiting and live latency monitoring.'
     },
     port: {
       title: 'Panel & Sentinel Port (Default: 6001)',
-      body: 'The TCP port used for the web panel and Sentinel communication. Using 6001 (or a custom port) avoids conflicts with common web ports like 8080/8880.'
+      body: 'The TCP port used for the web panel and Sentinel communication. Using 6001 (or a custom port) avoids conflicts with common web ports.'
     },
     path: {
       title: 'Secret URL Path',
@@ -141,43 +184,43 @@ const helpTexts = {
   fa: {
     enroll: {
       title: '🔑 اتصال معکوس سنتینل (Reverse Dial-In) و حلقه بقا',
-      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. سنتینل به ترتیب متدهای Direct-TLS، سپس WSS و L4 API را تست می‌کند تا به سرور مستر متصل شود.\n۲. پس از اتصال، هر ۶۰ تا ۸۵ ثانیه (با زمان‌بندی تصادفی ضد تشخیص DPI) وضعیت را همگام‌سازی می‌کند.\n۳. اگر متد فعلی مسدود شود، به صورت خودکار متدهای دیگر را تست و جایگزین می‌کند.'
+      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. سنتینل به ترتیب متدهای Direct-TLS، سپس WSS و L4 API را تست می‌کند تا به سرور مستر متصل شود.\n۲. پس از اتصال، هر ۶۰ تا ۸۵ ثانیه وضعیت را همگام‌سازی می‌کند.\n۳. اگر متد فعلی مسدود شود، به صورت خودکار متدهای دیگر را جایگزین می‌کند.'
     },
     stealth: {
       title: '🛡️ راهنمای درصد مخفی‌سازی (Stealth) متدها',
-      body: '• متد WSS (۸۵٪ مخفی‌سازی): ترافیک را داخل TLS 1.3 و هدرهای وب‌سوکت HTTP/1.1 قرار می‌دهد و در صورت بررسی فعال، صفحه وب معمولی (200 OK) نمایش می‌دهد.\n\n• متد Direct TLS (۷۵٪ مخفی‌سازی): استریم مستقیم رمزنگاری‌شده TLS 1.3 بدون سربار HTTP همراه با پروفایل رمزنگاری مرورگر و قابلیت قطعه‌بندی پکت ClientHello.\n\n• متد Port Forward (۲۰٪ مخفی‌سازی): انتقال مستقیم لایه ۴ (مشابه socat) بدون رمزنگاری بیرونی. مناسب زمانی که کانفیگ X-UI شما خودش دارای REALITY یا TLS است.'
+      body: '• متد WSS (۸۵٪ مخفی‌سازی): ترافیک را داخل TLS 1.3 و هدرهای وب‌سوکت HTTP/1.1 قرار می‌دهد.\n\n• متد Direct TLS (۷۵٪ مخفی‌سازی): استریم مستقیم رمزنگاری‌شده TLS 1.3 بدون سربار HTTP همراه با پروفایل مرورگر.\n\n• متد Port Forward (۲۰٪ مخفی‌سازی): انتقال مستقیم لایه ۴ (مشابه socat) بدون رمزنگاری بیرونی.'
     },
     sni: {
       title: 'دامنه TLS SNI (ServerName)',
-      body: 'نام دامنه‌ای که در بسته اولیه TLS ClientHello هنگام اتصال سرور ایران به سرور خارج ارسال می‌شود.\n\nدر هر دو متد WSS و Direct-TLS قابل تغییر است (مثلاً www.speedtest.net یا هر دامنه دلخواه).'
+      body: 'نام دامنه‌ای که در بسته اولیه TLS ClientHello ارسال می‌شود (مثلاً www.speedtest.net یا دامنه دلخواه).'
     },
     seg: {
       title: 'اندازه قطعه‌بندی TCP ClientHello',
-      body: 'بسته اولیه هندشیک TLS را به قطعات کوچک‌تر TCP تقسیم می‌کند.\n\n• عدد 0 = غیرفعال (ارسال استاندارد در یک پکت).\n• عدد 64 یا 128 = هدر ClientHello را در چند پکت مجزا ارسال می‌کند تا سیستم‌های DPI ساده نتوانند آن را یکجا بررسی کنند.'
+      body: 'بسته اولیه هندشیک TLS را به قطعات کوچک‌تر تقسیم می‌کند تا سیستم‌های DPI نتوانند آن را یکجا بررسی کنند.'
     },
     fq: {
       title: 'زمان‌بند پکت FQ (Fair Queueing)',
-      body: 'صف‌بندی هوشمند کرنل لینوکس (sch_fq).\n\nبرخلاف صف‌های قدیمی، FQ ترافیک هر اتصال را جداگانه زمان‌بندی کرده و تاخیر بافر را حذف می‌کند. الگوریتم BBR گوگل برای عملکرد صحیح به FQ نیاز دارد.'
+      body: 'صف‌بندی هوشمند کرنل لینوکس برای مدیریت جریان ترافیک و حذف تاخیر بافر.'
     },
     bbr: {
       title: 'کنترل ازدحام Google BBR',
-      body: 'جایگزین الگوریتم قدیمی CUBIC در کرنل لینوکس. BBR به جای کاهش شدید سرعت هنگام پکت‌لاس، ظرفیت واقعی لینک و پینگ را اندازه می‌گیرد و سرعت تانل بین ایران و خارج را در بالاترین حد نگه می‌دارد.'
+      body: 'جایگزین هوشمند الگوریتم‌های سنتی در کرنل لینوکس برای حفظ حداکثر سرعت در شرایط پکت‌لاس.'
     },
     pin: {
       title: 'پین گواهی رمزنگاری SHA-256',
-      body: 'اثرانگشت دقیق گواهی TLS سرور خارج را بررسی می‌کند تا هیچ دیتاسنتر یا فایروالی نتواند حمله مرد میانی (MITM) انجام دهد.'
+      body: 'اثرانگشت دقیق گواهی TLS سرور خارج را بررسی کرده و از هرگونه حمله مرد میانی جلوگیری می‌کند.'
     },
     forward: {
-      title: 'پورت فورواردینگ مستقیم (لایه‌ ۴ مشابه socat)',
-      body: 'انتقال مستقیم بایت‌های TCP از پورت سرور ایران به پورت X-UI سرور خارج بدون سربار رمزنگاری مضاعف، همراه با محدودکننده سرعت و تست پینگ.'
+      title: 'پورت فورواردینگ مستقیم (لایه ۴)',
+      body: 'انتقال مستقیم بایت‌های TCP بین پورت‌های ورودی و خروجی با بالاترین بازدهی ممکن.'
     },
     port: {
       title: 'پورت پنل و سنتینل (پیش‌فرض: 6001)',
-      body: 'پورت ارتباطی پنل و سنتینل. استفاده از پورت 6001 مانع از تداخل با پورت‌های شلوغ و رایج مثل 8880 می‌شود.'
+      body: 'پورت ارتباطی پنل مدیریت و ایجنت سنتینل.'
     },
     path: {
       title: 'آدرس مخفی پنل (Secret Path)',
-      body: 'پنل مدیریت را پشت یک مسیر مخفی قرار می‌دهد تا اسکنرهای خودکار با خطای 404 مواجه شوند.'
+      body: 'قرار دادن پنل مدیریت در مسیری تصادفی جهت جلوگیری از اسکن خودکار.'
     }
   }
 };
@@ -226,15 +269,15 @@ const dict = {
     forward_desc: 'Raw L4 TCP Relay (Native socat stream)',
     stealth_lbl: 'Stealth',
     new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
-    src_srv: 'Entry Server (Iran Relay)', dst_srv: 'Exit Server (Kharej + X-UI)',
+    src_srv: 'Entry Server (Relay)', dst_srv: 'Exit Server (Target Node)',
     tun_name: 'Tunnel Name', tun_port_lbl: 'Tunnel Port',
-    inb_port_lbl: 'X-UI Inbound Port(s)', spd_limit_lbl: 'Speed (MB/s)',
+    inb_port_lbl: 'Forwarding Inbound Port(s)', spd_limit_lbl: 'Speed (MB/s)',
     sni_lbl: 'TLS SNI Hostname (ServerName)', wspath_lbl: 'WebSocket Path (WSS Mode)',
     fp_lbl: 'TLS Cipher Suite Profile', seg_lbl: 'TCP ClientHello Segment Size',
-    forward_note: 'Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your X-UI inbound already uses REALITY or TLS.',
+    forward_note: 'Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.',
     cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server)',
     create: '⚡ Establish Tunnel Between Selected Servers',
-    active_tunnels: 'Active Tunnels (End-to-End X-UI Ping & Edit)'
+    active_tunnels: 'Active Tunnels (End-to-End Latency Ping & Edit)'
   },
   fa: {
     servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ',
@@ -245,7 +288,7 @@ const dict = {
     srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
     btn_deploy: '🚀 اتصال با SSH و نصب سنتینل (۰٪ تا ۱۰۰٪)',
     enroll_title: '🔑 ثبت‌نام معکوس و خودکار سنتینل (مجهز به حلقه بقا)',
-    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب Direct-TLS، سپس WSS و L4 API را تست می‌کند تا متصل شود.',
+    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب Direct-TLS، سپس WSS و L4 API را تست می‌کند.',
     enroll_node_lbl: 'نام دلخواه سرور سنتینل',
     enroll_addr_lbl: 'آدرس و پورت سرور مستر (IP:Port)',
     enroll_cmd_lbl: 'این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید:',
@@ -263,15 +306,15 @@ const dict = {
     forward_desc: 'انتقال مستقیم لایه ۴ (مشابه socat)',
     stealth_lbl: 'مخفی‌سازی',
     new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
-    src_srv: 'سرور ورودی (ایران / Relay)', dst_srv: 'سرور خروجی (خارج / X-UI)',
+    src_srv: 'سرور ورودی (Relay)', dst_srv: 'سرور خروجی (خارج)',
     tun_name: 'نام تانل', tun_port_lbl: 'پورت تانل',
-    inb_port_lbl: 'پورت(های) اینباند X-UI', spd_limit_lbl: 'سرعت (MB/s)',
+    inb_port_lbl: 'پورت(های) فورواردینگ داخلی', spd_limit_lbl: 'سرعت (MB/s)',
     sni_lbl: 'دامنه TLS SNI (قابل تغییر)', wspath_lbl: 'مسیر وب‌سوکت (مخصوص WSS)',
     fp_lbl: 'پروفایل رمزنگاری مرورگر', seg_lbl: 'اندازه قطعه‌بندی ClientHello',
-    forward_note: 'انتقال مستقیم بایت‌های TCP از پورت ورودی به خروجی بدون رمزنگاری بیرونی. بالاترین سرعت زمانی که اینباند X-UI شما خودش دارای REALITY یا TLS باشد.',
-    cert_pin_lbl: 'پین گواهی SHA-256 (در صورت خالی بودن خودکار تنظیم می‌شود)',
+    forward_note: 'انتقال مستقیم بایت‌های TCP بدون رمزنگاری بیرونی. بالاترین سرعت زمانی که سرویس شما خودش دارای REALITY یا TLS باشد.',
+    cert_pin_lbl: 'پین گواهی SHA-256 (خودکار تنظیم می‌شود)',
     create: '⚡ برقراری تانل بین دو سرور انتخاب‌شده',
-    active_tunnels: 'تانل‌های فعال (تست کامل تانل + پورت X-UI و ویرایش)'
+    active_tunnels: 'تانل‌های فعال (تست تاخیر شبکه و ویرایش)'
   }
 };
 
@@ -384,7 +427,7 @@ function autoUpdateTunnelName() {
   if (userEditedName && nameIn.value.trim() !== '') return;
   const srcObj = currentServers.find(s => s.id === srcIn.value);
   const dstObj = currentServers.find(s => s.id === dstIn.value);
-  nameIn.value = `${srcObj ? srcObj.name.split(' ')[0] : 'Iran'}-to-${dstObj ? dstObj.name.split(' ')[0] : 'Kharej'}`;
+  nameIn.value = `${srcObj ? srcObj.name.split(' ')[0] : 'Relay'}-to-${dstObj ? dstObj.name.split(' ')[0] : 'Exit'}`;
 }
 
 function changeSelectedServer(srvId) {
@@ -437,7 +480,7 @@ async function deleteServer(id) {
 
 async function sendCmd(cmd) {
   await fetch('/api/cmd', { method: 'POST', body: JSON.stringify({ cmd, server_id: selectedServer }) });
-  fetchState();
+  setTimeout(fetchState, 350);
 }
 
 function runConsoleInput() {
@@ -674,12 +717,12 @@ function renderTunnels() {
             <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
             <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
             <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
-            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Entry'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
+            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
           </div>
           <div class="flex items-center gap-1.5">
             <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingTxt}</button>
-            <button onclick="editTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
-            <button onclick="deleteTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
+            <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
+            <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
           </div>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
@@ -719,7 +762,7 @@ function renderPingAnalytics() {
   const filtered = srvHistory.filter(p => p.ts >= nowSec - rangeSec);
   const okList = filtered.filter(p => p.ok && p.ms > 0);
   const fails = filtered.filter(p => !p.ok).length;
-  const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 185;
+  const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 50;
   const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0';
   const latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
 
@@ -728,16 +771,16 @@ function renderPingAnalytics() {
   setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
 
   const recentPings = okList.slice(-25).map(x => x.ms);
-  setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [182, 185, 180, 184, 182], 'ms', '#38bdf8', 'gradPing'));
+  setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
 
   setText('pill-uptime', `● Uptime: ${uptimePct}%`);
   setText('pill-avg', `⚡ Avg Latency: ${avgMs} ms`);
-  setText('pill-down', `● Downtime: ${fails}m`);
+  setText('pill-down', `● Downtime: ${fails * 5}m`);
   setText('pill-inc', `🕒 Incidents: ${fails} Incidents`);
 
   const histSeries = filtered.slice(-80).map(x => x.ok ? x.ms : 0);
-  setHTML('svg-history-ping', buildSVGChart(histSeries.length ? histSeries : [184, 182, 186, 180, 185, 183], 'ms', '#38bdf8', 'gradHist'));
+  setHTML('svg-history-ping', buildSVGChart(histSeries.length ? histSeries : [50, 52, 49, 53, 51, 50], 'ms', '#38bdf8', 'gradHist'));
 }
 
 async function fetchState() {
@@ -789,5 +832,6 @@ async function fetchState() {
   }
 }
 
-setInterval(fetchState, 2000);
+updatePollRateUI();
 fetchState();
+restartPolling();

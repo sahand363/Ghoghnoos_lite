@@ -367,6 +367,10 @@ func registerRoutes(port, panelPath string) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	http.HandleFunc("/api/servers/probe", func(w http.ResponseWriter, r *http.Request) {
+		handleServerProbeRoute(w, r, panelPath)
+	})
+
 	http.HandleFunc("/api/prefs", func(w http.ResponseWriter, r *http.Request) {
 		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return

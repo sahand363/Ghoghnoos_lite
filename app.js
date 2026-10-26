@@ -6,7 +6,9 @@ let selectedMethod = 'wss';
 let deployMode = 'ssh';
 let enrollToken = '';
 let masterIP = '';
-let dialPort = '6001';
+let ctrlL4 = '6005';
+let ctrlDirect = '6006';
+let ctrlWSS = '6007';
 let currentServers = [];
 let currentTunnels = [];
 let pingHistory = [];
@@ -75,24 +77,24 @@ function setDeployMode(mode) {
   if (mode === 'enroll') {
     if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
     if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
-    if (boxSsh) boxSsh.classList.add('hidden');
-    if (boxEnr) boxEnr.classList.remove('hidden');
+    boxSsh?.classList.add('hidden');
+    boxEnr?.classList.remove('hidden');
     syncDefaultServerNames();
   } else {
     if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
     if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
-    if (boxSsh) boxSsh.classList.remove('hidden');
-    if (boxEnr) boxEnr.classList.add('hidden');
+    boxSsh?.classList.remove('hidden');
+    boxEnr?.classList.add('hidden');
   }
 }
 
 function updateEnrollCommandUI() {
   const addrIn = el('enroll-master-addr');
-  if (addrIn && !addrIn.value && masterIP) addrIn.value = `${masterIP}:${dialPort || '6001'}`;
-  const targetAddr = (addrIn?.value || `${masterIP || window.location.hostname}:${dialPort || '6001'}`).trim();
-  const defaultName = getNextDefaultServerName();
-  const nodeName = (el('enroll-node-name')?.value || defaultName).trim().replace(/\s+/g, '-');
-  const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | bash -s -- --enroll ${targetAddr} ${enrollToken} ${nodeName}`;
+  const defaultSpec = `${masterIP || window.location.hostname}:${ctrlL4}:${ctrlDirect}:${ctrlWSS}`;
+  if (addrIn && !addrIn.value && masterIP) addrIn.value = defaultSpec;
+  const targetSpec = (addrIn?.value || defaultSpec).trim();
+  const nodeName = (el('enroll-node-name')?.value || getNextDefaultServerName()).trim().replace(/\s+/g, '-');
+  const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | bash -s -- --enroll ${targetSpec} ${enrollToken} ${nodeName}`;
   setText('enroll-cmd-box', cmd);
 }
 
@@ -116,11 +118,25 @@ async function rotateEnrollToken() {
   if (data.enroll_token) { enrollToken = data.enroll_token; updateEnrollCommandUI(); }
 }
 
+async function startRendezvousFromBox() {
+  const ip = (el('rv-target-ip')?.value || '').trim();
+  if (!ip) return alert('Please enter the Remote Sentinel IP Address');
+  const name = (el('enroll-node-name')?.value || getNextDefaultServerName()).trim();
+  if (el('rv-target-ip')) el('rv-target-ip').value = '';
+  userEditedEnrollName = false;
+  await fetch('/api/servers/probe', { method: 'POST', body: JSON.stringify({ ip, name, stop: false }) });
+  fetchState();
+}
+
+async function toggleServerProbe(id, stop) {
+  await fetch('/api/servers/probe', { method: 'POST', body: JSON.stringify({ id, stop }) });
+  fetchState();
+}
+
 function stepSpeed(delta) {
   const inp = el('tun-speed');
   if (!inp) return;
-  let cur = parseFloat(inp.value) || 0;
-  inp.value = Math.max(0, Math.round((cur + delta) * 10) / 10);
+  inp.value = Math.max(0, Math.round(((parseFloat(inp.value) || 0) + delta) * 10) / 10);
   updateSpeedBadge();
 }
 
@@ -305,7 +321,13 @@ async function saveTunnel() {
 async function saveConfig() {
   const port = (el('cfg-port')?.value || '').trim() || '6001', path = (el('cfg-path')?.value || '').trim();
   const user = (el('cfg-user')?.value || '').trim(), pass = (el('cfg-pass')?.value || '').trim();
-  await fetch('/api/config?server_id=' + selectedServer, { method: 'POST', body: JSON.stringify({ port, path, user, pass }) });
+  const ctrl_l4 = (el('cfg-ctrl-l4')?.value || '').trim() || '6005';
+  const ctrl_direct = (el('cfg-ctrl-direct')?.value || '').trim() || '6006';
+  const ctrl_wss = (el('cfg-ctrl-wss')?.value || '').trim() || '6007';
+  await fetch('/api/config?server_id=' + selectedServer, {
+    method: 'POST',
+    body: JSON.stringify({ port, path, user, pass, ctrl_l4, ctrl_direct, ctrl_wss })
+  });
   if (selectedServer === 'local') setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
   else alert('Remote Sentinel configuration updated!');
 }
@@ -357,6 +379,11 @@ function renderServers() {
   setHTML('server-cards-list', currentServers.map(s => {
     const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
     const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
+    const probeBtn = !s.is_local
+      ? (s.probing
+          ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/70 hover:bg-amber-900 text-xs font-semibold animate-pulse">⏸ Probing...</button>`
+          : `<button onclick="toggleServerProbe('${s.id}', false)" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Start Master Forward Rendezvous Probe">▶ Probe</button>`)
+      : '';
     return `<div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
       <div class="flex justify-between items-start"><div><div class="flex flex-wrap items-center gap-1.5"><h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
       ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}${viaBadge}</div>
@@ -365,8 +392,9 @@ function renderServers() {
       <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span></div>
       <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60"><div class="flex flex-wrap items-center gap-1.5">
       <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
-      <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
-      <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a></div>
+      ${probeBtn}
+      <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 SSH</button>
+      <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">🌐 Info</a></div>
       ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
   }).join(''));
 }
@@ -422,9 +450,13 @@ async function fetchState() {
     const res = await fetch('/api/state?server_id=' + selectedServer);
     const data = await res.json();
     if (data.server_time) setText('top-server-clock', data.server_time);
+    if (data.ctrl_l4_port) ctrlL4 = data.ctrl_l4_port;
+    if (data.ctrl_direct_port) ctrlDirect = data.ctrl_direct_port;
+    if (data.ctrl_wss_port) ctrlWSS = data.ctrl_wss_port;
     if (data.enroll_token && data.enroll_token !== enrollToken) {
-      enrollToken = data.enroll_token; masterIP = data.master_ip || window.location.hostname;
-      dialPort = data.dial_port || data.panel_port || '6001'; updateEnrollCommandUI();
+      enrollToken = data.enroll_token;
+      masterIP = data.master_ip || window.location.hostname;
+      updateEnrollCommandUI();
     }
     if (!initialLoaded && data.prefs) {
       initialLoaded = true; lang = data.prefs.lang || 'en'; selectedServer = data.prefs.selected_server || 'local';
@@ -443,6 +475,9 @@ async function fetchState() {
       el('cfg-port').value = data.panel_port || '6001';
       if (el('cfg-path')) el('cfg-path').value = data.panel_path || '';
       if (el('cfg-user') && data.panel_user) el('cfg-user').value = data.panel_user;
+      if (el('cfg-ctrl-l4')) el('cfg-ctrl-l4').value = ctrlL4;
+      if (el('cfg-ctrl-direct')) el('cfg-ctrl-direct').value = ctrlDirect;
+      if (el('cfg-ctrl-wss')) el('cfg-ctrl-wss').value = ctrlWSS;
     }
   } catch (err) { console.error('State sync error:', err); }
 }

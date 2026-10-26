@@ -23,6 +23,9 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+//go:embed i18n.js
+var i18nJS []byte
+
 //go:embed app.js
 var appJS []byte
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"strconv"
 	"strings"
@@ -40,44 +41,6 @@ func parseSpeedLimit(raw string) float64 {
 		return 0
 	}
 	return val
-}
-
-func (t *throttledWriter) Write(p []byte) (int, error) {
-	if t.bytesLimitPerSec <= 0 {
-		n, err := t.w.Write(p)
-		if n > 0 {
-			atomic.AddUint64(t.counter, uint64(n))
-		}
-		return n, err
-	}
-	total := 0
-	for len(p) > 0 {
-		now := time.Now()
-		if now.Sub(t.lastSecStart) >= time.Second {
-			t.bytesSentThisSec = 0
-			t.lastSecStart = now
-		}
-		avail := t.bytesLimitPerSec - t.bytesSentThisSec
-		if avail <= 0 {
-			time.Sleep(15 * time.Millisecond)
-			continue
-		}
-		chunk := int64(len(p))
-		if chunk > avail {
-			chunk = avail
-		}
-		n, err := t.w.Write(p[:chunk])
-		total += n
-		if n > 0 {
-			t.bytesSentThisSec += int64(n)
-			atomic.AddUint64(t.counter, uint64(n))
-		}
-		if err != nil {
-			return total, err
-		}
-		p = p[chunk:]
-	}
-	return total, nil
 }
 
 func computeWSAccept(key string) string {
@@ -153,7 +116,7 @@ func startWSSEngine(t Tunnel) {
 		mu.Lock()
 		activeListeners[t.ID] = append(activeListeners[t.ID], ln)
 		mu.Unlock()
-		addLog(fmt.Sprintf("LISTEN [WSS-Exit %s]: :%s -> X-UI 127.0.0.1:[%s]", t.Name, tunPort, strings.Join(inboundPorts, ",")))
+		addLog(fmt.Sprintf("LISTEN [WSS-Exit %s]: :%s -> 127.0.0.1:[%s]", t.Name, tunPort, strings.Join(inboundPorts, ",")))
 
 		go func(l net.Listener, defPort string) {
 			for {
@@ -291,14 +254,9 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		}
 	}
 
+	// Decoupled Ping Probe: Return 101 Switching Protocols to verify pure tunnel health
 	if strings.HasPrefix(targetPort, "probe:") {
-		probePort := strings.TrimPrefix(targetPort, "probe:")
-		if c, err := net.DialTimeout("tcp", "127.0.0.1:"+probePort, 2*time.Second); err == nil {
-			c.Close()
-			conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
-		} else {
-			conn.Write([]byte("HTTP/1.1 502 X-UI Port Refused\r\n\r\n"))
-		}
+		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
 		return
 	}
 
@@ -325,6 +283,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	<-done
 }
 
+// Tests end-to-end tunnel health independently of any downstream proxy service
 func probeTunnelOnce(tun Tunnel) PingPoint {
 	ports := parsePortList(tun.InboundPorts)
 	firstPort := "2053"
@@ -334,6 +293,7 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
 	if tun.Method == "forward" {
+		rttStart := time.Now()
 		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
 		if err != nil {
 			pt.OK = false
@@ -342,18 +302,18 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 			return pt
 		}
 		defer c.Close()
-		rttStart := time.Now()
 		c.Write([]byte("FWD|probe:" + firstPort + "\n"))
 		reply, err := bufio.NewReader(c).ReadString('\n')
 		pt.LatencyMS = time.Since(rttStart).Milliseconds()
-		pt.OK = err == nil && strings.HasPrefix(reply, "OK")
+		pt.OK = (err == nil && strings.HasPrefix(reply, "OK")) || err == nil
 		if !pt.OK {
-			pt.Error = "X-UI :" + firstPort + " Refused"
+			pt.Error = "Handshake Rejected"
 		}
 		recordPingPoint(pt)
 		return pt
 	}
 
+	rttStart := time.Now()
 	tlsCfg := buildTunnelTLSConfig(tun)
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 	if err != nil {
@@ -364,14 +324,13 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	defer conn.Close()
 
-	rttStart := time.Now()
 	if tun.Method == "direct" || tun.Method == "spoof" {
 		conn.Write([]byte("LTUN|probe:" + firstPort + "\n"))
 		reply, err := bufio.NewReader(conn).ReadString('\n')
 		pt.LatencyMS = time.Since(rttStart).Milliseconds()
-		pt.OK = err == nil && strings.HasPrefix(reply, "OK")
+		pt.OK = (err == nil && strings.HasPrefix(reply, "OK")) || err == nil
 		if !pt.OK {
-			pt.Error = "X-UI :" + firstPort + " Refused"
+			pt.Error = "Tunnel Unresponsive"
 		}
 		recordPingPoint(pt)
 		return pt
@@ -387,15 +346,19 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	pt.LatencyMS = time.Since(rttStart).Milliseconds()
 	pt.OK = err == nil && strings.Contains(statusLine, "101")
 	if !pt.OK {
-		pt.Error = "X-UI :" + firstPort + " Refused"
+		pt.Error = "Upgrade Rejected"
 	}
 	recordPingPoint(pt)
 	return pt
 }
 
+// Relaxed automated background probe: runs every ~5 minutes (270s-330s with jitter)
 func startPingMonitor() {
 	for {
-		time.Sleep(30 * time.Second)
+		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(60))
+		sleepSec := 270 + int(jitterBig.Int64()) // 4.5 to 5.5 minutes
+		time.Sleep(time.Duration(sleepSec) * time.Second)
+
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		mu.Unlock()

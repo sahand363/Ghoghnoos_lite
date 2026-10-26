@@ -70,6 +70,18 @@ function downloadLogs24h() {
   window.location.href = `/api/logs/download?server_id=${selectedServer}`;
 }
 
+async function triggerSelfUpdate() {
+  const btn = el('btn-self-update');
+  if (btn) {
+    btn.className = 'px-2.5 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse';
+    btn.innerHTML = '⏳ Updating...';
+  }
+  try {
+    await fetch('/api/update?server_id=' + selectedServer, { method: 'POST' });
+  } catch (e) {}
+  setTimeout(() => { window.location.reload(); }, 4500);
+}
+
 function setDeployMode(mode) {
   deployMode = mode;
   const bSsh = el('btn-mode-ssh'), bEnr = el('btn-mode-enroll');
@@ -98,18 +110,41 @@ function updateEnrollCommandUI() {
   setText('enroll-cmd-box', cmd);
 }
 
+// Silent copy that works on plain HTTP without opening any browser prompt() window
+function copyTextSilent(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    resolve();
+  });
+}
+
 async function copyEnrollCommand() {
   const cmd = el('enroll-cmd-box')?.innerText || '';
   if (!cmd) return;
-  try {
-    await navigator.clipboard.writeText(cmd);
-    const btn = el('btn-copy-enroll');
-    if (btn) {
-      const old = btn.innerText;
-      btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور خارج اجرا کنید' : '✅ Copied! Paste in Remote VPS Terminal';
-      setTimeout(() => { btn.innerText = old; }, 2500);
-    }
-  } catch (e) { prompt('Copy command:', cmd); }
+  await copyTextSilent(cmd);
+  const btn = el('btn-copy-enroll');
+  if (btn) {
+    const oldText = btn.innerText;
+    const oldBg = btn.style.background;
+    btn.style.background = '#10b981';
+    btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور خارج پیست کنید' : '✅ Copied to Clipboard!';
+    setTimeout(() => {
+      btn.style.background = oldBg || 'var(--accent)';
+      btn.innerText = oldText;
+    }, 2500);
+  }
 }
 
 async function rotateEnrollToken() {
@@ -351,6 +386,54 @@ function buildSVGChart(values, unit, strokeColor, gradId) {
     <polygon points="${area}" fill="url(#${gradId})"/><polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${pts}"/></svg>`;
 }
 
+function fmtShortTime(ts, withDate) {
+  if (!ts) return '--:--';
+  const d = new Date(ts * 1000);
+  const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
+  if (!withDate) return `${hh}:${mm}`;
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hh}:${mm}`;
+}
+
+// Builds 24h/7d SVG chart with red vertical OFFLINE zones + X-axis timestamps
+function buildHistorySVGChart(points) {
+  let list = (points && points.length) ? points.slice(-90) : [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  while (list.length < 6) list.unshift({ ts: nowSec - (6 - list.length) * 600, ms: 50, ok: true });
+  const w = 680, h = 155, padL = 62, padR = 14, padT = 14, padB = 22, plotW = w - padL - padR, plotH = h - padT - padB;
+  const vals = list.map(p => (p.ok && p.ms > 0) ? p.ms : 0);
+  const maxVal = Math.max(...vals, 220), midVal = Math.round(maxVal / 2), topVal = Math.round(maxVal);
+  const stepW = plotW / Math.max(list.length - 1, 1);
+
+  let redBars = '';
+  list.forEach((p, idx) => {
+    if (!p.ok) {
+      const cx = padL + idx * stepW;
+      const bw = Math.max(stepW * 1.15, 7);
+      const bx = Math.max(padL, cx - bw / 2);
+      redBars += `<rect x="${bx.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${plotH}" fill="rgba(244,63,94,0.28)"/>`;
+      redBars += `<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${padT + plotH}" stroke="#f43f5e" stroke-width="1.3" stroke-opacity="0.75"/>`;
+    }
+  });
+
+  const pts = vals.map((v, idx) => `${(padL + idx * stepW).toFixed(1)},${(padT + plotH - ((v / maxVal) * plotH)).toFixed(1)}`).join(' ');
+  const area = `${padL},${padT + plotH} ${pts} ${padL + plotW},${padT + plotH}`;
+  const tStart = fmtShortTime(list[0].ts, false), tMid = fmtShortTime(list[Math.floor(list.length / 2)].ts, false), tEnd = fmtShortTime(list[list.length - 1].ts, false);
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
+    <defs><linearGradient id="gradHist" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#38bdf8" stop-opacity="0.40"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/></linearGradient></defs>
+    <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
+    ${redBars}
+    <text x="6" y="${padT + 4}" fill="#94a3b8" font-size="10" font-family="monospace">${topVal} ms</text>
+    <text x="6" y="${padT + plotH / 2 + 4}" fill="#94a3b8" font-size="10" font-family="monospace">${midVal} ms</text>
+    <text x="6" y="${padT + plotH + 3}" fill="#f43f5e" font-size="10" font-weight="bold" font-family="monospace">0 (OFF)</text>
+    <polygon points="${area}" fill="url(#gradHist)"/><polyline fill="none" stroke="#38bdf8" stroke-width="2.2" points="${pts}"/>
+    <text x="${padL}" y="${h - 4}" fill="#94a3b8" font-size="10" font-family="monospace">${tStart}</text>
+    <text x="${padL + plotW / 2 - 14}" y="${h - 4}" fill="#94a3b8" font-size="10" font-family="monospace">${tMid}</text>
+    <text x="${w - padR - 32}" y="${h - 4}" fill="#94a3b8" font-size="10" font-family="monospace">${tEnd}</text></svg>`;
+}
+
 function renderServers() {
   const topSel = el('top-server-select'), srcSel = el('tun-src-srv'), dstSel = el('tun-dst-srv');
   if (topSel && srcSel && dstSel) {
@@ -439,16 +522,31 @@ function renderPingAnalytics() {
   const recentPings = okList.slice(-25).map(x => x.ms);
   setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
-  setText('pill-uptime', `● Uptime: ${uptimePct}%`); setText('pill-avg', `⚡ Avg Latency: ${avgMs} ms`);
-  setText('pill-down', `● Downtime: ${fails * 5}m`); setText('pill-inc', `🕒 Incidents: ${fails} Incidents`);
-  const histSeries = filtered.slice(-80).map(x => x.ok ? x.ms : 0);
-  setHTML('svg-history-ping', buildSVGChart(histSeries.length ? histSeries : [50, 52, 49, 53, 51, 50], 'ms', '#38bdf8', 'gradHist'));
+
+  setText('pill-uptime', `● Online Uptime: ${uptimePct}%`);
+  setText('pill-down', `● Total Offline Time: ${fails * 10}m (${fails} checks)`);
+  setText('pill-avg', `⚡ Avg Ping: ${avgMs} ms`);
+
+  // Compute Outage Windows list
+  let windows = [], curStart = null;
+  filtered.forEach(p => {
+    if (!p.ok && curStart === null) curStart = p.ts;
+    else if (p.ok && curStart !== null) {
+      windows.push(`${fmtShortTime(curStart, true)} ➔ ${fmtShortTime(p.ts, false)}`);
+      curStart = null;
+    }
+  });
+  if (curStart !== null) windows.push(`${fmtShortTime(curStart, true)} ➔ NOW`);
+  setText('pill-outage-windows', windows.length ? `🕒 Outage Windows: ${windows.slice(-4).join(' | ')}` : `🕒 Outage Windows: None — 100% Continuous Uptime`);
+  setHTML('svg-history-ping', buildHistorySVGChart(filtered));
 }
 
 async function fetchState() {
   try {
     const res = await fetch('/api/state?server_id=' + selectedServer);
+    if (res.status === 401) { window.location.href = 'login'; return; }
     const data = await res.json();
+    if (data.version) setText('app-version-badge', data.version);
     if (data.server_time) setText('top-server-clock', data.server_time);
     if (data.ctrl_l4_port) ctrlL4 = data.ctrl_l4_port;
     if (data.ctrl_direct_port) ctrlDirect = data.ctrl_direct_port;

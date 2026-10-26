@@ -510,8 +510,8 @@ func startSentinelSurvivalLoop() {
 			}
 		}
 
-		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(25))
-		sleepSec := 60 + int(jitterBig.Int64())
+		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(30))
+		sleepSec := 120 + int(jitterBig.Int64()) // 120s to 150s (2 to 2.5 minutes)
 		time.Sleep(time.Duration(sleepSec) * time.Second)
 	}
 }

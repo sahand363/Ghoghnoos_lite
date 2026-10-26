@@ -18,7 +18,7 @@ let userEditedSrvName = false;
 let userEditedEnrollName = false;
 let consoleCollapsed = false;
 let historyRange = '24h';
-let pollIntervalMs = 10000; // 10 seconds baseline
+let pollIntervalMs = 10000;
 let pollTimer = null;
 
 const el = id => document.getElementById(id);
@@ -33,22 +33,14 @@ function getNextDefaultServerName() {
 function syncDefaultServerNames() {
   const nextName = getNextDefaultServerName();
   const srvIn = el('srv-name');
-  if (srvIn && !userEditedSrvName) {
-    srvIn.placeholder = nextName;
-  }
+  if (srvIn && !userEditedSrvName) srvIn.placeholder = nextName;
   const enrIn = el('enroll-node-name');
-  if (enrIn && !userEditedEnrollName) {
-    enrIn.value = nextName;
-  }
+  if (enrIn && !userEditedEnrollName) enrIn.value = nextName;
   updateEnrollCommandUI();
 }
 
 function togglePollRate() {
-  if (pollIntervalMs === 10000) {
-    pollIntervalMs = 300000; // 5 minutes (Eco mode)
-  } else {
-    pollIntervalMs = 10000; // 10 seconds (Live mode)
-  }
+  pollIntervalMs = pollIntervalMs === 10000 ? 300000 : 10000;
   updatePollRateUI();
   restartPolling();
 }
@@ -67,18 +59,10 @@ function updatePollRateUI() {
 
 function restartPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    if (!document.hidden) {
-      fetchState();
-    }
-  }, pollIntervalMs);
+  pollTimer = setInterval(() => { if (!document.hidden) fetchState(); }, pollIntervalMs);
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    fetchState();
-  }
-});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchState(); });
 
 function downloadLogs24h() {
   window.location.href = `/api/logs/download?server_id=${selectedServer}`;
@@ -104,9 +88,7 @@ function setDeployMode(mode) {
 
 function updateEnrollCommandUI() {
   const addrIn = el('enroll-master-addr');
-  if (addrIn && !addrIn.value && masterIP) {
-    addrIn.value = `${masterIP}:${dialPort || '6001'}`;
-  }
+  if (addrIn && !addrIn.value && masterIP) addrIn.value = `${masterIP}:${dialPort || '6001'}`;
   const targetAddr = (addrIn?.value || `${masterIP || window.location.hostname}:${dialPort || '6001'}`).trim();
   const defaultName = getNextDefaultServerName();
   const nodeName = (el('enroll-node-name')?.value || defaultName).trim().replace(/\s+/g, '-');
@@ -125,227 +107,33 @@ async function copyEnrollCommand() {
       btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور خارج اجرا کنید' : '✅ Copied! Paste in Remote VPS Terminal';
       setTimeout(() => { btn.innerText = old; }, 2500);
     }
-  } catch (e) {
-    prompt('Copy command:', cmd);
-  }
+  } catch (e) { prompt('Copy command:', cmd); }
 }
 
 async function rotateEnrollToken() {
   const res = await fetch('/api/enroll/token', { method: 'POST' });
   const data = await res.json();
-  if (data.enroll_token) {
-    enrollToken = data.enroll_token;
-    updateEnrollCommandUI();
-  }
+  if (data.enroll_token) { enrollToken = data.enroll_token; updateEnrollCommandUI(); }
 }
 
 function stepSpeed(delta) {
   const inp = el('tun-speed');
   if (!inp) return;
   let cur = parseFloat(inp.value) || 0;
-  cur = Math.max(0, Math.round((cur + delta) * 10) / 10);
-  inp.value = cur;
+  inp.value = Math.max(0, Math.round((cur + delta) * 10) / 10);
   updateSpeedBadge();
 }
 
 function updateSpeedBadge() {
-  const inp = el('tun-speed');
-  if (!inp) return;
-  const val = parseFloat(inp.value) || 0;
-  if (val <= 0) {
-    setText('spd-badge', lang === 'fa' ? 'نامحدود' : 'Unlimited');
-  } else {
-    setText('spd-badge', `${val} MB/s (${(val * 8).toFixed(0)} Mbps)`);
-  }
+  const val = parseFloat(el('tun-speed')?.value) || 0;
+  setText('spd-badge', val <= 0 ? (lang === 'fa' ? 'نامحدود' : 'Unlimited') : `${val} MB/s (${(val * 8).toFixed(0)} Mbps)`);
 }
-
-const helpTexts = {
-  en: {
-    enroll: {
-      title: '🔑 Stealth-Prioritized Reverse Dial-In & 12h Auto-Upgrade',
-      body: 'When SSH from Iran to Kharej is blocked or filtered, run this one-liner on the remote server.\n\n1. Stealth Priority: Tests WSS (85% Stealth on :6003) ➔ Direct-TLS (75% Stealth on :6002) ➔ L4 API (20% Stealth on :6001).\n2. Survival Loop: Sends a randomized 60–85s jittered heartbeat.\n3. 12-Hour Opportunistic Upgrade: If connected via a lower-stealth fallback, it automatically tests higher-stealth transports every 12 hours and upgrades seamlessly.'
-    },
-    stealth: {
-      title: '🛡️ Method Stealth Percentage Explained',
-      body: '• WSS (85% Stealth): Wraps traffic in TLS 1.3 + HTTP/1.1 WebSocket headers and serves a decoy 200 OK HTML webpage if probed.\n\n• Direct TLS (75% Stealth): Pure TLS 1.3 encrypted stream with browser cipher-suite profiles and TCP ClientHello segmentation, without HTTP header overhead.\n\n• Port Forward (20% Stealth): Raw L4 TCP forwarding (like socat). Has no outer encryption of its own—best used when your inbound service already uses REALITY or TLS.'
-    },
-    sni: {
-      title: 'TLS SNI Hostname (ServerName)',
-      body: 'The hostname sent inside the TLS ClientHello handshake when connecting from the Entry server to the Exit server.\n\nWorks in both WSS and Direct-TLS modes. You can set any domain (e.g., www.speedtest.net, cloudflare.com, or your own domain).'
-    },
-    seg: {
-      title: 'TCP ClientHello Segment Size',
-      body: 'Splits the initial TLS handshake packet into smaller TCP segments.\n\n• 0 = Off (Standard single-packet TCP delivery).\n• 64 or 128 = Cuts the ClientHello header across multiple TCP packets so simple single-packet DPI matchers cannot parse the handshake.'
-    },
-    fq: {
-      title: 'FQ (Fair Queueing Scheduler)',
-      body: 'A Linux kernel packet scheduler (sch_fq).\n\nUnlike standard FIFO queues, FQ paces individual network flows and eliminates bufferbloat. Google BBR requires FQ pacing to sustain maximum speed across high-latency links.'
-    },
-    bbr: {
-      title: 'Google BBR Congestion Control',
-      body: 'Replaces legacy CUBIC with model-based congestion control. BBR measures actual bottleneck bandwidth and RTT instead of assuming packet loss equals congestion—keeping cross-border speeds high.'
-    },
-    pin: {
-      title: 'SHA-256 Certificate Pinning',
-      body: 'Verifies the exact cryptographic SHA-256 fingerprint of your Exit server leaf certificate. Any intermediary attempting to intercept or MITM the TLS connection is blocked immediately.'
-    },
-    forward: {
-      title: 'Raw Port Forwarding (L4 TCP Relay)',
-      body: 'Pipes raw TCP bytes directly from the Entry port to the Exit service port (native Go replacement for socat) with integrated speed limiting and live latency monitoring.'
-    },
-    port: {
-      title: 'Panel & Sentinel Port (Default: 6001)',
-      body: 'The TCP port used for the web panel and Sentinel communication. Using 6001 (or a custom port) avoids conflicts with common web ports.'
-    },
-    path: {
-      title: 'Secret URL Path',
-      body: 'Protects your web panel behind a secret URL slug so automated scanners get a 404 Not Found.'
-    }
-  },
-  fa: {
-    enroll: {
-      title: '🔑 اتصال معکوس با اولویت مخفی‌سازی و ارتقای ۱۲ ساعته',
-      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. اولویت مخفی‌سازی: ابتدا متد WSS (۸۵٪ روی پورت 6003)، سپس Direct-TLS (۷۵٪ روی پورت 6002) و در نهایت L4 API (۲۰٪ روی پورت 6001) را تست می‌کند.\n۲. حلقه بقا: هر ۶۰ تا ۸۵ ثانیه وضعیت را همگام‌سازی می‌کند.\n۳. ارتقای خودکار ۱۲ ساعته: اگر روی متد ضعیف‌تر متصل شده باشد، هر ۱۲ ساعت متدهای امن‌تر را بررسی کرده و به صورت خودکار به امن‌ترین متد ارتقا می‌دهد.'
-    },
-    stealth: {
-      title: '🛡️ راهنمای درصد مخفی‌سازی (Stealth) متدها',
-      body: '• متد WSS (۸۵٪ مخفی‌سازی): ترافیک را داخل TLS 1.3 و هدرهای وب‌سوکت HTTP/1.1 قرار می‌دهد.\n\n• متد Direct TLS (۷۵٪ مخفی‌سازی): استریم مستقیم رمزنگاری‌شده TLS 1.3 بدون سربار HTTP همراه با پروفایل مرورگر.\n\n• متد Port Forward (۲۰٪ مخفی‌سازی): انتقال مستقیم لایه ۴ (مشابه socat) بدون رمزنگاری بیرونی.'
-    },
-    sni: {
-      title: 'دامنه TLS SNI (ServerName)',
-      body: 'نام دامنه‌ای که در بسته اولیه TLS ClientHello ارسال می‌شود (مثلاً www.speedtest.net یا دامنه دلخواه).'
-    },
-    seg: {
-      title: 'اندازه قطعه‌بندی TCP ClientHello',
-      body: 'بسته اولیه هندشیک TLS را به قطعات کوچک‌تر تقسیم می‌کند تا سیستم‌های DPI نتوانند آن را یکجا بررسی کنند.'
-    },
-    fq: {
-      title: 'زمان‌بند پکت FQ (Fair Queueing)',
-      body: 'صف‌بندی هوشمند کرنل لینوکس برای مدیریت جریان ترافیک و حذف تاخیر بافر.'
-    },
-    bbr: {
-      title: 'کنترل ازدحام Google BBR',
-      body: 'جایگزین هوشمند الگوریتم‌های سنتی در کرنل لینوکس برای حفظ حداکثر سرعت در شرایط پکت‌لاس.'
-    },
-    pin: {
-      title: 'پین گواهی رمزنگاری SHA-256',
-      body: 'اثرانگشت دقیق گواهی TLS سرور خارج را بررسی کرده و از هرگونه حمله مرد میانی جلوگیری می‌کند.'
-    },
-    forward: {
-      title: 'پورت فورواردینگ مستقیم (لایه ۴)',
-      body: 'انتقال مستقیم بایت‌های TCP بین پورت‌های ورودی و خروجی با بالاترین بازدهی ممکن.'
-    },
-    port: {
-      title: 'پورت پنل و سنتینل (پیش‌فرض: 6001)',
-      body: 'پورت ارتباطی پنل مدیریت و ایجنت سنتینل.'
-    },
-    path: {
-      title: 'آدرس مخفی پنل (Secret Path)',
-      body: 'قرار دادن پنل مدیریت در مسیری تصادفی جهت جلوگیری از اسکن خودکار.'
-    }
-  }
-};
-
-function showHelpModal(key) {
-  const langSet = helpTexts[lang] || helpTexts.en;
-  const item = langSet[key] || helpTexts.en[key];
-  if (!item) return;
-  const card = el('help-modal-card');
-  if (card) card.setAttribute('dir', lang === 'fa' ? 'rtl' : 'ltr');
-  setText('help-modal-title', item.title);
-  setText('help-modal-body', item.body);
-  setText('help-modal-btn', lang === 'fa' ? 'متوجه شدم' : 'Understood');
-  el('help-modal').classList.remove('hidden');
-}
-
-function closeHelpModal() {
-  el('help-modal').classList.add('hidden');
-}
-
-const dict = {
-  en: {
-    servers: 'Servers', config: 'Config', tunnels: 'Tunnels', logs: 'Log',
-    add_srv_title: 'Connect Remote Server & Deploy Sentinel',
-    add_srv_sub: 'Choose Direct SSH Push or Reverse Token Dial-In (when SSH is filtered).',
-    mode_ssh_btn: '🚀 Method A: SSH Push', mode_enroll_btn: '🔑 Method B: Reverse Dial-In',
-    srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
-    srv_user: 'SSH Username', srv_pass: 'SSH Password',
-    btn_deploy: '🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)',
-    enroll_title: '🔑 Autonomous Reverse Sentinel Enrollment (Stealth Priority)',
-    enroll_sub: 'If outbound SSH from Master is blocked, run this command on your remote VPS. The Sentinel tests WSS (85%) ➔ Direct-TLS (75%) ➔ L4 API (20%) and checks every 12h to upgrade to the highest available stealth transport.',
-    enroll_node_lbl: 'New Sentinel Name (Auto-Numbered)',
-    enroll_addr_lbl: 'Master Dial-In Target (IP:Port)',
-    enroll_cmd_lbl: 'Paste this One-Liner on your Remote Server Terminal:',
-    btn_rotate_tok: '🔄 Rotate Token',
-    btn_copy_enroll: '📋 Copy Reverse Enrollment One-Liner Command',
-    network_settings: 'Server Port, URL & Login Configuration', lbl_panel_port: 'Panel / Sentinel Port',
-    lbl_panel_path: 'Secret URL Path', lbl_panel_user: 'Panel Username',
-    lbl_panel_pass: 'New Panel Password (blank = keep current)', save_restart: 'Save & Restart Selected Server',
-    bbr_title: 'TCP BBR & FQ Kernel Acceleration',
-    bbr_sub: 'Boosts tunnel throughput and eliminates packet-loss throttling on the selected server.',
-    btn_bbr: '⚡ Enable Google BBR + FQ on Selected Server',
-    step1_method: '1. Select Tunnel Transport Method',
-    wss_desc: 'HTTP/1.1 WebSocket Upgrade over TLS 1.3',
-    direct_desc: 'Zero-HTTP Raw TLS 1.3 Stream Relay',
-    forward_desc: 'Raw L4 TCP Relay (Native socat stream)',
-    stealth_lbl: 'Stealth',
-    new_tunnel: '2. Bridge Tunnel Between Servers', reset: 'Clear Form',
-    src_srv: 'Entry Server (Relay)', dst_srv: 'Exit Server (Target Node)',
-    tun_name: 'Tunnel Name', tun_port_lbl: 'Tunnel Port',
-    inb_port_lbl: 'Forwarding Inbound Port(s)', spd_limit_lbl: 'Speed (MB/s)',
-    sni_lbl: 'TLS SNI Hostname (ServerName)', wspath_lbl: 'WebSocket Path (WSS Mode)',
-    fp_lbl: 'TLS Cipher Suite Profile', seg_lbl: 'TCP ClientHello Segment Size',
-    forward_note: 'Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.',
-    cert_pin_lbl: 'Pinned SHA-256 Certificate (Auto-filled from Exit Server)',
-    create: '⚡ Establish Tunnel Between Selected Servers',
-    active_tunnels: 'Active Tunnels (End-to-End Latency Ping & Edit)'
-  },
-  fa: {
-    servers: 'سرورها', config: 'تنظیمات', tunnels: 'تانل‌ها', logs: 'لاگ',
-    add_srv_title: 'اتصال به سرور جدید و نصب سنتینل',
-    add_srv_sub: 'نصب مستقیم با SSH یا اتصال معکوس با توکن (زمانی که SSH مسدود است).',
-    mode_ssh_btn: '🚀 روش اول: نصب با SSH', mode_enroll_btn: '🔑 روش دوم: اتصال معکوس (Dial-In)',
-    srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
-    srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
-    btn_deploy: '🚀 اتصال با SSH و نصب سنتینل (۰٪ تا ۱۰۰٪)',
-    enroll_title: '🔑 ثبت‌نام معکوس سنتینل (اولویت بر اساس درصد مخفی‌سازی)',
-    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب WSS (۸۵٪)، سپس Direct-TLS (۷۵٪) و L4 API (۲۰٪) را تست کرده و هر ۱۲ ساعت امکان ارتقا به متد امن‌تر را بررسی می‌کند.',
-    enroll_node_lbl: 'نام سرور سنتینل (شماره‌گذاری خودکار)',
-    enroll_addr_lbl: 'آدرس و پورت سرور مستر (IP:Port)',
-    enroll_cmd_lbl: 'این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید:',
-    btn_rotate_tok: '🔄 تغییر توکن',
-    btn_copy_enroll: '📋 کپی دستور تک‌خطی اتصال معکوس سنتینل',
-    network_settings: 'تنظیمات پورت، آدرس و رمز ورود پنل', lbl_panel_port: 'پورت پنل / سنتینل',
-    lbl_panel_path: 'آدرس مخفی پنل', lbl_panel_user: 'نام کاربری پنل',
-    lbl_panel_pass: 'رمز عبور جدید پنل (خالی = بدون تغییر)', save_restart: 'ذخیره و ری‌استارت سرور انتخاب‌شده',
-    bbr_title: 'شتاب‌دهنده کرنل TCP BBR و FQ',
-    bbr_sub: 'افزایش سرعت تانل و جلوگیری از افت سرعت در سرور انتخاب‌شده.',
-    btn_bbr: '⚡ فعال‌سازی BBR + FQ روی سرور انتخاب‌شده',
-    step1_method: '۱. انتخاب متد تانل',
-    wss_desc: 'ارتقای وب‌سوکت HTTP/1.1 روی بستر TLS 1.3',
-    direct_desc: 'استریم مستقیم TLS 1.3 بدون سربار HTTP',
-    forward_desc: 'انتقال مستقیم لایه ۴ (مشابه socat)',
-    stealth_lbl: 'مخفی‌سازی',
-    new_tunnel: '۲. برقراری تانل بین دو سرور', reset: 'پاک کردن فرم',
-    src_srv: 'سرور ورودی (Relay)', dst_srv: 'سرور خروجی (خارج)',
-    tun_name: 'نام تانل', tun_port_lbl: 'پورت تانل',
-    inb_port_lbl: 'پورت(های) فورواردینگ داخلی', spd_limit_lbl: 'سرعت (MB/s)',
-    sni_lbl: 'دامنه TLS SNI (قابل تغییر)', wspath_lbl: 'مسیر وب‌سوکت (مخصوص WSS)',
-    fp_lbl: 'پروفایل رمزنگاری مرورگر', seg_lbl: 'اندازه قطعه‌بندی ClientHello',
-    forward_note: 'انتقال مستقیم بایت‌های TCP بدون رمزنگاری بیرونی. بالاترین سرعت زمانی که سرویس شما خودش دارای REALITY یا TLS باشد.',
-    cert_pin_lbl: 'پین گواهی SHA-256 (خودکار تنظیم می‌شود)',
-    create: '⚡ برقراری تانل بین دو سرور انتخاب‌شده',
-    active_tunnels: 'تانل‌های فعال (تست تاخیر شبکه و ویرایش)'
-  }
-};
 
 function selectTunnelMethod(m) {
   if (m === 'spoof' || m === 'tls') m = 'direct';
   selectedMethod = m || 'wss';
-
   ['wss', 'direct', 'forward'].forEach(k => {
-    const card = el('method-card-' + k);
-    const badge = el('badge-method-' + k);
+    const card = el('method-card-' + k), badge = el('badge-method-' + k);
     if (k === selectedMethod) {
       if (card) card.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition';
       if (badge) { badge.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800'; badge.innerText = 'SELECTED'; }
@@ -354,100 +142,44 @@ function selectTunnelMethod(m) {
       if (badge) { badge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; badge.innerText = 'READY'; }
     }
   });
-
-  const rSniWrap = el('row-tls-sni-wrap');
-  const rWsPath = el('row-ws-path');
-  const rDirect = el('row-direct-opts');
-  const rForward = el('row-forward-opts');
-  const rPin = el('row-cert-pin');
-
+  const rSniWrap = el('row-tls-sni-wrap'), rWsPath = el('row-ws-path'), rDirect = el('row-direct-opts'), rForward = el('row-forward-opts'), rPin = el('row-cert-pin');
   if (selectedMethod === 'forward') {
-    if (rSniWrap) rSniWrap.classList.add('hidden');
-    if (rDirect) rDirect.classList.add('hidden');
-    if (rForward) rForward.classList.remove('hidden');
-    if (rPin) rPin.classList.add('hidden');
+    rSniWrap?.classList.add('hidden'); rDirect?.classList.add('hidden'); rForward?.classList.remove('hidden'); rPin?.classList.add('hidden');
   } else if (selectedMethod === 'direct') {
-    if (rSniWrap) rSniWrap.classList.remove('hidden');
-    if (rWsPath) rWsPath.classList.add('hidden');
-    if (rDirect) rDirect.classList.remove('hidden');
-    if (rForward) rForward.classList.add('hidden');
-    if (rPin) rPin.classList.remove('hidden');
+    rSniWrap?.classList.remove('hidden'); rWsPath?.classList.add('hidden'); rDirect?.classList.remove('hidden'); rForward?.classList.add('hidden'); rPin?.classList.remove('hidden');
   } else {
-    if (rSniWrap) rSniWrap.classList.remove('hidden');
-    if (rWsPath) rWsPath.classList.remove('hidden');
-    if (rDirect) rDirect.classList.add('hidden');
-    if (rForward) rForward.classList.add('hidden');
-    if (rPin) rPin.classList.remove('hidden');
+    rSniWrap?.classList.remove('hidden'); rWsPath?.classList.remove('hidden'); rDirect?.classList.add('hidden'); rForward?.classList.add('hidden'); rPin?.classList.remove('hidden');
   }
-}
-
-function applyLangUI() {
-  setText('lang-btn', lang === 'en' ? 'FA' : 'EN');
-  document.querySelectorAll('[data-i18n]').forEach(node => {
-    const key = node.getAttribute('data-i18n');
-    if (dict[lang] && dict[lang][key]) node.innerText = dict[lang][key];
-  });
-  updateSpeedBadge();
-}
-
-function toggleLang() {
-  lang = lang === 'en' ? 'fa' : 'en';
-  applyLangUI();
-  savePrefsToServer();
 }
 
 function toggleMobileConsole() {
   consoleCollapsed = !consoleCollapsed;
-  const body = el('putty-body');
-  if (body) body.classList.toggle('hidden', consoleCollapsed);
+  el('putty-body')?.classList.toggle('hidden', consoleCollapsed);
   setText('console-toggle-btn', consoleCollapsed ? '▲' : '▼');
 }
 
 function setTab(t, persist) {
   currentTab = t;
   ['servers', 'config', 'tunnels', 'logs'].forEach(id => {
-    const v = el('view-' + id), b = el('tab-' + id);
-    if (v) v.classList.add('hidden');
-    if (b) b.classList.remove('active-tab');
+    el('view-' + id)?.classList.add('hidden');
+    el('tab-' + id)?.classList.remove('active-tab');
   });
-  const activeV = el('view-' + t), activeB = el('tab-' + t);
-  if (activeV) activeV.classList.remove('hidden');
-  if (activeB) activeB.classList.add('active-tab');
+  el('view-' + t)?.classList.remove('hidden');
+  el('tab-' + t)?.classList.add('active-tab');
   if (persist) savePrefsToServer();
 }
 
 function setHistoryRange(r) {
   historyRange = r;
-  const b24 = el('btn-range-24h'), b7d = el('btn-range-7d');
-  if (b24) b24.className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
-  if (b7d) b7d.className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  if (el('btn-range-24h')) el('btn-range-24h').className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  if (el('btn-range-7d')) el('btn-range-7d').className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
   renderPingAnalytics();
-}
-
-function applyTheme(name, persist) {
-  currentTheme = name;
-  const themes = {
-    cyan:    { bg: '#0c131f', card: '#131e2f', border: '#1e2e46', accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.14)' },
-    emerald: { bg: '#0b1312', card: '#12201e', border: '#1a332f', accent: '#10b981', glow: 'rgba(16, 185, 129, 0.14)' },
-    amber:   { bg: '#0b111a', card: '#111a27', border: '#1e293b', accent: '#facc15', glow: 'rgba(250, 204, 21, 0.14)' },
-    indigo:  { bg: '#0d1117', card: '#161b22', border: '#30363d', accent: '#818cf8', glow: 'rgba(129, 140, 248, 0.14)' },
-    rose:    { bg: '#120c10', card: '#1c1318', border: '#33202a', accent: '#fb7185', glow: 'rgba(251, 113, 133, 0.14)' }
-  };
-  const t = themes[name] || themes.cyan;
-  document.documentElement.style.setProperty('--bg', t.bg);
-  document.documentElement.style.setProperty('--card', t.card);
-  document.documentElement.style.setProperty('--border', t.border);
-  document.documentElement.style.setProperty('--accent', t.accent);
-  document.documentElement.style.setProperty('--accent-glow', t.glow);
-  if (persist) savePrefsToServer();
 }
 
 function autoUpdateTunnelName() {
   const nameIn = el('tun-name'), srcIn = el('tun-src-srv'), dstIn = el('tun-dst-srv');
-  if (!nameIn || !srcIn || !dstIn) return;
-  if (userEditedName && nameIn.value.trim() !== '') return;
-  const srcObj = currentServers.find(s => s.id === srcIn.value);
-  const dstObj = currentServers.find(s => s.id === dstIn.value);
+  if (!nameIn || !srcIn || !dstIn || (userEditedName && nameIn.value.trim() !== '')) return;
+  const srcObj = currentServers.find(s => s.id === srcIn.value), dstObj = currentServers.find(s => s.id === dstIn.value);
   nameIn.value = `${srcObj ? srcObj.name.split(' ')[0] : 'Relay'}-to-${dstObj ? dstObj.name.split(' ')[0] : 'Exit'}`;
 }
 
@@ -459,23 +191,14 @@ function changeSelectedServer(srvId) {
 }
 
 async function savePrefsToServer() {
-  try {
-    await fetch('/api/prefs', {
-      method: 'POST',
-      body: JSON.stringify({ theme: currentTheme, lang: lang, active_tab: currentTab, selected_server: selectedServer })
-    });
-  } catch (e) {}
+  try { await fetch('/api/prefs', { method: 'POST', body: JSON.stringify({ theme: currentTheme, lang, active_tab: currentTab, selected_server: selectedServer }) }); } catch (e) {}
 }
 
-async function enableBBR() {
-  await fetch('/api/bbr?server_id=' + selectedServer, { method: 'POST' });
-  fetchState();
-}
+async function enableBBR() { await fetch('/api/bbr?server_id=' + selectedServer, { method: 'POST' }); fetchState(); }
 
 async function addAndDeployServer() {
-  const defaultName = getNextDefaultServerName();
   const payload = {
-    name: (el('srv-name')?.value || '').trim() || defaultName,
+    name: (el('srv-name')?.value || '').trim() || getNextDefaultServerName(),
     ip: (el('srv-ip')?.value || '').trim(),
     ssh_port: (el('srv-port')?.value || '').trim() || '22',
     ssh_user: (el('srv-user')?.value || '').trim() || 'root',
@@ -490,10 +213,7 @@ async function addAndDeployServer() {
   fetchState();
 }
 
-async function redeployServer(id) {
-  await fetch('/api/servers/deploy?id=' + id, { method: 'POST' });
-  fetchState();
-}
+async function redeployServer(id) { await fetch('/api/servers/deploy?id=' + id, { method: 'POST' }); fetchState(); }
 
 async function deleteServer(id) {
   if (!confirm('Remove this server AND completely uninstall Sentinel from the remote host?')) return;
@@ -548,10 +268,7 @@ function editTunnel(id) {
   if (el('tun-pin')) el('tun-pin').value = t.cert_pin || '';
 }
 
-async function deleteTunnel(id) {
-  await fetch('/api/tunnel?id=' + id, { method: 'DELETE' });
-  fetchState();
-}
+async function deleteTunnel(id) { await fetch('/api/tunnel?id=' + id, { method: 'DELETE' }); fetchState(); }
 
 async function pingTunnel(id) {
   pingResults[id] = 'Testing...';
@@ -564,90 +281,52 @@ async function pingTunnel(id) {
 }
 
 function cleanPortsInput(raw) {
-  return (raw || '').split(',').map(p => {
-    const trimmed = p.trim();
-    return trimmed.includes(':') ? trimmed.split(':').pop() : trimmed;
-  }).filter(Boolean).join(', ');
+  return (raw || '').split(',').map(p => { const tr = p.trim(); return tr.includes(':') ? tr.split(':').pop() : tr; }).filter(Boolean).join(', ');
 }
 
 async function saveTunnel() {
   let pathVal = (el('tun-path')?.value || '').trim() || '/ws';
   if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
-
   const cleanInbounds = cleanPortsInput(el('inbound-ports')?.value || '');
-  const cleanTunPort = cleanPortsInput(el('tunnel-port')?.value || '') || '10201';
   if (!cleanInbounds) return alert('Please enter at least one Inbound Port (e.g. 45454)');
-
   const payload = {
-    id: el('tun-id')?.value || '',
-    name: (el('tun-name')?.value || '').trim() || 'Bridge',
-    method: selectedMethod,
-    source_server: el('tun-src-srv')?.value || 'local',
-    target_server: el('tun-dst-srv')?.value || 'local',
-    tunnel_port: cleanTunPort,
-    inbound_ports: cleanInbounds,
-    speed_limit: String(parseFloat(el('tun-speed')?.value) || 0),
-    sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
-    fingerprint: el('tun-fp')?.value || 'chrome',
-    frag_size: (el('tun-frag')?.value || '').trim() || '0',
-    ws_path: pathVal,
-    cert_pin: (el('tun-pin')?.value || '').trim()
+    id: el('tun-id')?.value || '', name: (el('tun-name')?.value || '').trim() || 'Bridge', method: selectedMethod,
+    source_server: el('tun-src-srv')?.value || 'local', target_server: el('tun-dst-srv')?.value || 'local',
+    tunnel_port: cleanPortsInput(el('tunnel-port')?.value || '') || '10201', inbound_ports: cleanInbounds,
+    speed_limit: String(parseFloat(el('tun-speed')?.value) || 0), sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
+    fingerprint: el('tun-fp')?.value || 'chrome', frag_size: (el('tun-frag')?.value || '').trim() || '0',
+    ws_path: pathVal, cert_pin: (el('tun-pin')?.value || '').trim()
   };
-
   await fetch('/api/tunnel', { method: 'POST', body: JSON.stringify(payload) });
   resetForm();
   fetchState();
 }
 
 async function saveConfig() {
-  const port = (el('cfg-port')?.value || '').trim() || '6001';
-  const path = (el('cfg-path')?.value || '').trim();
-  const user = (el('cfg-user')?.value || '').trim();
-  const pass = (el('cfg-pass')?.value || '').trim();
-  await fetch('/api/config?server_id=' + selectedServer, {
-    method: 'POST',
-    body: JSON.stringify({ port, path, user, pass })
-  });
-  if (selectedServer === 'local') {
-    setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
-  } else {
-    alert('Remote Sentinel configuration updated!');
-  }
+  const port = (el('cfg-port')?.value || '').trim() || '6001', path = (el('cfg-path')?.value || '').trim();
+  const user = (el('cfg-user')?.value || '').trim(), pass = (el('cfg-pass')?.value || '').trim();
+  await fetch('/api/config?server_id=' + selectedServer, { method: 'POST', body: JSON.stringify({ port, path, user, pass }) });
+  if (selectedServer === 'local') setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
+  else alert('Remote Sentinel configuration updated!');
 }
 
 function buildSVGChart(values, unit, strokeColor, gradId) {
   let clean = (values || []).filter(v => typeof v === 'number' && !isNaN(v));
   if (clean.length === 0) clean = [0, 0, 0, 0];
   while (clean.length < 6) clean.unshift(clean[0]);
-
-  const w = 600, h = 135, padL = 54, padR = 10, padT = 14, padB = 14;
-  const plotW = w - padL - padR, plotH = h - padT - padB;
-  const maxVal = Math.max(...clean, unit === 'ms' ? 220 : 2);
-  const midVal = (maxVal / 2).toFixed(unit === 'ms' ? 0 : 1);
-  const topVal = maxVal.toFixed(unit === 'ms' ? 0 : 1);
-
-  const pts = clean.map((v, idx) => {
-    const x = padL + (idx / (clean.length - 1)) * plotW;
-    const y = padT + plotH - ((v / maxVal) * plotH);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = pts.join(' ');
-  const area = `${padL},${padT + plotH} ${line} ${padL + plotW},${padT + plotH}`;
-
+  const w = 600, h = 135, padL = 54, padR = 10, padT = 14, padB = 14, plotW = w - padL - padR, plotH = h - padT - padB;
+  const maxVal = Math.max(...clean, unit === 'ms' ? 220 : 2), midVal = (maxVal / 2).toFixed(unit === 'ms' ? 0 : 1), topVal = maxVal.toFixed(unit === 'ms' ? 0 : 1);
+  const pts = clean.map((v, idx) => `${(padL + (idx / (clean.length - 1)) * plotW).toFixed(1)},${(padT + plotH - ((v / maxVal) * plotH)).toFixed(1)}`).join(' ');
+  const area = `${padL},${padT + plotH} ${pts} ${padL + plotW},${padT + plotH}`;
   return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
-    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.42"/>
-      <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.02"/>
-    </linearGradient></defs>
+    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.42"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.02"/></linearGradient></defs>
     <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
     <text x="6" y="${padT + 4}" fill="#64748b" font-size="10" font-family="monospace">${topVal} ${unit}</text>
     <text x="6" y="${padT + plotH / 2 + 4}" fill="#64748b" font-size="10" font-family="monospace">${midVal} ${unit}</text>
     <text x="6" y="${padT + plotH + 3}" fill="#64748b" font-size="10" font-family="monospace">0 ${unit}</text>
-    <polygon points="${area}" fill="url(#${gradId})"/>
-    <polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${line}"/>
-  </svg>`;
+    <polygon points="${area}" fill="url(#${gradId})"/><polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${pts}"/></svg>`;
 }
 
 function renderServers() {
@@ -655,154 +334,85 @@ function renderServers() {
   if (topSel && srcSel && dstSel) {
     const prevSrc = srcSel.value, prevDst = dstSel.value;
     const optsHTML = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
-    if (topSel.innerHTML !== optsHTML) {
-      topSel.innerHTML = optsHTML; srcSel.innerHTML = optsHTML; dstSel.innerHTML = optsHTML;
-    }
+    if (topSel.innerHTML !== optsHTML) { topSel.innerHTML = optsHTML; srcSel.innerHTML = optsHTML; dstSel.innerHTML = optsHTML; }
     topSel.value = selectedServer;
     if (prevSrc) srcSel.value = prevSrc;
     if (prevDst) dstSel.value = prevDst;
     else if (currentServers.length > 1) dstSel.value = currentServers[currentServers.length - 1].id;
   }
-
   syncDefaultServerNames();
   if (el('tun-name') && !el('tun-name').value) autoUpdateTunnelName();
-
   const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];
   if (activeSrv) {
-    const viaSuffix = activeSrv.via_method ? ` [via ${activeSrv.via_method}]` : '';
-    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})${viaSuffix}`);
+    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})${activeSrv.via_method ? ` [via ${activeSrv.via_method}]` : ''}`);
     setText('cfg-target-badge', `${activeSrv.name} (${activeSrv.ip})`);
   }
-
-  const cc = sysMetrics.bbr_status || 'cubic';
-  const qd = sysMetrics.qdisc || 'fq_codel';
-  setText('bbr-cc-val', cc.toUpperCase());
-  setText('bbr-qdisc-val', qd.toUpperCase());
+  const cc = sysMetrics.bbr_status || 'cubic', qd = sysMetrics.qdisc || 'fq_codel';
+  setText('bbr-cc-val', cc.toUpperCase()); setText('bbr-qdisc-val', qd.toUpperCase());
   const bbrBadge = el('bbr-status-badge');
   if (bbrBadge) {
-    if (cc === 'bbr') {
-      bbrBadge.className = 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800';
-      bbrBadge.innerText = '● BBR Active (Optimized)';
-    } else {
-      bbrBadge.className = 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
-      bbrBadge.innerText = `● ${cc.toUpperCase()} (Not BBR)`;
-    }
+    bbrBadge.className = cc === 'bbr' ? 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800' : 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
+    bbrBadge.innerText = cc === 'bbr' ? '● BBR Active (Optimized)' : `● ${cc.toUpperCase()} (Not BBR)`;
   }
-
   setHTML('server-cards-list', currentServers.map(s => {
-    const isOnline = s.status === 'Online';
-    const badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
-    const infoUrl = `http://${s.ip}:${s.panel_port || '6001'}/sentinel-info`;
-    const viaBadge = (!s.is_local && s.via_method)
-      ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>`
-      : '';
-    return `
-      <div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
-        <div class="flex justify-between items-start">
-          <div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
-              ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}
-              ${viaBadge}
-            </div>
-            <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port || '6001'}</b></div>
-          </div>
-          <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span>
-        </div>
-        <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">
-          Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span>
-        </div>
-        <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
-            <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
-            <a href="${infoUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a>
-          </div>
-          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
-        </div>
-      </div>`;
+    const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
+    const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
+    return `<div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
+      <div class="flex justify-between items-start"><div><div class="flex flex-wrap items-center gap-1.5"><h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
+      ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}${viaBadge}</div>
+      <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port || '6001'}</b></div></div>
+      <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span></div>
+      <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span></div>
+      <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60"><div class="flex flex-wrap items-center gap-1.5">
+      <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
+      <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 Deploy</button>
+      <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold">🌐 Info</a></div>
+      ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
   }).join(''));
 }
 
 function renderTunnels() {
   setHTML('tunnel-list', currentTunnels.map(t => {
-    const srcSrv = currentServers.find(s => s.id === t.source_server);
-    const dstSrv = currentServers.find(s => s.id === t.target_server);
-    const pingTxt = pingResults[t.id] || '⚡ Ping / Test';
-    let mBadge = '🌐 WSS';
-    let stealthBadge = '🛡️ 85%';
+    const srcSrv = currentServers.find(s => s.id === t.source_server), dstSrv = currentServers.find(s => s.id === t.target_server);
+    let mBadge = '🌐 WSS', stealthBadge = '🛡️ 85%';
     if (t.method === 'direct' || t.method === 'spoof') { mBadge = '⚡ DIRECT-TLS'; stealthBadge = '🛡️ 75%'; }
     if (t.method === 'forward') { mBadge = '🔄 FORWARD'; stealthBadge = '🛡️ 20%'; }
     const spdTxt = (t.speed_limit && parseFloat(t.speed_limit) > 0) ? `${t.speed_limit} MB/s` : 'Unlimited';
-    return `
-      <div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr">
-        <div class="flex flex-wrap justify-between items-center gap-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
-            <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
-            <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
-            <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingTxt}</button>
-            <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
-            <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
-          <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
-          <div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
-          <div>Speed: <b class="text-amber-400">${spdTxt}</b></div>
-          <div>SNI: <b class="text-slate-200">${t.method === 'forward' ? 'L4 Pass' : t.sni}</b></div>
-        </div>
-      </div>`;
+    return `<div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr"><div class="flex flex-wrap justify-between items-center gap-2"><div class="flex flex-wrap items-center gap-2">
+      <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
+      <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
+      <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
+      <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span></div>
+      <div class="flex items-center gap-1.5"><button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingResults[t.id] || '⚡ Ping / Test'}</button>
+      <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
+      <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button></div></div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
+      <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div><div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
+      <div>Speed: <b class="text-amber-400">${spdTxt}</b></div><div>SNI: <b class="text-slate-200">${t.method === 'forward' ? 'L4 Pass' : t.sni}</b></div></div></div>`;
   }).join(''));
 }
 
 function renderPingAnalytics() {
   if (!el('kpi-cpu')) return;
-  const cpu = sysMetrics.cpu_pct || 0;
-  const ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
-  const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0;
-  const appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
-
-  setText('kpi-cpu', `${cpu.toFixed(1)}%`);
-  setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot} MB)`);
-  setHTML('kpi-tp', `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`);
-
-  const srvHistory = (selectedServer && selectedServer !== 'local')
-    ? pingHistory.filter(p => !p.sid || p.sid === selectedServer)
-    : pingHistory;
-
+  const cpu = sysMetrics.cpu_pct || 0, ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
+  const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0, appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
+  setText('kpi-cpu', `${cpu.toFixed(1)}%`); setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot} MB)`); setHTML('kpi-tp', `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`);
+  const srvHistory = (selectedServer && selectedServer !== 'local') ? pingHistory.filter(p => !p.sid || p.sid === selectedServer) : pingHistory;
   const last20 = srvHistory.slice(-20);
-  const ok20 = last20.filter(x => x.ok).length;
-  setText('kpi-reach', last20.length ? `${ok20} / ${last20.length}` : `20 / 20`);
-
-  setText('bw-app', `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`);
-  setText('bw-srv', `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`);
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const rangeSec = historyRange === '24h' ? 86400 : 7 * 86400;
-  const filtered = srvHistory.filter(p => p.ts >= nowSec - rangeSec);
-  const okList = filtered.filter(p => p.ok && p.ms > 0);
-  const fails = filtered.filter(p => !p.ok).length;
+  setText('kpi-reach', last20.length ? `${last20.filter(x => x.ok).length} / ${last20.length}` : `20 / 20`);
+  setText('bw-app', `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`); setText('bw-srv', `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`);
+  const nowSec = Math.floor(Date.now() / 1000), rangeSec = historyRange === '24h' ? 86400 : 7 * 86400;
+  const filtered = srvHistory.filter(p => p.ts >= nowSec - rangeSec), okList = filtered.filter(p => p.ok && p.ms > 0), fails = filtered.filter(p => !p.ok).length;
   const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 50;
-  const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0';
-  const latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
-
+  const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0', latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
   setText('recent-ping-val', `${latestMs} ms`);
   const totMbps = rxMbps + txMbps;
   setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
-
   const recentPings = okList.slice(-25).map(x => x.ms);
   setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
-
-  setText('pill-uptime', `● Uptime: ${uptimePct}%`);
-  setText('pill-avg', `⚡ Avg Latency: ${avgMs} ms`);
-  setText('pill-down', `● Downtime: ${fails * 5}m`);
-  setText('pill-inc', `🕒 Incidents: ${fails} Incidents`);
-
+  setText('pill-uptime', `● Uptime: ${uptimePct}%`); setText('pill-avg', `⚡ Avg Latency: ${avgMs} ms`);
+  setText('pill-down', `● Downtime: ${fails * 5}m`); setText('pill-inc', `🕒 Incidents: ${fails} Incidents`);
   const histSeries = filtered.slice(-80).map(x => x.ok ? x.ms : 0);
   setHTML('svg-history-ping', buildSVGChart(histSeries.length ? histSeries : [50, 52, 49, 53, 51, 50], 'ms', '#38bdf8', 'gradHist'));
 }
@@ -811,49 +421,30 @@ async function fetchState() {
   try {
     const res = await fetch('/api/state?server_id=' + selectedServer);
     const data = await res.json();
-
     if (data.server_time) setText('top-server-clock', data.server_time);
     if (data.enroll_token && data.enroll_token !== enrollToken) {
-      enrollToken = data.enroll_token;
-      masterIP = data.master_ip || window.location.hostname;
-      dialPort = data.dial_port || data.panel_port || '6001';
-      updateEnrollCommandUI();
+      enrollToken = data.enroll_token; masterIP = data.master_ip || window.location.hostname;
+      dialPort = data.dial_port || data.panel_port || '6001'; updateEnrollCommandUI();
     }
-
     if (!initialLoaded && data.prefs) {
-      initialLoaded = true;
-      lang = data.prefs.lang || 'en';
-      selectedServer = data.prefs.selected_server || 'local';
-      applyLangUI();
-      applyTheme(data.prefs.theme || 'cyan', false);
-      setTab(data.prefs.active_tab || 'servers', false);
+      initialLoaded = true; lang = data.prefs.lang || 'en'; selectedServer = data.prefs.selected_server || 'local';
+      applyLangUI(); applyTheme(data.prefs.theme || 'cyan', false); setTab(data.prefs.active_tab || 'servers', false);
     }
-
-    currentServers = data.servers || [];
-    currentTunnels = data.tunnels || [];
-    pingHistory = data.ping_history || [];
-    sysMetrics = data.metrics || {};
-
-    renderServers();
-    renderTunnels();
-    renderPingAnalytics();
-
-    const logText = (data.logs || []).join('\n');
+    currentServers = data.servers || []; currentTunnels = data.tunnels || [];
+    pingHistory = data.ping_history || []; sysMetrics = data.metrics || {};
+    renderServers(); renderTunnels(); renderPingAnalytics();
     const puttyEl = el('putty-box');
     if (puttyEl) {
       const wasAtBottom = puttyEl.scrollHeight - puttyEl.clientHeight <= puttyEl.scrollTop + 40;
-      puttyEl.innerText = logText;
+      puttyEl.innerText = (data.logs || []).join('\n');
       if (wasAtBottom) puttyEl.scrollTop = puttyEl.scrollHeight;
     }
-
     if (el('cfg-port') && !el('cfg-port').value) {
       el('cfg-port').value = data.panel_port || '6001';
       if (el('cfg-path')) el('cfg-path').value = data.panel_path || '';
       if (el('cfg-user') && data.panel_user) el('cfg-user').value = data.panel_user;
     }
-  } catch (err) {
-    console.error('State sync error:', err);
-  }
+  } catch (err) { console.error('State sync error:', err); }
 }
 
 updatePollRateUI();

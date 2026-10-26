@@ -43,6 +43,44 @@ func parseSpeedLimit(raw string) float64 {
 	return val
 }
 
+func (t *throttledWriter) Write(p []byte) (int, error) {
+	if t.bytesLimitPerSec <= 0 {
+		n, err := t.w.Write(p)
+		if n > 0 {
+			atomic.AddUint64(t.counter, uint64(n))
+		}
+		return n, err
+	}
+	total := 0
+	for len(p) > 0 {
+		now := time.Now()
+		if now.Sub(t.lastSecStart) >= time.Second {
+			t.bytesSentThisSec = 0
+			t.lastSecStart = now
+		}
+		avail := t.bytesLimitPerSec - t.bytesSentThisSec
+		if avail <= 0 {
+			time.Sleep(15 * time.Millisecond)
+			continue
+		}
+		chunk := int64(len(p))
+		if chunk > avail {
+			chunk = avail
+		}
+		n, err := t.w.Write(p[:chunk])
+		total += n
+		if n > 0 {
+			t.bytesSentThisSec += int64(n)
+			atomic.AddUint64(t.counter, uint64(n))
+		}
+		if err != nil {
+			return total, err
+		}
+		p = p[chunk:]
+	}
+	return total, nil
+}
+
 func computeWSAccept(key string) string {
 	h := sha1.New()
 	h.Write([]byte(key + wsGUID))

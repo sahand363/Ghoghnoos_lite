@@ -14,6 +14,8 @@ let sysMetrics = {};
 let pingResults = {};
 let initialLoaded = false;
 let userEditedName = false;
+let userEditedSrvName = false;
+let userEditedEnrollName = false;
 let consoleCollapsed = false;
 let historyRange = '24h';
 let pollIntervalMs = 10000; // 10 seconds baseline
@@ -22,6 +24,24 @@ let pollTimer = null;
 const el = id => document.getElementById(id);
 const setText = (id, val) => { const e = el(id); if (e) e.innerText = val; };
 const setHTML = (id, val) => { const e = el(id); if (e) e.innerHTML = val; };
+
+function getNextDefaultServerName() {
+  const nextNum = (currentServers && currentServers.length ? currentServers.length : 1) + 1;
+  return `Server-${nextNum}`;
+}
+
+function syncDefaultServerNames() {
+  const nextName = getNextDefaultServerName();
+  const srvIn = el('srv-name');
+  if (srvIn && !userEditedSrvName) {
+    srvIn.placeholder = nextName;
+  }
+  const enrIn = el('enroll-node-name');
+  if (enrIn && !userEditedEnrollName) {
+    enrIn.value = nextName;
+  }
+  updateEnrollCommandUI();
+}
 
 function togglePollRate() {
   if (pollIntervalMs === 10000) {
@@ -73,7 +93,7 @@ function setDeployMode(mode) {
     if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
     if (boxSsh) boxSsh.classList.add('hidden');
     if (boxEnr) boxEnr.classList.remove('hidden');
-    updateEnrollCommandUI();
+    syncDefaultServerNames();
   } else {
     if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
     if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
@@ -88,7 +108,8 @@ function updateEnrollCommandUI() {
     addrIn.value = `${masterIP}:${dialPort || '6001'}`;
   }
   const targetAddr = (addrIn?.value || `${masterIP || window.location.hostname}:${dialPort || '6001'}`).trim();
-  const nodeName = (el('enroll-node-name')?.value || 'US-Sentinel').trim().replace(/\s+/g, '-');
+  const defaultName = getNextDefaultServerName();
+  const nodeName = (el('enroll-node-name')?.value || defaultName).trim().replace(/\s+/g, '-');
   const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | bash -s -- --enroll ${targetAddr} ${enrollToken} ${nodeName}`;
   setText('enroll-cmd-box', cmd);
 }
@@ -141,8 +162,8 @@ function updateSpeedBadge() {
 const helpTexts = {
   en: {
     enroll: {
-      title: '🔑 Reverse Sentinel Dial-In & Survival Loop',
-      body: 'When SSH from Iran to Kharej is blocked or filtered, run this one-liner on the remote server.\n\n1. The Sentinel tests Direct-TLS ➔ WSS ➔ L4 API until it reaches your Master.\n2. Once connected, it runs a background Survival Loop with a randomized 60–85 second jittered heartbeat.\n3. If a transport ever gets blocked later, it automatically hunts for another working method.'
+      title: '🔑 Stealth-Prioritized Reverse Dial-In & 12h Auto-Upgrade',
+      body: 'When SSH from Iran to Kharej is blocked or filtered, run this one-liner on the remote server.\n\n1. Stealth Priority: Tests WSS (85% Stealth on :6003) ➔ Direct-TLS (75% Stealth on :6002) ➔ L4 API (20% Stealth on :6001).\n2. Survival Loop: Sends a randomized 60–85s jittered heartbeat.\n3. 12-Hour Opportunistic Upgrade: If connected via a lower-stealth fallback, it automatically tests higher-stealth transports every 12 hours and upgrades seamlessly.'
     },
     stealth: {
       title: '🛡️ Method Stealth Percentage Explained',
@@ -183,8 +204,8 @@ const helpTexts = {
   },
   fa: {
     enroll: {
-      title: '🔑 اتصال معکوس سنتینل (Reverse Dial-In) و حلقه بقا',
-      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. سنتینل به ترتیب متدهای Direct-TLS، سپس WSS و L4 API را تست می‌کند تا به سرور مستر متصل شود.\n۲. پس از اتصال، هر ۶۰ تا ۸۵ ثانیه وضعیت را همگام‌سازی می‌کند.\n۳. اگر متد فعلی مسدود شود، به صورت خودکار متدهای دیگر را جایگزین می‌کند.'
+      title: '🔑 اتصال معکوس با اولویت مخفی‌سازی و ارتقای ۱۲ ساعته',
+      body: 'زمانی که پورت SSH سرور خارج مسدود یا فیلتر است، این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید.\n\n۱. اولویت مخفی‌سازی: ابتدا متد WSS (۸۵٪ روی پورت 6003)، سپس Direct-TLS (۷۵٪ روی پورت 6002) و در نهایت L4 API (۲۰٪ روی پورت 6001) را تست می‌کند.\n۲. حلقه بقا: هر ۶۰ تا ۸۵ ثانیه وضعیت را همگام‌سازی می‌کند.\n۳. ارتقای خودکار ۱۲ ساعته: اگر روی متد ضعیف‌تر متصل شده باشد، هر ۱۲ ساعت متدهای امن‌تر را بررسی کرده و به صورت خودکار به امن‌ترین متد ارتقا می‌دهد.'
     },
     stealth: {
       title: '🛡️ راهنمای درصد مخفی‌سازی (Stealth) متدها',
@@ -250,9 +271,9 @@ const dict = {
     srv_name: 'Server Name', srv_ip: 'Server IP Address', srv_port: 'SSH Port',
     srv_user: 'SSH Username', srv_pass: 'SSH Password',
     btn_deploy: '🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)',
-    enroll_title: '🔑 Autonomous Reverse Sentinel Enrollment (Survival Loop)',
-    enroll_sub: 'If outbound SSH from Master is blocked, run this command on your remote VPS. The Sentinel will test Direct-TLS ➔ WSS ➔ L4 API until it breaks through and registers itself automatically.',
-    enroll_node_lbl: 'New Sentinel Name (for One-Liner)',
+    enroll_title: '🔑 Autonomous Reverse Sentinel Enrollment (Stealth Priority)',
+    enroll_sub: 'If outbound SSH from Master is blocked, run this command on your remote VPS. The Sentinel tests WSS (85%) ➔ Direct-TLS (75%) ➔ L4 API (20%) and checks every 12h to upgrade to the highest available stealth transport.',
+    enroll_node_lbl: 'New Sentinel Name (Auto-Numbered)',
     enroll_addr_lbl: 'Master Dial-In Target (IP:Port)',
     enroll_cmd_lbl: 'Paste this One-Liner on your Remote Server Terminal:',
     btn_rotate_tok: '🔄 Rotate Token',
@@ -287,9 +308,9 @@ const dict = {
     srv_name: 'نام سرور', srv_ip: 'آدرس IP سرور', srv_port: 'پورت SSH',
     srv_user: 'نام کاربری SSH', srv_pass: 'رمز عبور SSH',
     btn_deploy: '🚀 اتصال با SSH و نصب سنتینل (۰٪ تا ۱۰۰٪)',
-    enroll_title: '🔑 ثبت‌نام معکوس و خودکار سنتینل (مجهز به حلقه بقا)',
-    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب Direct-TLS، سپس WSS و L4 API را تست می‌کند.',
-    enroll_node_lbl: 'نام دلخواه سرور سنتینل',
+    enroll_title: '🔑 ثبت‌نام معکوس سنتینل (اولویت بر اساس درصد مخفی‌سازی)',
+    enroll_sub: 'اگر پورت SSH مسدود است، این دستور را در سرور خارج اجرا کنید. سنتینل به ترتیب WSS (۸۵٪)، سپس Direct-TLS (۷۵٪) و L4 API (۲۰٪) را تست کرده و هر ۱۲ ساعت امکان ارتقا به متد امن‌تر را بررسی می‌کند.',
+    enroll_node_lbl: 'نام سرور سنتینل (شماره‌گذاری خودکار)',
     enroll_addr_lbl: 'آدرس و پورت سرور مستر (IP:Port)',
     enroll_cmd_lbl: 'این دستور تک‌خطی را در ترمینال سرور خارج اجرا کنید:',
     btn_rotate_tok: '🔄 تغییر توکن',
@@ -452,14 +473,16 @@ async function enableBBR() {
 }
 
 async function addAndDeployServer() {
+  const defaultName = getNextDefaultServerName();
   const payload = {
-    name: (el('srv-name')?.value || '').trim() || 'Remote-Node',
+    name: (el('srv-name')?.value || '').trim() || defaultName,
     ip: (el('srv-ip')?.value || '').trim(),
     ssh_port: (el('srv-port')?.value || '').trim() || '22',
     ssh_user: (el('srv-user')?.value || '').trim() || 'root',
     ssh_pass: el('srv-pass')?.value || ''
   };
   if (!payload.ip) return alert('Please enter Server IP');
+  userEditedSrvName = false;
   if (el('srv-name')) el('srv-name').value = '';
   if (el('srv-ip')) el('srv-ip').value = '';
   if (el('srv-pass')) el('srv-pass').value = '';
@@ -641,6 +664,7 @@ function renderServers() {
     else if (currentServers.length > 1) dstSel.value = currentServers[currentServers.length - 1].id;
   }
 
+  syncDefaultServerNames();
   if (el('tun-name') && !el('tun-name').value) autoUpdateTunnelName();
 
   const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];

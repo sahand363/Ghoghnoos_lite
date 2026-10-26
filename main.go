@@ -30,10 +30,11 @@ var i18nJS []byte
 var appJS []byte
 
 const (
-	wsGUID   = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	dbPath   = "/opt/litetun/panel_db.json"
-	logPath  = "/opt/litetun/panel.log"
-	confPath = "/opt/litetun/config.env"
+	appVersion = "v2.4.0"
+	wsGUID     = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	dbPath     = "/opt/litetun/panel_db.json"
+	logPath    = "/opt/litetun/panel.log"
+	confPath   = "/opt/litetun/config.env"
 )
 
 var (
@@ -112,6 +113,7 @@ func initSelfSignedCert() {
 
 func main() {
 	loadEnvFile()
+	initSessionSecret()
 
 	if len(os.Args) >= 4 && os.Args[1] == "--enroll" {
 		nodeName := ""
@@ -144,7 +146,7 @@ func main() {
 	go startSentinelSurvivalLoop()
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("Ghoghnoos-lite running on port %s (Path: /%s/ | Auth: %v)\n", port, panelPath, panelUser != "")
+	fmt.Printf("Ghoghnoos-lite %s running on port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")
 	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
 		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
 	} else {

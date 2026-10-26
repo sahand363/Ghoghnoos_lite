@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -40,7 +41,43 @@ func registerRoutes(port, panelPath string) {
 		w.Write(appJS)
 	})
 
-	// Public Control Endpoint for Reverse Sentinel Dial-In (Authenticated via EnrollToken)
+	// Download the full 24-hour log file on demand
+	http.HandleFunc("/api/logs/download", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
+		targetSrvID := r.URL.Query().Get("server_id")
+
+		if targetSrvID != "" && targetSrvID != "local" {
+			mu.Lock()
+			srv := findServerByID(targetSrvID)
+			mu.Unlock()
+			if srv != nil && srv.IP != "" {
+				client := &http.Client{Timeout: 5 * time.Second}
+				resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort))
+				if err == nil {
+					defer resp.Body.Close()
+					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_%s_%s.log\"", srv.Name, time.Now().Format("20060102_1504")))
+					io.Copy(w, resp.Body)
+					return
+				}
+			}
+		}
+
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			mu.Lock()
+			data = []byte(strings.Join(logs, "\n") + "\n")
+			mu.Unlock()
+		}
+
+		fileName := fmt.Sprintf("ghoghnoos_master_%s.log", time.Now().Format("20060102_1504"))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
+		w.Write(data)
+	})
+
 	http.HandleFunc("/api/enroll", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -60,7 +97,6 @@ func registerRoutes(port, panelPath string) {
 		json.NewEncoder(w).Encode(rep)
 	})
 
-	// Rotate / Regenerate Master Enrollment Token
 	http.HandleFunc("/api/enroll/token", func(w http.ResponseWriter, r *http.Request) {
 		if !checkBasicAuth(w, r, panelPath) || r.Method != http.MethodPost {
 			return
@@ -78,8 +114,8 @@ func registerRoutes(port, panelPath string) {
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		recentLogs := append([]string{}, logs...)
 		mu.Unlock()
-		if len(recentLogs) > 20 {
-			recentLogs = recentLogs[len(recentLogs)-20:]
+		if len(recentLogs) > 25 {
+			recentLogs = recentLogs[len(recentLogs)-25:]
 		}
 
 		rows := ""
@@ -90,9 +126,9 @@ func registerRoutes(port, panelPath string) {
 				c, err := net.DialTimeout("tcp", "127.0.0.1:"+p, 500*time.Millisecond)
 				if err == nil {
 					c.Close()
-					portBadges += fmt.Sprintf(`<span style="color:#10b981;margin-right:8px;">● 127.0.0.1:%s (X-UI OPEN)</span>`, p)
+					portBadges += fmt.Sprintf(`<span style="color:#10b981;margin-right:8px;">● Forwarding :%s (BOUND)</span>`, p)
 				} else {
-					portBadges += fmt.Sprintf(`<span style="color:#f43f5e;margin-right:8px;">● 127.0.0.1:%s (REFUSED)</span>`, p)
+					portBadges += fmt.Sprintf(`<span style="color:#f43f5e;margin-right:8px;">● Forwarding :%s (IDLE)</span>`, p)
 				}
 			}
 			mBadge := strings.ToUpper(t.Method)
@@ -105,7 +141,7 @@ func registerRoutes(port, panelPath string) {
 			}
 			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;">
 				<b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code> | Speed: <b>%s</b><br>
-				<div style="margin-top:6px;font-size:12px;">Local X-UI Check: %s</div>
+				<div style="margin-top:6px;font-size:12px;">Local Inbound Check: %s</div>
 			</div>`, mBadge, t.Name, t.Role, t.TunnelPort, limStr, portBadges)
 		}
 		if rows == "" {
@@ -120,7 +156,7 @@ func registerRoutes(port, panelPath string) {
 		<div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2>
 		<p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s) | <b>Time:</b> %s</p>
 		<p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div>
-		<div class="box"><h3>Active Tunnel Listeners & Local X-UI Port Check</h3>%s</div>
+		<div class="box"><h3>Active Tunnel Listeners & Inbound Status</h3>%s</div>
 		<div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div>
 		</body></html>`, localIP, port, ramMB, cc, qd, time.Now().Format("15:04:05 MST"), localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
@@ -156,11 +192,18 @@ func registerRoutes(port, panelPath string) {
 		historyCopy := append([]PingPoint{}, db.PingHistory...)
 		prefsCopy := db.Prefs
 		enrollTok := db.EnrollToken
-		localLogs := append([]string{}, logs...)
+
+		// Return only latest ~150 lines in regular state payload to keep network transfer minimal
+		var recentLocalLogs []string
+		if len(logs) > 150 {
+			recentLocalLogs = append([]string{}, logs[len(logs)-150:]...)
+		} else {
+			recentLocalLogs = append([]string{}, logs...)
+		}
 		metricsCopy := sysMetrics
 		mu.Unlock()
 
-		activeLogs := localLogs
+		activeLogs := recentLocalLogs
 		activePort := port
 		activePath := panelPath
 		activePin := localPinHex
@@ -173,7 +216,7 @@ func registerRoutes(port, panelPath string) {
 			mu.Unlock()
 
 			if srv != nil && srv.IP != "" {
-				client := &http.Client{Timeout: 2500 * time.Millisecond}
+				client := &http.Client{Timeout: 2000 * time.Millisecond}
 				resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort))
 				if err == nil {
 					defer resp.Body.Close()
@@ -203,7 +246,6 @@ func registerRoutes(port, panelPath string) {
 						}
 					}
 				} else if hasCached {
-					// Fallback to Reverse Dial-In Heartbeat Cache when direct HTTP is blocked!
 					if len(cachedHB.Logs) > 0 {
 						activeLogs = cachedHB.Logs
 					}
@@ -217,14 +259,9 @@ func registerRoutes(port, panelPath string) {
 					if cachedHB.ServerTime != "" {
 						srvTime = cachedHB.ServerTime
 					}
-				} else {
-					activeLogs = append(localLogs, fmt.Sprintf("[WARN] Remote node %s (%s:%s) unreachable: %v", srv.Name, srv.IP, srv.PanelPort, err))
 				}
 			}
 		}
-
-		// Choose recommended Dial-In Port (if Master has an active WSS or Direct-TLS Exit listener, show it, else panel port)
-		dialPort := port
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -243,7 +280,7 @@ func registerRoutes(port, panelPath string) {
 			"cert_pin":     activePin,
 			"enroll_token": enrollTok,
 			"master_ip":    localIP,
-			"dial_port":    dialPort,
+			"dial_port":    port,
 		})
 	})
 
@@ -420,7 +457,6 @@ func registerRoutes(port, panelPath string) {
 					w.WriteHeader(http.StatusOK)
 					return
 				}
-				// Queue command for next Reverse Survival Loop sync if direct HTTP is blocked
 				mu.Lock()
 				pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], req.Cmd)
 				mu.Unlock()

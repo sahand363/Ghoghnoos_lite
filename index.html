@@ -93,11 +93,11 @@
           <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
             <div>
               <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Choose Direct SSH Push or Reverse Token Dial-In (when SSH is filtered).</p>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Choose Direct SSH Push or Bidirectional Rendezvous (when SSH is filtered).</p>
             </div>
             <div class="flex items-center gap-1.5 bg-[#080d14] p-1 rounded-xl border border-slate-800">
               <button type="button" id="btn-mode-ssh" onclick="setDeployMode('ssh')" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition" data-i18n="mode_ssh_btn">🚀 Method A: SSH Push</button>
-              <button type="button" id="btn-mode-enroll" onclick="setDeployMode('enroll')" class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition" data-i18n="mode_enroll_btn">🔑 Method B: Reverse Dial-In</button>
+              <button type="button" id="btn-mode-enroll" onclick="setDeployMode('enroll')" class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition" data-i18n="mode_enroll_btn">🔑 Method B: Reverse / Rendezvous</button>
             </div>
           </div>
 
@@ -132,17 +132,17 @@
             <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)</button>
           </div>
 
-          <!-- METHOD B: REVERSE TOKEN DIAL-IN -->
+          <!-- METHOD B: REVERSE DIAL-IN & BIDIRECTIONAL RENDEZVOUS -->
           <div id="box-deploy-enroll" class="hidden space-y-4">
             <div class="bg-[#080d14] p-3.5 rounded-xl border border-sky-500/30 space-y-2">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5 text-xs font-bold text-sky-400">
-                  <span data-i18n="enroll_title">🔑 Autonomous Reverse Sentinel Enrollment (Stealth Priority)</span>
+                  <span data-i18n="enroll_title">🔑 Step 1: Run Sentinel One-Liner (Reverse Loop + Listeners)</span>
                   <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
                 </div>
                 <span class="text-[10px] font-mono text-emerald-400">WSS (85%) ➔ Direct (75%) ➔ L4 (20%)</span>
               </div>
-              <p class="text-xs text-slate-400 leading-relaxed" data-i18n="enroll_sub">If outbound SSH from Master is blocked, run this command on your remote VPS. The Sentinel tests WSS (85%) ➔ Direct-TLS (75%) ➔ L4 API (20%) and checks every 12h to upgrade to the highest available stealth transport.</p>
+              <p class="text-xs text-slate-400 leading-relaxed" data-i18n="enroll_sub">Run this command on your remote VPS. It tests WSS ➔ Direct-TLS ➔ L4 every 120–150s AND opens local control listeners so Master can also probe it directly.</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -151,7 +151,7 @@
                 <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-semibold">
               </div>
               <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_addr_lbl">Master Dial-In Target (IP:Port)</label>
+                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_addr_lbl">Master Control Target (IP:L4:Direct:WSS)</label>
                 <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
             </div>
@@ -165,6 +165,24 @@
             </div>
 
             <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy Reverse Enrollment One-Liner Command</button>
+
+            <!-- STEP 2: MASTER FORWARD RENDEZVOUS PROBER -->
+            <div class="bg-[#080d14] p-3.5 rounded-xl border border-emerald-500/30 space-y-3 pt-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                  <span data-i18n="rv_title">▶ Step 2 (Optional): Master Forward Rendezvous Prober</span>
+                  <button type="button" onclick="showHelpModal('rendezvous')" class="help-btn">?</button>
+                </div>
+                <span class="text-[10px] font-mono text-sky-400">120–150s Mutual Hunt</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" data-i18n="rv_sub">If reverse dial-in from the remote server is blocked, enter the remote server's IP below and press Play (▶). Master will periodically probe WSS ➔ Direct-TLS ➔ L4 until one side breaks through!</p>
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input id="rv-target-ip" placeholder="Remote Sentinel IP (e.g. 205.234.152.182)" class="flex-1 rounded-xl p-2.5 text-xs font-mono">
+                <button type="button" onclick="startRendezvousFromBox()" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition flex items-center justify-center gap-1.5 shrink-0">
+                  <span>▶</span><span data-i18n="btn_start_rv">Start Forward Probe</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -175,13 +193,13 @@
       <section id="view-config" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port, URL & Login Configuration</h3>
+            <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port, Control Ports & Login Configuration</h3>
             <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <div class="flex items-center gap-1.5 mb-1">
-                <label class="text-xs text-slate-400" data-i18n="lbl_panel_port">Panel / Sentinel Port</label>
+                <label class="text-xs text-slate-400" data-i18n="lbl_panel_port">Web Panel Port</label>
                 <button type="button" onclick="showHelpModal('port')" class="help-btn">?</button>
               </div>
               <input id="cfg-port" placeholder="6001" class="w-full rounded-lg p-2.5 text-sm font-mono">
@@ -194,6 +212,32 @@
               <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
             </div>
           </div>
+
+          <!-- DEDICATED 3 CONTROL PORTS (OPTION B: 6005, 6006, 6007) -->
+          <div class="bg-[#080d14] p-3.5 rounded-xl border border-slate-800 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold text-sky-400" data-i18n="ctrl_ports_title">🔗 Dedicated Control & Rendezvous Ports (Listening + Probing)</span>
+                <button type="button" onclick="showHelpModal('ctrlports')" class="help-btn">?</button>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Default: 6005 / 6006 / 6007</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="text-[11px] text-amber-400 font-semibold block mb-1" data-i18n="lbl_ctrl_l4">L4 Control Port (20%)</label>
+                <input id="cfg-ctrl-l4" value="6005" placeholder="6005" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-[11px] text-sky-400 font-semibold block mb-1" data-i18n="lbl_ctrl_direct">Direct-TLS Port (75%)</label>
+                <input id="cfg-ctrl-direct" value="6006" placeholder="6006" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-[11px] text-emerald-400 font-semibold block mb-1" data-i18n="lbl_ctrl_wss">WSS Control Port (85%)</label>
+                <input id="cfg-ctrl-wss" value="6007" placeholder="6007" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_user">Panel Username</label>
@@ -525,7 +569,7 @@
     <div id="help-modal-card" class="card max-w-md w-full rounded-2xl p-5 border border-slate-700 space-y-3">
       <div class="flex items-center justify-between border-b border-slate-800 pb-2">
         <h4 id="help-modal-title" class="text-sm font-bold text-sky-400">Option Explanation</h4>
-        <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-lg">&times;</button>
+        <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-lg">×</button>
       </div>
       <p id="help-modal-body" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></p>
       <div class="pt-2 text-right">
@@ -536,7 +580,5 @@
 
   <script src="/i18n.js"></script>
   <script src="/app.js"></script>
-</body>
-</html>
 </body>
 </html>

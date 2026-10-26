@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"strconv"
 	"strings"
@@ -292,7 +291,6 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		}
 	}
 
-	// Decoupled Ping Probe: Return 101 Switching Protocols to verify pure tunnel health
 	if strings.HasPrefix(targetPort, "probe:") {
 		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
 		return
@@ -319,91 +317,4 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	go func() { io.Copy(txW, conn); done <- struct{}{} }()
 	go func() { io.Copy(rxW, target); done <- struct{}{} }()
 	<-done
-}
-
-// Tests end-to-end tunnel health independently of any downstream proxy service
-func probeTunnelOnce(tun Tunnel) PingPoint {
-	ports := parsePortList(tun.InboundPorts)
-	firstPort := "2053"
-	if len(ports) > 0 {
-		firstPort = ports[0]
-	}
-	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
-
-	if tun.Method == "forward" {
-		rttStart := time.Now()
-		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
-		if err != nil {
-			pt.OK = false
-			pt.Error = "Tunnel Port Closed"
-			recordPingPoint(pt)
-			return pt
-		}
-		defer c.Close()
-		c.Write([]byte("FWD|probe:" + firstPort + "\n"))
-		reply, err := bufio.NewReader(c).ReadString('\n')
-		pt.LatencyMS = time.Since(rttStart).Milliseconds()
-		pt.OK = (err == nil && strings.HasPrefix(reply, "OK")) || err == nil
-		if !pt.OK {
-			pt.Error = "Handshake Rejected"
-		}
-		recordPingPoint(pt)
-		return pt
-	}
-
-	rttStart := time.Now()
-	tlsCfg := buildTunnelTLSConfig(tun)
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
-	if err != nil {
-		pt.OK = false
-		pt.Error = "Tunnel Offline"
-		recordPingPoint(pt)
-		return pt
-	}
-	defer conn.Close()
-
-	if tun.Method == "direct" || tun.Method == "spoof" {
-		conn.Write([]byte("LTUN|probe:" + firstPort + "\n"))
-		reply, err := bufio.NewReader(conn).ReadString('\n')
-		pt.LatencyMS = time.Since(rttStart).Milliseconds()
-		pt.OK = (err == nil && strings.HasPrefix(reply, "OK")) || err == nil
-		if !pt.OK {
-			pt.Error = "Tunnel Unresponsive"
-		}
-		recordPingPoint(pt)
-		return pt
-	}
-
-	keyBytes := make([]byte, 16)
-	rand.Read(keyBytes)
-	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Target-Port: probe:%s\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
-		tun.WSPath, tun.SNI, firstPort, wsKey)
-	conn.Write([]byte(req))
-	statusLine, err := bufio.NewReader(conn).ReadString('\n')
-	pt.LatencyMS = time.Since(rttStart).Milliseconds()
-	pt.OK = err == nil && strings.Contains(statusLine, "101")
-	if !pt.OK {
-		pt.Error = "Upgrade Rejected"
-	}
-	recordPingPoint(pt)
-	return pt
-}
-
-// Relaxed automated background probe: runs every ~5 minutes (270s-330s with jitter)
-func startPingMonitor() {
-	for {
-		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(60))
-		sleepSec := 270 + int(jitterBig.Int64()) // 4.5 to 5.5 minutes
-		time.Sleep(time.Duration(sleepSec) * time.Second)
-
-		mu.Lock()
-		tuns := append([]Tunnel{}, db.Tunnels...)
-		mu.Unlock()
-		for _, t := range tuns {
-			if t.Role != "server" && t.RemoteAddr != "" {
-				probeTunnelOnce(t)
-			}
-		}
-	}
 }

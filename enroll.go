@@ -62,7 +62,6 @@ func regenerateEnrollToken() string {
 
 // Starts dedicated Master Control Listeners on BasePort+1 (:6002 Direct-TLS) and BasePort+2 (:6003 WSS)
 func startMasterControlListeners(basePortStr string) {
-	// Do not start Master ingress listeners if this node is a remote Sentinel
 	if strings.Trim(os.Getenv("PANEL_PATH"), "/") == "sentinel" || os.Getenv("MASTER_ADDR") != "" {
 		return
 	}
@@ -137,7 +136,6 @@ func handleMasterControlConn(conn net.Conn, mode string) {
 		return
 	}
 
-	// mode == "wss": Read HTTP/1.1 Upgrade headers and extract X-Enroll-Payload
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil || line == "\r\n" || line == "\n" {
@@ -178,9 +176,9 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 
 	if targetSrv == nil {
 		newID := fmt.Sprintf("srv-%d", time.Now().Unix()%10000)
-		name := hb.NodeName
-		if name == "" {
-			name = "Sentinel-" + hb.IP
+		name := strings.TrimSpace(hb.NodeName)
+		if name == "" || name == "Sentinel-Node" || strings.HasPrefix(name, "Sentinel-") {
+			name = fmt.Sprintf("Server-%d", len(db.Servers)+1)
 		}
 		newNode := ServerNode{
 			ID:        newID,
@@ -257,8 +255,6 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 	}
 }
 
-// Resolves the exact target port for each method based on Master's base port:
-// direct -> basePort+1 (:6002), wss -> basePort+2 (:6003), forward -> basePort (:6001)
 func resolveControlTarget(masterAddr, method string) string {
 	host, portStr, err := net.SplitHostPort(strings.TrimSpace(masterAddr))
 	if err != nil {
@@ -364,19 +360,19 @@ func tryDialMasterControl(masterAddr, token, nodeName, method string) (EnrollRep
 	return rep, time.Since(start).Milliseconds(), nil
 }
 
-// Interactive ANSI CLI Matrix with 3-Attempt Retry Loop (20s pause between rounds)
+// Interactive ANSI CLI Matrix ordered strictly by Stealth Score: WSS (85%) -> Direct-TLS (75%) -> L4 API (20%)
 func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 	initSelfSignedCert()
 	localIP = detectLocalIP()
 	if nodeName == "" {
-		nodeName = "Sentinel-" + localIP
+		nodeName = "Server-2"
 	}
 
-	dTarget := resolveControlTarget(masterAddr, "direct")
 	wTarget := resolveControlTarget(masterAddr, "wss")
+	dTarget := resolveControlTarget(masterAddr, "direct")
 	fTarget := resolveControlTarget(masterAddr, "forward")
 
-	fmt.Println("\033[1;36m┌── Ghoghnoos Sentinel Dial-In Matrix ────────────────────────────┐\033[0m")
+	fmt.Println("\033[1;36m┌── Ghoghnoos Sentinel Dial-In Matrix (Stealth Priority) ─────────┐\033[0m")
 	fmt.Printf("\033[1;36m│\033[0m Master Base   : %-47s \033[1;36m│\033[0m\n", masterAddr)
 	fmt.Printf("\033[1;36m│\033[0m Sentinel Node : %-47s \033[1;36m│\033[0m\n", nodeName+" ("+localIP+")")
 	fmt.Println("\033[1;36m│                                                                 │\033[0m")
@@ -386,9 +382,9 @@ func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 		label  string
 		target string
 	}{
-		{"direct", "Direct-TLS 1.3", dTarget},
-		{"wss", "WSS WebSocket ", wTarget},
-		{"forward", "L4 Control API", fTarget},
+		{"wss", "WSS (85% Stealth)", wTarget},
+		{"direct", "Direct-TLS (75%) ", dTarget},
+		{"forward", "L4 API (20% Raw) ", fTarget},
 	}
 
 	var winningMethod string
@@ -402,15 +398,15 @@ func runCLIEnrollmentMatrix(masterAddr, token, nodeName string) {
 
 		for idx, m := range methods {
 			_, portOnly, _ := net.SplitHostPort(m.target)
-			fmt.Printf("\033[1;36m│\033[0m [%d/3] %-14s (:%-5s) ... ", idx+1, m.label, portOnly)
+			fmt.Printf("\033[1;36m│\033[0m [%d/3] %-17s (:%-5s) ... ", idx+1, m.label, portOnly)
 			rep, ms, err := tryDialMasterControl(masterAddr, token, nodeName, m.id)
 			if err == nil && rep.OK {
-				fmt.Printf("\033[1;32m[✔ Handshake OK | %d ms]\033[0m   \033[1;36m│\033[0m\n", ms)
+				fmt.Printf("\033[1;32m[✔ Handshake OK | %d ms]\033[0m \033[1;36m│\033[0m\n", ms)
 				winningMethod = m.id
 				winningReply = rep
 				break
 			} else {
-				fmt.Printf("\033[1;31m[✘ Filtered / Timeout]\033[0m     \033[1;36m│\033[0m\n")
+				fmt.Printf("\033[1;31m[✘ Filtered / Timeout]\033[0m   \033[1;36m│\033[0m\n")
 			}
 		}
 
@@ -449,6 +445,7 @@ func saveEnrollmentConfig(masterAddr, token, nodeName, activeMethod string) {
 	_ = os.WriteFile(confPath, []byte(content), 0644)
 }
 
+// Background Survival Loop with Stealth Hierarchy (WSS -> Direct -> Forward) & 12-Hour Opportunistic Upgrade
 func startSentinelSurvivalLoop() {
 	masterAddr := strings.TrimSpace(os.Getenv("MASTER_ADDR"))
 	token := strings.TrimSpace(os.Getenv("ENROLL_TOKEN"))
@@ -458,22 +455,42 @@ func startSentinelSurvivalLoop() {
 		return
 	}
 	if activeMethod == "" {
-		activeMethod = "direct"
+		activeMethod = "wss"
 	}
 	addLog(fmt.Sprintf("SURVIVAL: Reverse Control Link active -> Master %s (via %s)", masterAddr, strings.ToUpper(activeMethod)))
 
-	order := []string{"direct", "wss", "forward"}
+	// Ordered from highest stealth (85%) to lowest stealth (20%)
+	order := []string{"wss", "direct", "forward"}
 	appliedExits := make(map[string]string)
+	lastUpgradeCheck := time.Now()
 
 	for {
+		// Every 12 hours, if running on a lower-stealth transport, opportunistically test higher-stealth methods
+		if activeMethod != "wss" && time.Since(lastUpgradeCheck) >= 12*time.Hour {
+			lastUpgradeCheck = time.Now()
+			for _, candidate := range order {
+				if candidate == activeMethod {
+					break // Only test methods more stealthy than the current active method
+				}
+				if rUp, _, errUp := tryDialMasterControl(masterAddr, token, nodeName, candidate); errUp == nil && rUp.OK {
+					prev := activeMethod
+					activeMethod = candidate
+					saveEnrollmentConfig(masterAddr, token, nodeName, activeMethod)
+					addLog(fmt.Sprintf("SURVIVAL-UPGRADE: Opportunistic 12h check upgraded Control Highway %s ➔ %s!", strings.ToUpper(prev), strings.ToUpper(activeMethod)))
+					break
+				}
+			}
+		}
+
 		rep, _, err := tryDialMasterControl(masterAddr, token, nodeName, activeMethod)
 		if err != nil || !rep.OK {
-			addLog(fmt.Sprintf("SURVIVAL-WARN: Transport %s unreachable, hunting fallback...", strings.ToUpper(activeMethod)))
+			addLog(fmt.Sprintf("SURVIVAL-WARN: Transport %s unreachable, hunting fallback by stealth priority...", strings.ToUpper(activeMethod)))
 			for _, candidate := range order {
 				if r2, _, err2 := tryDialMasterControl(masterAddr, token, nodeName, candidate); err2 == nil && r2.OK {
 					activeMethod = candidate
 					rep = r2
 					err = nil
+					saveEnrollmentConfig(masterAddr, token, nodeName, activeMethod)
 					addLog(fmt.Sprintf("SURVIVAL-OK: Switched Control Highway to %s!", strings.ToUpper(activeMethod)))
 					break
 				}

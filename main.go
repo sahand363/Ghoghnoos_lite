@@ -138,7 +138,7 @@ func main() {
 	initSelfSignedCert()
 	loadDBFromDisk(port)
 	ensureEnrollToken()
-	startMasterControlListeners(port)
+	startControlListeners()
 	go startTelemetryMonitor()
 	go startPingMonitor()
 	go startSentinelSurvivalLoop()

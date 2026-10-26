@@ -143,6 +143,7 @@ func executeLocalConsoleCmd(cmd, port string) {
 		_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
 		mu.Unlock()
 	case "restart":
+		case "self-update": go triggerLocalBinaryUpdate()
 		go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
 	default:
 		if cmd != "" {

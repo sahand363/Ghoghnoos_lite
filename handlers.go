@@ -33,6 +33,14 @@ func checkBasicAuth(w http.ResponseWriter, r *http.Request, panelPath string) bo
 }
 
 func registerRoutes(port, panelPath string) {
+	http.HandleFunc("/i18n.js", func(w http.ResponseWriter, r *http.Request) {
+		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Write(i18nJS)
+	})
+
 	http.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
 		if !checkBasicAuth(w, r, panelPath) {
 			return
@@ -41,21 +49,18 @@ func registerRoutes(port, panelPath string) {
 		w.Write(appJS)
 	})
 
-	// Download the full 24-hour log file on demand
 	http.HandleFunc("/api/logs/download", func(w http.ResponseWriter, r *http.Request) {
 		if !checkBasicAuth(w, r, panelPath) {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
-
 		if targetSrvID != "" && targetSrvID != "local" {
 			mu.Lock()
 			srv := findServerByID(targetSrvID)
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 5 * time.Second}
-				resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort))
-				if err == nil {
+				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort)); err == nil {
 					defer resp.Body.Close()
 					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_%s_%s.log\"", srv.Name, time.Now().Format("20060102_1504")))
@@ -64,17 +69,14 @@ func registerRoutes(port, panelPath string) {
 				}
 			}
 		}
-
 		data, err := os.ReadFile(logPath)
 		if err != nil {
 			mu.Lock()
 			data = []byte(strings.Join(logs, "\n") + "\n")
 			mu.Unlock()
 		}
-
-		fileName := fmt.Sprintf("ghoghnoos_master_%s.log", time.Now().Format("20060102_1504"))
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_master_%s.log\"", time.Now().Format("20060102_1504")))
 		w.Write(data)
 	})
 
@@ -84,7 +86,7 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 		var hb EnrollHeartbeat
-		if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+		if json.NewDecoder(r.Body).Decode(&hb) != nil {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
@@ -117,57 +119,38 @@ func registerRoutes(port, panelPath string) {
 		if len(recentLogs) > 25 {
 			recentLogs = recentLogs[len(recentLogs)-25:]
 		}
-
 		rows := ""
 		for _, t := range tuns {
-			ports := parsePortList(t.InboundPorts)
 			portBadges := ""
-			for _, p := range ports {
-				c, err := net.DialTimeout("tcp", "127.0.0.1:"+p, 500*time.Millisecond)
-				if err == nil {
+			for _, p := range parsePortList(t.InboundPorts) {
+				if c, err := net.DialTimeout("tcp", "127.0.0.1:"+p, 500*time.Millisecond); err == nil {
 					c.Close()
 					portBadges += fmt.Sprintf(`<span style="color:#10b981;margin-right:8px;">● Forwarding :%s (BOUND)</span>`, p)
 				} else {
 					portBadges += fmt.Sprintf(`<span style="color:#f43f5e;margin-right:8px;">● Forwarding :%s (IDLE)</span>`, p)
 				}
 			}
-			mBadge := strings.ToUpper(t.Method)
-			if mBadge == "" {
-				mBadge = "WSS"
-			}
-			limStr := "Unlimited"
-			if t.SpeedLimit != "" && t.SpeedLimit != "0" {
-				limStr = t.SpeedLimit + " MB/s"
-			}
-			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;">
-				<b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code> | Speed: <b>%s</b><br>
-				<div style="margin-top:6px;font-size:12px;">Local Inbound Check: %s</div>
-			</div>`, mBadge, t.Name, t.Role, t.TunnelPort, limStr, portBadges)
+			rows += fmt.Sprintf(`<div style="background:#080d14;padding:12px;border-radius:10px;border:1px solid #1e293b;margin-bottom:8px;"><b>[%s] %s</b> (%s) | Tunnel Port: <code>:%s</code><br><div style="margin-top:6px;font-size:12px;">Local Inbound Check: %s</div></div>`, strings.ToUpper(t.Method), t.Name, t.Role, t.TunnelPort, portBadges)
 		}
 		if rows == "" {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
 		}
-
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sentinel Node Info</title>
-		<style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}
-		.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}
-		h2{color:#38bdf8;margin-top:0;}</style></head><body>
-		<div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2>
-		<p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s) | <b>Time:</b> %s</p>
-		<p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div>
-		<div class="box"><h3>Active Tunnel Listeners & Inbound Status</h3>%s</div>
-		<div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div>
-		</body></html>`, localIP, port, ramMB, cc, qd, time.Now().Format("15:04:05 MST"), localPinHex, rows, strings.Join(recentLogs, "\n"))
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Port:</b> %s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, localIP, port, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqPath := strings.Trim(r.URL.Path, "/")
-		if panelPath != "" && reqPath != "" && reqPath != panelPath && !strings.HasSuffix(reqPath, "app.js") {
+		if panelPath != "" && reqPath != "" && reqPath != panelPath && !strings.HasSuffix(reqPath, ".js") {
 			http.NotFound(w, r)
 			return
 		}
 		if !checkBasicAuth(w, r, panelPath) {
+			return
+		}
+		if strings.HasSuffix(reqPath, "i18n.js") {
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Write(i18nJS)
 			return
 		}
 		if strings.HasSuffix(reqPath, "app.js") {
@@ -192,8 +175,6 @@ func registerRoutes(port, panelPath string) {
 		historyCopy := append([]PingPoint{}, db.PingHistory...)
 		prefsCopy := db.Prefs
 		enrollTok := db.EnrollToken
-
-		// Return only latest ~150 lines in regular state payload to keep network transfer minimal
 		var recentLocalLogs []string
 		if len(logs) > 150 {
 			recentLocalLogs = append([]string{}, logs[len(logs)-150:]...)
@@ -203,10 +184,7 @@ func registerRoutes(port, panelPath string) {
 		metricsCopy := sysMetrics
 		mu.Unlock()
 
-		activeLogs := recentLocalLogs
-		activePort := port
-		activePath := panelPath
-		activePin := localPinHex
+		activeLogs, activePort, activePath, activePin := recentLocalLogs, port, panelPath, localPinHex
 		srvTime := time.Now().UTC().Format("15:04:05 UTC")
 
 		if targetSrvID != "" && targetSrvID != "local" {
@@ -214,11 +192,9 @@ func registerRoutes(port, panelPath string) {
 			srv := findServerByID(targetSrvID)
 			cachedHB, hasCached := remoteStateCache[targetSrvID]
 			mu.Unlock()
-
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 2000 * time.Millisecond}
-				resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort))
-				if err == nil {
+				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort)); err == nil {
 					defer resp.Body.Close()
 					var rem map[string]interface{}
 					if json.NewDecoder(resp.Body).Decode(&rem) == nil {
@@ -265,22 +241,10 @@ func registerRoutes(port, panelPath string) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ram_mb":       ramMB,
-			"goroutines":   goroutines,
-			"server_time":  srvTime,
-			"metrics":      metricsCopy,
-			"servers":      serversCopy,
-			"tunnels":      tunnelsCopy,
-			"ping_history": historyCopy,
-			"prefs":        prefsCopy,
-			"logs":         activeLogs,
-			"panel_port":   activePort,
-			"panel_path":   activePath,
-			"panel_user":   panelUser,
-			"cert_pin":     activePin,
-			"enroll_token": enrollTok,
-			"master_ip":    localIP,
-			"dial_port":    port,
+			"ram_mb": ramMB, "goroutines": goroutines, "server_time": srvTime, "metrics": metricsCopy,
+			"servers": serversCopy, "tunnels": tunnelsCopy, "ping_history": historyCopy, "prefs": prefsCopy,
+			"logs": activeLogs, "panel_port": activePort, "panel_path": activePath, "panel_user": panelUser,
+			"cert_pin": activePin, "enroll_token": enrollTok, "master_ip": localIP, "dial_port": port,
 		})
 	})
 
@@ -294,8 +258,7 @@ func registerRoutes(port, panelPath string) {
 			srv := findServerByID(targetSrvID)
 			mu.Unlock()
 			if srv != nil {
-				resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), "application/json", nil)
-				if err == nil {
+				if resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), "application/json", nil); err == nil {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("BBR-OK [%s]: Enabled Google BBR + FQ on %s!", srv.Name, srv.IP))
 					w.WriteHeader(http.StatusOK)
@@ -304,29 +267,26 @@ func registerRoutes(port, panelPath string) {
 			}
 		}
 		if err := enableLocalBBR(); err != nil {
-			addLog(fmt.Sprintf("BBR-ERR: Could not enable BBR -> %v", err))
 			http.Error(w, err.Error(), 500)
 			return
 		}
 		cc, qd := checkBBRStatus()
 		mu.Lock()
-		sysMetrics.BBRStatus = cc
-		sysMetrics.Qdisc = qd
+		sysMetrics.BBRStatus, sysMetrics.Qdisc = cc, qd
 		mu.Unlock()
 		addLog(fmt.Sprintf("BBR-OK: Kernel TCP Congestion Control set to %s (qdisc: %s)", cc, qd))
 		w.WriteHeader(http.StatusOK)
 	})
 
 	http.HandleFunc("/api/uninstall", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			return
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			go func() {
+				time.Sleep(400 * time.Millisecond)
+				_ = exec.Command("bash", "-c", "systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun; systemctl stop litetun").Run()
+				os.Exit(0)
+			}()
 		}
-		w.WriteHeader(http.StatusOK)
-		go func() {
-			time.Sleep(400 * time.Millisecond)
-			_ = exec.Command("bash", "-c", "systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun; systemctl stop litetun").Run()
-			os.Exit(0)
-		}()
 	})
 
 	http.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
@@ -361,31 +321,27 @@ func registerRoutes(port, panelPath string) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
-		if r.Method != http.MethodPost {
-			return
+		if r.Method == http.MethodPost {
+			var s ServerNode
+			json.NewDecoder(r.Body).Decode(&s)
+			if s.SSHPort == "" {
+				s.SSHPort = "22"
+			}
+			if s.SSHUser == "" {
+				s.SSHUser = "root"
+			}
+			if s.PanelPort == "" {
+				s.PanelPort = "6001"
+			}
+			s.ID = fmt.Sprintf("srv-%d", time.Now().Unix()%10000)
+			s.Status = "Deploying..."
+			mu.Lock()
+			db.Servers = append(db.Servers, s)
+			saveDBLocked()
+			mu.Unlock()
+			go deploySentinelSSH(s)
+			w.WriteHeader(http.StatusOK)
 		}
-		var s ServerNode
-		json.NewDecoder(r.Body).Decode(&s)
-		if s.SSHPort == "" {
-			s.SSHPort = "22"
-		}
-		if s.SSHUser == "" {
-			s.SSHUser = "root"
-		}
-		if s.PanelPort == "" {
-			s.PanelPort = "6001"
-		}
-		s.ID = fmt.Sprintf("srv-%d", time.Now().Unix()%10000)
-		s.Status = "Deploying..."
-
-		mu.Lock()
-		db.Servers = append(db.Servers, s)
-		saveDBLocked()
-		mu.Unlock()
-
-		go deploySentinelSSH(s)
-		w.WriteHeader(http.StatusOK)
 	})
 
 	http.HandleFunc("/api/servers/deploy", func(w http.ResponseWriter, r *http.Request) {
@@ -397,14 +353,13 @@ func registerRoutes(port, panelPath string) {
 		srv := findServerByID(id)
 		if srv == nil {
 			mu.Unlock()
-			http.Error(w, "Server not found", 404)
+			http.Error(w, "Not found", 404)
 			return
 		}
 		srv.Status = "Verifying..."
 		sCopy := *srv
 		saveDBLocked()
 		mu.Unlock()
-
 		go deploySentinelSSH(sCopy)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -414,7 +369,7 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 		var p UIPrefs
-		if err := json.NewDecoder(r.Body).Decode(&p); err == nil {
+		if json.NewDecoder(r.Body).Decode(&p) == nil {
 			mu.Lock()
 			if p.Theme != "" {
 				db.Prefs.Theme = p.Theme
@@ -443,7 +398,6 @@ func registerRoutes(port, panelPath string) {
 			ServerID string `json:"server_id"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-
 		if req.ServerID != "" && req.ServerID != "local" {
 			mu.Lock()
 			srv := findServerByID(req.ServerID)
@@ -451,8 +405,7 @@ func registerRoutes(port, panelPath string) {
 			if srv != nil {
 				client := &http.Client{Timeout: 2500 * time.Millisecond}
 				body, _ := json.Marshal(map[string]string{"cmd": req.Cmd})
-				resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body))
-				if err == nil {
+				if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body)); err == nil {
 					resp.Body.Close()
 					w.WriteHeader(http.StatusOK)
 					return
@@ -465,7 +418,6 @@ func registerRoutes(port, panelPath string) {
 				return
 			}
 		}
-
 		executeLocalConsoleCmd(req.Cmd, port)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -491,7 +443,6 @@ func registerRoutes(port, panelPath string) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
 		if r.Method != http.MethodPost {
 			return
 		}
@@ -515,33 +466,26 @@ func registerRoutes(port, panelPath string) {
 		if t.ID == "" {
 			t.ID = fmt.Sprintf("%s-%d", t.Method, time.Now().Unix()%10000)
 		}
-
 		mu.Lock()
-		srcSrv := findServerByID(t.SourceServer)
-		dstSrv := findServerByID(t.TargetServer)
+		srcSrv, dstSrv := findServerByID(t.SourceServer), findServerByID(t.TargetServer)
 		mu.Unlock()
-
 		if srcSrv != nil && dstSrv != nil && t.Role != "server" {
 			t.Role = "client"
 			t.RemoteAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.TunnelPort)
 			if t.CertPin == "" && dstSrv.CertPin != "" {
 				t.CertPin = dstSrv.CertPin
 			}
-
 			exitTunnel := Tunnel{
 				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
 				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
-				Fingerprint: t.Fingerprint, FragSize: t.FragSize,
-				SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
+				Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
 			}
-
 			if dstSrv.IsLocal {
 				dispatchTunnelEngine(exitTunnel)
 			} else {
 				client := &http.Client{Timeout: 3 * time.Second}
 				body, _ := json.Marshal(exitTunnel)
-				resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body))
-				if err == nil {
+				if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body)); err == nil {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
 				} else {
@@ -549,7 +493,6 @@ func registerRoutes(port, panelPath string) {
 				}
 			}
 		}
-
 		mu.Lock()
 		replaced := false
 		for i := range db.Tunnels {
@@ -564,7 +507,6 @@ func registerRoutes(port, panelPath string) {
 		}
 		saveDBLocked()
 		mu.Unlock()
-
 		if srcSrv == nil || srcSrv.IsLocal {
 			dispatchTunnelEngine(t)
 			go probeTunnelOnce(t)
@@ -594,7 +536,6 @@ func registerRoutes(port, panelPath string) {
 			http.Error(w, "Not found", 404)
 			return
 		}
-
 		pt := probeTunnelOnce(*tun)
 		if !pt.OK {
 			addLog(fmt.Sprintf("PING-WARN [%s]: %s (%d ms)", tun.Name, pt.Error, pt.LatencyMS))

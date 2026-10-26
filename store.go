@@ -21,6 +21,7 @@ type ServerNode struct {
 	CertPin   string `json:"cert_pin"`
 	Status    string `json:"status"`
 	ViaMethod string `json:"via_method,omitempty"`
+	Probing   bool   `json:"probing,omitempty"`
 	LastSeen  int64  `json:"last_seen,omitempty"`
 	IsLocal   bool   `json:"is_local"`
 }
@@ -75,19 +76,50 @@ type UIPrefs struct {
 }
 
 type Database struct {
-	Servers      []ServerNode `json:"servers"`
-	Tunnels      []Tunnel     `json:"tunnels"`
-	PingHistory  []PingPoint  `json:"ping_history"`
-	AppBaseBytes uint64       `json:"app_base_bytes"`
-	EnrollToken  string       `json:"enroll_token"`
-	Prefs        UIPrefs      `json:"prefs"`
+	Servers        []ServerNode `json:"servers"`
+	Tunnels        []Tunnel     `json:"tunnels"`
+	PingHistory    []PingPoint  `json:"ping_history"`
+	AppBaseBytes   uint64       `json:"app_base_bytes"`
+	EnrollToken    string       `json:"enroll_token"`
+	CtrlL4Port     string       `json:"ctrl_l4_port"`
+	CtrlDirectPort string       `json:"ctrl_direct_port"`
+	CtrlWSSPort    string       `json:"ctrl_wss_port"`
+	Prefs          UIPrefs      `json:"prefs"`
 }
 
 type ConfigReq struct {
-	Port string `json:"port"`
-	Path string `json:"path"`
-	User string `json:"user"`
-	Pass string `json:"pass"`
+	Port       string `json:"port"`
+	Path       string `json:"path"`
+	User       string `json:"user"`
+	Pass       string `json:"pass"`
+	CtrlL4     string `json:"ctrl_l4"`
+	CtrlDirect string `json:"ctrl_direct"`
+	CtrlWSS    string `json:"ctrl_wss"`
+}
+
+func getControlPorts() (l4, direct, wss string) {
+	l4 = strings.TrimSpace(os.Getenv("CTRL_L4_PORT"))
+	if l4 == "" {
+		l4 = strings.TrimSpace(db.CtrlL4Port)
+	}
+	if l4 == "" {
+		l4 = "6005"
+	}
+	direct = strings.TrimSpace(os.Getenv("CTRL_DIRECT_PORT"))
+	if direct == "" {
+		direct = strings.TrimSpace(db.CtrlDirectPort)
+	}
+	if direct == "" {
+		direct = "6006"
+	}
+	wss = strings.TrimSpace(os.Getenv("CTRL_WSS_PORT"))
+	if wss == "" {
+		wss = strings.TrimSpace(db.CtrlWSSPort)
+	}
+	if wss == "" {
+		wss = "6007"
+	}
+	return l4, direct, wss
 }
 
 func executeLocalConsoleCmd(cmd, port string) {
@@ -98,7 +130,8 @@ func executeLocalConsoleCmd(cmd, port string) {
 		addLog("Commands: status | bbr | pin | clear | restart")
 	case "status":
 		ram, goCnt := getMemoryStats()
-		addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Port: %s", goCnt, ram, port))
+		l4, dir, wss := getControlPorts()
+		addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Panel: :%s | Ctrl: :%s/:%s/:%s", goCnt, ram, port, l4, dir, wss))
 	case "bbr":
 		cc, qd := checkBBRStatus()
 		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
@@ -131,15 +164,12 @@ func addLog(msg string) {
 	defer mu.Unlock()
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	line := fmt.Sprintf("[%s] %s", timestamp, msg)
-
 	logs = append(logs, line)
 	if len(logs) > 5000 {
 		logs = logs[len(logs)-5000:]
 	}
-
 	_ = os.MkdirAll("/opt/litetun", 0755)
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
+	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 		_, _ = f.WriteString(line + "\n")
 		f.Close()
 	}
@@ -156,11 +186,9 @@ func recordPingPoint(pt PingPoint) {
 }
 
 func loadLogsFromDisk() {
-	data, err := os.ReadFile(logPath)
-	if err == nil {
-		rawLines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if data, err := os.ReadFile(logPath); err == nil {
 		var valid []string
-		for _, l := range rawLines {
+		for _, l := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 			if strings.TrimSpace(l) != "" {
 				valid = append(valid, l)
 			}
@@ -181,8 +209,7 @@ func saveDBLocked() {
 
 func loadDBFromDisk(port string) {
 	localIP = detectLocalIP()
-	data, err := os.ReadFile(dbPath)
-	if err == nil {
+	if data, err := os.ReadFile(dbPath); err == nil {
 		_ = json.Unmarshal(data, &db)
 	}
 	if db.Prefs.Theme == "" {
@@ -196,6 +223,15 @@ func loadDBFromDisk(port string) {
 	}
 	if db.Prefs.SelectedServer == "" {
 		db.Prefs.SelectedServer = "local"
+	}
+	if db.CtrlL4Port == "" {
+		db.CtrlL4Port = "6005"
+	}
+	if db.CtrlDirectPort == "" {
+		db.CtrlDirectPort = "6006"
+	}
+	if db.CtrlWSSPort == "" {
+		db.CtrlWSSPort = "6007"
 	}
 
 	hasLocal := false
@@ -246,40 +282,39 @@ func findServerByID(id string) *ServerNode {
 	return nil
 }
 
-func updateConfigFile(newPort, newPath, newUser, newPass string) error {
+func updateConfigFile(req ConfigReq) error {
 	data, _ := os.ReadFile(confPath)
-	lines := strings.Split(string(data), "\n")
-	hasPort, hasPath, hasUser, hasPass := false, false, false, false
-
-	for i, line := range lines {
-		if strings.HasPrefix(line, "PANEL_PORT=") && newPort != "" {
-			lines[i] = "PANEL_PORT=" + newPort
-			hasPort = true
-		} else if strings.HasPrefix(line, "PANEL_PATH=") {
-			lines[i] = "PANEL_PATH=" + strings.Trim(newPath, "/")
-			hasPath = true
-		} else if strings.HasPrefix(line, "PANEL_USER=") && newUser != "" {
-			lines[i] = "PANEL_USER=" + newUser
-			hasUser = true
-		} else if strings.HasPrefix(line, "PANEL_PASS=") && newPass != "" {
-			lines[i] = "PANEL_PASS=" + newPass
-			hasPass = true
+	kv := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		if parts := strings.SplitN(strings.TrimSpace(line), "=", 2); len(parts) == 2 {
+			kv[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 		}
 	}
-	if !hasPort && newPort != "" {
-		lines = append(lines, "PANEL_PORT="+newPort)
+	if req.Port != "" {
+		kv["PANEL_PORT"] = req.Port
 	}
-	if !hasPath {
-		lines = append(lines, "PANEL_PATH="+strings.Trim(newPath, "/"))
+	kv["PANEL_PATH"] = strings.Trim(req.Path, "/")
+	if req.User != "" {
+		kv["PANEL_USER"] = req.User
 	}
-	if !hasUser && newUser != "" {
-		lines = append(lines, "PANEL_USER="+newUser)
+	if req.Pass != "" {
+		kv["PANEL_PASS"] = req.Pass
 	}
-	if !hasPass && newPass != "" {
-		lines = append(lines, "PANEL_PASS="+newPass)
+	if req.CtrlL4 != "" {
+		kv["CTRL_L4_PORT"] = req.CtrlL4
+	}
+	if req.CtrlDirect != "" {
+		kv["CTRL_DIRECT_PORT"] = req.CtrlDirect
+	}
+	if req.CtrlWSS != "" {
+		kv["CTRL_WSS_PORT"] = req.CtrlWSS
+	}
+	var out []string
+	for k, v := range kv {
+		out = append(out, k+"="+v)
 	}
 	_ = os.MkdirAll("/opt/litetun", 0755)
-	return os.WriteFile(confPath, []byte(strings.Join(lines, "\n")), 0644)
+	return os.WriteFile(confPath, []byte(strings.Join(out, "\n")+"\n"), 0644)
 }
 
 func getMemoryStats() (uint64, int) {

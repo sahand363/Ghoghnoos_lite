@@ -87,7 +87,7 @@
     <!-- LEFT COLUMN (7 Cols) -->
     <div class="lg:col-span-7">
 
-      <!-- TAB 1: SERVERS (Dual Mode: Method A Direct SSH & Method B Reverse Token Dial-In) -->
+      <!-- TAB 1: SERVERS -->
       <section id="view-servers" class="space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
           <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
@@ -95,7 +95,6 @@
               <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
               <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Choose Direct SSH Push or Reverse Token Dial-In (when SSH is filtered).</p>
             </div>
-            <!-- Mode Switcher Pills -->
             <div class="flex items-center gap-1.5 bg-[#080d14] p-1 rounded-xl border border-slate-800">
               <button type="button" id="btn-mode-ssh" onclick="setDeployMode('ssh')" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition" data-i18n="mode_ssh_btn">🚀 Method A: SSH Push</button>
               <button type="button" id="btn-mode-enroll" onclick="setDeployMode('enroll')" class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition" data-i18n="mode_enroll_btn">🔑 Method B: Reverse Dial-In</button>
@@ -133,7 +132,7 @@
             <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)</button>
           </div>
 
-          <!-- METHOD B: REVERSE TOKEN DIAL-IN (NO SSH NEEDED) -->
+          <!-- METHOD B: REVERSE TOKEN DIAL-IN -->
           <div id="box-deploy-enroll" class="hidden space-y-4">
             <div class="bg-[#080d14] p-3.5 rounded-xl border border-sky-500/30 space-y-2">
               <div class="flex items-center justify-between">
@@ -238,7 +237,7 @@
         </div>
       </section>
 
-      <!-- TAB 3: TUNNELS (Untouched!) -->
+      <!-- TAB 3: TUNNELS -->
       <section id="view-tunnels" class="hidden space-y-4 sm:space-y-6">
         <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
           <div class="flex items-center justify-between">
@@ -313,11 +312,11 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3 rounded-xl border border-slate-800">
             <div>
-              <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Iran Relay)</label>
+              <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Relay)</label>
               <select id="tun-src-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
             </div>
             <div>
-              <label class="text-xs font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Exit Server (Kharej + X-UI)</label>
+              <label class="text-xs font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Exit Server (Target Node)</label>
               <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
             </div>
           </div>
@@ -332,7 +331,7 @@
               <input id="tunnel-port" value="10201" placeholder="10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
-              <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">X-UI Inbound Port(s)</label>
+              <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">Forwarding Inbound Port(s)</label>
               <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-lg p-2.5 text-xs font-mono">
             </div>
             <div>
@@ -394,7 +393,7 @@
               </div>
               <span class="text-[10px] font-mono text-amber-400">Stealth: 20% (Raw L4)</span>
             </div>
-            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="forward_note">Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your X-UI inbound already uses REALITY or TLS.</p>
+            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="forward_note">Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.</p>
           </div>
 
           <div id="row-cert-pin">
@@ -409,7 +408,7 @@
         </div>
 
         <div class="space-y-3">
-          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End X-UI Ping & Edit)</h3>
+          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End Latency Ping & Edit)</h3>
           <div id="tunnel-list" class="space-y-3"></div>
         </div>
       </section>
@@ -488,7 +487,7 @@
 
     </div>
 
-    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console -->
+    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console with Speed & Download Controls -->
     <aside class="lg:col-span-5 lg:sticky lg:top-20 w-full">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
@@ -498,7 +497,10 @@
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
             <span id="putty-title" class="text-xs font-bold text-slate-300 ml-1 truncate">root@Master — Ghoghnoos-lite</span>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/80 hover:scale-105 transition" title="Toggle between 10s Live and 5m Eco polling">⚡ 10s Live</button>
+            <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:text-white transition" title="Download complete 24h operational log">📥 24h Log</button>
+            <button onclick="fetchState()" class="text-[11px] text-slate-400 hover:text-white" title="Manual instant refresh">🔄</button>
             <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
             <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
           </div>

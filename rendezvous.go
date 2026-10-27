@@ -17,10 +17,11 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 		return
 	}
 	var req struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		IP   string `json:"ip"`
-		Stop bool   `json:"stop"`
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		IP     string `json:"ip"`
+		Stop   bool   `json:"stop"`
+		Action string `json:"action"` // "disconnect" or "resume"
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	req.IP = strings.TrimSpace(req.IP)
@@ -59,6 +60,61 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 	if srv == nil {
 		mu.Unlock()
 		http.Error(w, "Server IP required", 400)
+		return
+	}
+
+	if req.Action == "disconnect" {
+		srv.ReversePaused = true
+		srv.Probing = false
+		srv.Status = "Disconnected"
+		srv.ViaMethod = ""
+		delete(remoteStateCache, srv.ID)
+		if ch, ok := activeProbeCancels[srv.ID]; ok {
+			close(ch)
+			delete(activeProbeCancels, srv.ID)
+		}
+		pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], "pause-dial")
+		sIP, sName := srv.IP, srv.Name
+		tok := db.EnrollToken
+		saveDBLocked()
+		mu.Unlock()
+
+		go func() {
+			l4, dir, wss := getControlPorts()
+			spec := fmt.Sprintf("%s:%s:%s:%s", sIP, l4, dir, wss)
+			for _, m := range getAllowedControlMethods() {
+				if rep, _, err := tryDialControl(spec, tok, "pause-dial", m, true, nil); err == nil && rep.OK {
+					break
+				}
+			}
+		}()
+		addLog(fmt.Sprintf("DISCONNECT [%s]: Sentinel set to Passive Listener mode (Reverse Dial Paused).", sName))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if req.Action == "resume" {
+		srv.ReversePaused = false
+		if srv.Status == "Disconnected" {
+			srv.Status = "Waiting..."
+		}
+		pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], "resume-dial")
+		sIP, sName := srv.IP, srv.Name
+		tok := db.EnrollToken
+		saveDBLocked()
+		mu.Unlock()
+
+		go func() {
+			l4, dir, wss := getControlPorts()
+			spec := fmt.Sprintf("%s:%s:%s:%s", sIP, l4, dir, wss)
+			for _, m := range getAllowedControlMethods() {
+				if rep, _, err := tryDialControl(spec, tok, "resume-dial", m, true, nil); err == nil && rep.OK {
+					break
+				}
+			}
+		}()
+		addLog(fmt.Sprintf("RESUME [%s]: Signaled Sentinel to resume Reverse Dial-In.", sName))
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -101,7 +157,6 @@ func startMasterForwardProber(srvID string) {
 	mu.Unlock()
 
 	go func() {
-		order := []string{"wss", "direct", "forward"}
 		activeMethod := ""
 		lastUpgrade := time.Now()
 
@@ -122,10 +177,14 @@ func startMasterForwardProber(srvID string) {
 			ip := srv.IP
 			sName := srv.Name
 			tok := db.EnrollToken
+			cMethods := db.CtrlMethods
 			var queuedCmds []string
 			if q, ok := pendingRemoteCmds[srvID]; ok && len(q) > 0 {
 				queuedCmds = append([]string{}, q...)
 				delete(pendingRemoteCmds, srvID)
+			}
+			if cMethods != "" {
+				queuedCmds = append(queuedCmds, "set-methods:"+cMethods)
 			}
 			var exitsForSrv []Tunnel
 			for _, t := range db.Tunnels {
@@ -139,11 +198,16 @@ func startMasterForwardProber(srvID string) {
 			}
 			mu.Unlock()
 
+			order := getAllowedControlMethods()
+			if activeMethod != "" && !isControlMethodAllowed(activeMethod) {
+				activeMethod = ""
+			}
+
 			l4, dir, wss := getControlPorts()
 			targetSpec := fmt.Sprintf("%s:%s:%s:%s", ip, l4, dir, wss)
 			cmdPayload := strings.Join(queuedCmds, "||")
 
-			if activeMethod != "" && activeMethod != "wss" && time.Since(lastUpgrade) >= 12*time.Hour {
+			if activeMethod != "" && activeMethod != "wss" && isControlMethodAllowed("wss") && time.Since(lastUpgrade) >= 12*time.Hour {
 				lastUpgrade = time.Now()
 				for _, cand := range order {
 					if cand == activeMethod {
@@ -167,7 +231,7 @@ func startMasterForwardProber(srvID string) {
 			}
 
 			if !connected {
-				addLog(fmt.Sprintf("RENDEZVOUS-HUNT [%s]: Probing %s (WSS :%s ➔ Direct :%s ➔ L4 :%s)...", sName, ip, wss, dir, l4))
+				addLog(fmt.Sprintf("RENDEZVOUS-HUNT [%s]: Probing %s via [%s]...", sName, ip, strings.ToUpper(strings.Join(order, " ➔ "))))
 				for _, cand := range order {
 					if rep, ms, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true, exitsForSrv); err == nil && rep.OK {
 						activeMethod = cand

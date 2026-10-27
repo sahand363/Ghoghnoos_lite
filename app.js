@@ -382,7 +382,7 @@ function buildSVGChart(values, unit, strokeColor, gradId) {
   let clean = (values || []).filter(v => typeof v === 'number' && !isNaN(v));
   if (clean.length === 0) clean = [0, 0, 0, 0];
   while (clean.length < 6) clean.unshift(clean[0]);
-  const w = 600, h = 135, padL = 54, padR = 10, padT = 14, padB = 14, plotW = w - padL - padR, plotH = h - padT - padB;
+  const w = 680, h = 135, padL = 54, padR = 10, padT = 14, padB = 14, plotW = w - padL - padR, plotH = h - padT - padB;
   const maxVal = Math.max(...clean, unit === 'ms' ? 220 : 2), midVal = (maxVal / 2).toFixed(unit === 'ms' ? 0 : 1), topVal = maxVal.toFixed(unit === 'ms' ? 0 : 1);
   const pts = clean.map((v, idx) => `${(padL + (idx / (clean.length - 1)) * plotW).toFixed(1)},${(padT + plotH - ((v / maxVal) * plotH)).toFixed(1)}`).join(' ');
   const area = `${padL},${padT + plotH} ${pts} ${padL + plotW},${padT + plotH}`;
@@ -407,7 +407,7 @@ function buildHistorySVGChart(points) {
   let list = (points && points.length) ? points.slice(-90) : [];
   const nowSec = Math.floor(Date.now() / 1000);
   while (list.length < 6) list.unshift({ ts: nowSec - (6 - list.length) * 600, ms: 50, ok: true });
-  const w = 680, h = 155, padL = 62, padR = 14, padT = 14, padB = 22, plotW = w - padL - padR, plotH = h - padT - padB;
+  const w = 1000, h = 165, padL = 64, padR = 16, padT = 14, padB = 22, plotW = w - padL - padR, plotH = h - padT - padB;
   const vals = list.map(p => (p.ok && p.ms > 0) ? p.ms : 0);
   const maxVal = Math.max(...vals, 220), midVal = Math.round(maxVal / 2), topVal = Math.round(maxVal);
   const stepW = plotW / Math.max(list.length - 1, 1);
@@ -457,7 +457,7 @@ function buildDailyBWChart(dailyUsage) {
     const dt = new Date(now.getTime() - i * 86400000);
     const iso = dt.toISOString().slice(0, 10);
     const rec = map[iso] || { rx_mb: 0, tx_mb: 0 };
-    days.push({ label: iso.slice(8, 10), rxGB: (rec.rx_mb || 0) / 1024, txGB: (rec.tx_mb || 0) / 1024 });
+    days.push({ label: iso.slice(5, 10), rxGB: (rec.rx_mb || 0) / 1024, txGB: (rec.tx_mb || 0) / 1024 });
   }
 
   let maxGB = 0.5;
@@ -465,20 +465,20 @@ function buildDailyBWChart(dailyUsage) {
   const topVal = maxGB >= 10 ? Math.ceil(maxGB) : maxGB.toFixed(1);
   const midVal = (maxGB / 2).toFixed(1);
 
-  const w = 680, h = 165, padL = 58, padR = 12, padT = 14, padB = 24, plotW = w - padL - padR, plotH = h - padT - padB;
+  const w = 1000, h = 175, padL = 64, padR = 16, padT = 14, padB = 24, plotW = w - padL - padR, plotH = h - padT - padB;
   const colW = plotW / 30;
-  const barW = Math.max((colW - 4) / 2, 2.5);
+  const barW = Math.max((colW - 6) / 2, 3.5);
 
   let bars = '';
   days.forEach((d, idx) => {
-    const xBase = padL + idx * colW + 2;
+    const xBase = padL + idx * colW + 3;
     const hRx = Math.max((d.rxGB / maxGB) * plotH, d.rxGB > 0 ? 3 : 1);
     const hTx = Math.max((d.txGB / maxGB) * plotH, d.txGB > 0 ? 3 : 1);
     const yRx = padT + plotH - hRx;
     const yTx = padT + plotH - hTx;
     bars += `<rect x="${xBase.toFixed(1)}" y="${yRx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hRx.toFixed(1)}" rx="1.5" fill="#10b981"/>`;
-    bars += `<rect x="${(xBase + barW + 1).toFixed(1)}" y="${yTx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTx.toFixed(1)}" rx="1.5" fill="#818cf8"/>`;
-    if (idx % 3 === 0 || idx === 29) {
+    bars += `<rect x="${(xBase + barW + 1.5).toFixed(1)}" y="${yTx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTx.toFixed(1)}" rx="1.5" fill="#818cf8"/>`;
+    if (idx % 2 === 0 || idx === 29) {
       bars += `<text x="${(xBase + barW).toFixed(1)}" y="${h - 6}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">${d.label}</text>`;
     }
   });

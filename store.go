@@ -17,19 +17,20 @@ import (
 )
 
 type ServerNode struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	IP        string `json:"ip"`
-	SSHPort   string `json:"ssh_port"`
-	SSHUser   string `json:"ssh_user"`
-	SSHPass   string `json:"ssh_pass"`
-	PanelPort string `json:"panel_port"`
-	CertPin   string `json:"cert_pin"`
-	Status    string `json:"status"`
-	ViaMethod string `json:"via_method,omitempty"`
-	Probing   bool   `json:"probing,omitempty"`
-	LastSeen  int64  `json:"last_seen,omitempty"`
-	IsLocal   bool   `json:"is_local"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	IP            string `json:"ip"`
+	SSHPort       string `json:"ssh_port"`
+	SSHUser       string `json:"ssh_user"`
+	SSHPass       string `json:"ssh_pass"`
+	PanelPort     string `json:"panel_port"`
+	CertPin       string `json:"cert_pin"`
+	Status        string `json:"status"`
+	ViaMethod     string `json:"via_method,omitempty"`
+	Probing       bool   `json:"probing,omitempty"`
+	ReversePaused bool   `json:"reverse_paused,omitempty"`
+	LastSeen      int64  `json:"last_seen,omitempty"`
+	IsLocal       bool   `json:"is_local"`
 }
 
 type Tunnel struct {
@@ -90,17 +91,19 @@ type Database struct {
 	CtrlL4Port     string       `json:"ctrl_l4_port"`
 	CtrlDirectPort string       `json:"ctrl_direct_port"`
 	CtrlWSSPort    string       `json:"ctrl_wss_port"`
+	CtrlMethods    string       `json:"ctrl_methods"`
 	Prefs          UIPrefs      `json:"prefs"`
 }
 
 type ConfigReq struct {
-	Port       string `json:"port"`
-	Path       string `json:"path"`
-	User       string `json:"user"`
-	Pass       string `json:"pass"`
-	CtrlL4     string `json:"ctrl_l4"`
-	CtrlDirect string `json:"ctrl_direct"`
-	CtrlWSS    string `json:"ctrl_wss"`
+	Port        string `json:"port"`
+	Path        string `json:"path"`
+	User        string `json:"user"`
+	Pass        string `json:"pass"`
+	CtrlL4      string `json:"ctrl_l4"`
+	CtrlDirect  string `json:"ctrl_direct"`
+	CtrlWSS     string `json:"ctrl_wss"`
+	CtrlMethods string `json:"ctrl_methods"`
 }
 
 func encryptSecret(plain string) string {
@@ -147,7 +150,6 @@ func decryptSecret(val string) string {
 	return string(plain)
 }
 
-// Auto-heals any tunnel whose TargetServer updated its Certificate Pin
 func syncServerTunnelsPinLocked(srvID, newPin string) {
 	if newPin == "" {
 		return
@@ -194,12 +196,33 @@ func getControlPorts() (l4, direct, wss string) {
 	return l4, direct, wss
 }
 
+func getAllowedControlMethods() []string {
+	raw := strings.TrimSpace(os.Getenv("CTRL_METHODS"))
+	if raw == "" {
+		raw = strings.TrimSpace(db.CtrlMethods)
+	}
+	if raw == "" {
+		raw = "wss,direct"
+	}
+	var list []string
+	for _, m := range strings.Split(strings.ToLower(raw), ",") {
+		m = strings.TrimSpace(m)
+		if m == "wss" || m == "direct" || m == "forward" {
+			list = append(list, m)
+		}
+	}
+	if len(list) == 0 {
+		return []string{"wss", "direct"}
+	}
+	return list
+}
+
 func executeLocalConsoleCmd(cmd, port string) {
 	cmd = strings.TrimSpace(cmd)
 	addLog("root@litetun:~# " + cmd)
 	switch strings.ToLower(cmd) {
 	case "help":
-		addLog("Commands: status | bbr | pin | clear | restart")
+		addLog("Commands: status | bbr | pin | pause-dial | resume-dial | clear | restart")
 	case "status":
 		ram, goCnt := getMemoryStats()
 		l4, dir, wss := getControlPorts()
@@ -209,6 +232,16 @@ func executeLocalConsoleCmd(cmd, port string) {
 		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
 	case "pin":
 		addLog("SHA256-PIN: " + localPinHex)
+	case "pause-dial":
+		mu.Lock()
+		reverseDialPaused = true
+		mu.Unlock()
+		addLog("SURVIVAL-PAUSED: Outbound reverse dial-in paused. Passive listeners remain active!")
+	case "resume-dial":
+		mu.Lock()
+		reverseDialPaused = false
+		mu.Unlock()
+		addLog("SURVIVAL-RESUMED: Outbound reverse dial-in resumed!")
 	case "clear":
 		mu.Lock()
 		logs = []string{"[SYSTEM] Terminal cleared."}
@@ -219,6 +252,16 @@ func executeLocalConsoleCmd(cmd, port string) {
 	case "self-update":
 		go triggerLocalBinaryUpdate()
 	default:
+		if strings.HasPrefix(strings.ToLower(cmd), "set-methods:") {
+			mStr := strings.TrimPrefix(strings.ToLower(cmd), "set-methods:")
+			_ = os.Setenv("CTRL_METHODS", mStr)
+			mu.Lock()
+			db.CtrlMethods = mStr
+			saveDBLocked()
+			mu.Unlock()
+			addLog("CONTROL-METHODS: Updated allowed transports to [" + mStr + "]")
+			return
+		}
 		if cmd != "" {
 			addLog("bash: " + cmd + ": command not found")
 		}
@@ -316,6 +359,9 @@ func loadDBFromDisk(port string) {
 	if db.CtrlWSSPort == "" {
 		db.CtrlWSSPort = "6007"
 	}
+	if db.CtrlMethods == "" {
+		db.CtrlMethods = "wss,direct"
+	}
 
 	hasLocal := false
 	for i := range db.Servers {
@@ -391,6 +437,9 @@ func updateConfigFile(req ConfigReq) error {
 	}
 	if req.CtrlWSS != "" {
 		kv["CTRL_WSS_PORT"] = req.CtrlWSS
+	}
+	if req.CtrlMethods != "" {
+		kv["CTRL_METHODS"] = req.CtrlMethods
 	}
 	var out []string
 	for k, v := range kv {

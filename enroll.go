@@ -288,7 +288,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		var cmds []string
 		if q, ok := pendingRemoteCmds[targetSrv.ID]; ok && len(q) > 0 {
 			cmds = append([]string{}, q...)
-			delete(pendingRemoteCmds, targetSrv.ID)
+			delete(pendingRemoteCmds[targetSrv.ID])
 		}
 		cmds = append(cmds, "pause-dial")
 		cMethods := db.CtrlMethods

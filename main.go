@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	_ "embed"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
@@ -30,11 +31,13 @@ var i18nJS []byte
 var appJS []byte
 
 const (
-	appVersion = "v2.4.0"
+	appVersion = "v2.5.0"
 	wsGUID     = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	dbPath     = "/opt/litetun/panel_db.json"
 	logPath    = "/opt/litetun/panel.log"
 	confPath   = "/opt/litetun/config.env"
+	certFile   = "/opt/litetun/cert.pem"
+	keyFile    = "/opt/litetun/key.pem"
 )
 
 var (
@@ -85,7 +88,16 @@ func loadEnvFile() {
 	}
 }
 
+// Persists certificate on disk so server/service restarts NEVER change the SHA-256 Pin!
 func initSelfSignedCert() {
+	_ = os.MkdirAll("/opt/litetun", 0755)
+	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && len(cert.Certificate) > 0 {
+		sum := sha256.Sum256(cert.Certificate[0])
+		localPinHex = hex.EncodeToString(sum[:])
+		localCert = cert
+		return
+	}
+
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return
@@ -94,7 +106,7 @@ func initSelfSignedCert() {
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject:      pkix.Name{CommonName: "cloudflare-dns.com"},
 		NotBefore:    time.Now().Add(-1 * time.Hour),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:     []string{"cloudflare-dns.com", "localhost"},
@@ -102,6 +114,13 @@ func initSelfSignedCert() {
 	derBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
 	if err != nil {
 		return
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	privBytes, err := x509.MarshalECPrivateKey(priv)
+	if err == nil {
+		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})
+		_ = os.WriteFile(certFile, certPEM, 0600)
+		_ = os.WriteFile(keyFile, keyPEM, 0600)
 	}
 	sum := sha256.Sum256(derBytes)
 	localPinHex = hex.EncodeToString(sum[:])
@@ -144,6 +163,7 @@ func main() {
 	go startTelemetryMonitor()
 	go startPingMonitor()
 	go startSentinelSurvivalLoop()
+	go startDailyUpdateChecker()
 	registerRoutes(port, panelPath)
 
 	fmt.Printf("Ghoghnoos-lite %s running on port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")

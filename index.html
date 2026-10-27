@@ -38,7 +38,7 @@
       <div>
         <div class="flex items-center gap-1.5">
           <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos-lite</span>
-          <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.5.0</span>
+          <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.4.0</span>
         </div>
         <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun 3-Engine Relay</span>
       </div>
@@ -221,7 +221,7 @@
             </div>
           </div>
 
-          <!-- DEDICATED 3 CONTROL PORTS & ALLOWED TRANSPORT CHECKBOXES -->
+          <!-- DEDICATED 3 CONTROL PORTS (6005, 6006, 6007) -->
           <div class="bg-[#080d14] p-3.5 rounded-xl border border-slate-800 space-y-3">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-1.5">
@@ -231,29 +231,19 @@
               <span class="text-[10px] font-mono text-slate-400">Default: 6005 / 6006 / 6007</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-emerald-400 font-bold" data-i18n="lbl_ctrl_wss">WSS Port (85%)</span>
-                  <input type="checkbox" id="chk-ctrl-wss" checked class="w-4 h-4 accent-emerald-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-wss" value="6007" placeholder="6007" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-sky-400 font-bold" data-i18n="lbl_ctrl_direct">Direct-TLS (75%)</span>
-                  <input type="checkbox" id="chk-ctrl-direct" checked class="w-4 h-4 accent-sky-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-direct" value="6006" placeholder="6006" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-amber-400 font-bold" data-i18n="lbl_ctrl_l4">L4 Raw Port (20%)</span>
-                  <input type="checkbox" id="chk-ctrl-l4" class="w-4 h-4 accent-amber-400 rounded cursor-pointer">
-                </label>
+              <div>
+                <label class="text-[11px] text-amber-400 font-semibold block mb-1" data-i18n="lbl_ctrl_l4">L4 Control Port (20%)</label>
                 <input id="cfg-ctrl-l4" value="6005" placeholder="6005" class="w-full rounded-lg p-2 text-xs font-mono">
               </div>
+              <div>
+                <label class="text-[11px] text-sky-400 font-semibold block mb-1" data-i18n="lbl_ctrl_direct">Direct-TLS Port (75%)</label>
+                <input id="cfg-ctrl-direct" value="6006" placeholder="6006" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-[11px] text-emerald-400 font-semibold block mb-1" data-i18n="lbl_ctrl_wss">WSS Control Port (85%)</label>
+                <input id="cfg-ctrl-wss" value="6007" placeholder="6007" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
             </div>
-            <p class="text-[11px] text-slate-400">Uncheck any method above (such as L4 Raw) to completely disable it from both Reverse Dial-In and Forward Rendezvous Probing.</p>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

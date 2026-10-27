@@ -71,16 +71,17 @@ function downloadLogs24h() {
   window.location.href = `/api/logs/download?server_id=${selectedServer}`;
 }
 
-async function triggerSelfUpdate() {
-  const btn = el('btn-self-update');
+async function triggerSelfUpdate(targetId) {
+  const srvId = targetId || selectedServer;
+  const btn = el(targetId ? `btn-upd-${targetId}` : 'btn-self-update');
   if (btn) {
     btn.className = 'px-2.5 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse';
     btn.innerHTML = '⏳ Updating...';
   }
   try {
-    await fetch('/api/update?server_id=' + selectedServer, { method: 'POST' });
+    await fetch('/api/update?server_id=' + srvId, { method: 'POST' });
   } catch (e) {}
-  setTimeout(() => { window.location.reload(); }, 4500);
+  setTimeout(() => { if (srvId === 'local') window.location.reload(); else fetchState(); }, 4500);
 }
 
 function setDeployMode(mode) {
@@ -139,7 +140,7 @@ async function copyEnrollCommand() {
     const oldText = btn.innerText;
     const oldBg = btn.style.background;
     btn.style.background = '#10b981';
-    btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور خارج پیست کنید' : '✅ Copied to Clipboard!';
+    btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور دیده‌بان پیست کنید' : '✅ Copied to Clipboard!';
     setTimeout(() => {
       btn.style.background = oldBg || 'var(--accent)';
       btn.innerText = oldText;
@@ -439,6 +440,59 @@ function buildHistorySVGChart(points) {
     <text x="${w - padR - 32}" y="${h - 4}" fill="#94a3b8" font-size="10" font-family="monospace">${tEnd}</text></svg>`;
 }
 
+function buildDailyBWChart(dailyUsage) {
+  const map = {};
+  let totRxMB = 0, totTxMB = 0;
+  (dailyUsage || []).forEach(d => {
+    map[d.date] = d;
+    totRxMB += (d.rx_mb || 0);
+    totTxMB += (d.tx_mb || 0);
+  });
+  setText('pill-month-rx', `↓ 30d Rx: ${(totRxMB / 1024).toFixed(2)} GB`);
+  setText('pill-month-tx', `↑ 30d Tx: ${(totTxMB / 1024).toFixed(2)} GB`);
+
+  const days = [];
+  const now = new Date();
+  for (let i = 29; i >= 0; i--) {
+    const dt = new Date(now.getTime() - i * 86400000);
+    const iso = dt.toISOString().slice(0, 10);
+    const rec = map[iso] || { rx_mb: 0, tx_mb: 0 };
+    days.push({ label: iso.slice(8, 10), rxGB: (rec.rx_mb || 0) / 1024, txGB: (rec.tx_mb || 0) / 1024 });
+  }
+
+  let maxGB = 0.5;
+  days.forEach(d => { if (d.rxGB > maxGB) maxGB = d.rxGB; if (d.txGB > maxGB) maxGB = d.txGB; });
+  const topVal = maxGB >= 10 ? Math.ceil(maxGB) : maxGB.toFixed(1);
+  const midVal = (maxGB / 2).toFixed(1);
+
+  const w = 680, h = 165, padL = 58, padR = 12, padT = 14, padB = 24, plotW = w - padL - padR, plotH = h - padT - padB;
+  const colW = plotW / 30;
+  const barW = Math.max((colW - 4) / 2, 2.5);
+
+  let bars = '';
+  days.forEach((d, idx) => {
+    const xBase = padL + idx * colW + 2;
+    const hRx = Math.max((d.rxGB / maxGB) * plotH, d.rxGB > 0 ? 3 : 1);
+    const hTx = Math.max((d.txGB / maxGB) * plotH, d.txGB > 0 ? 3 : 1);
+    const yRx = padT + plotH - hRx;
+    const yTx = padT + plotH - hTx;
+    bars += `<rect x="${xBase.toFixed(1)}" y="${yRx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hRx.toFixed(1)}" rx="1.5" fill="#10b981"/>`;
+    bars += `<rect x="${(xBase + barW + 1).toFixed(1)}" y="${yTx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTx.toFixed(1)}" rx="1.5" fill="#818cf8"/>`;
+    if (idx % 3 === 0 || idx === 29) {
+      bars += `<text x="${(xBase + barW).toFixed(1)}" y="${h - 6}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">${d.label}</text>`;
+    }
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
+    <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
+    <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
+    <text x="6" y="${padT + 4}" fill="#94a3b8" font-size="10" font-family="monospace">${topVal} GB</text>
+    <text x="6" y="${padT + plotH / 2 + 4}" fill="#94a3b8" font-size="10" font-family="monospace">${midVal} GB</text>
+    <text x="6" y="${padT + plotH + 3}" fill="#64748b" font-size="10" font-family="monospace">0 GB</text>
+    ${bars}</svg>`;
+}
+
 function renderServers() {
   const topSel = el('top-server-select'), srcSel = el('tun-src-srv'), dstSel = el('tun-dst-srv');
   if (topSel && srcSel && dstSel) {
@@ -464,9 +518,11 @@ function renderServers() {
     bbrBadge.className = cc === 'bbr' ? 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800' : 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
     bbrBadge.innerText = cc === 'bbr' ? '● BBR Active (Optimized)' : `● ${cc.toUpperCase()} (Not BBR)`;
   }
+  const roleWord = lang === 'fa' ? 'دیده‌بان' : 'Sentinel';
   setHTML('server-cards-list', currentServers.map(s => {
     const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
     const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
+    const verBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-sky-400 border border-slate-700 font-mono">${s.version || 'v2.6.0'}</span>`;
     const probeBtn = !s.is_local
       ? (s.probing
           ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/70 hover:bg-amber-900 text-xs font-semibold animate-pulse">⏸ Probing...</button>`
@@ -474,13 +530,14 @@ function renderServers() {
       : '';
     return `<div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
       <div class="flex justify-between items-start"><div><div class="flex flex-wrap items-center gap-1.5"><h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
-      ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Sentinel</span>`}${viaBadge}</div>
+      ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">${roleWord}</span>`}${verBadge}${viaBadge}</div>
       <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port || '6001'}</b></div></div>
       <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span></div>
       <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span></div>
       <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60"><div class="flex flex-wrap items-center gap-1.5">
       <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
       ${probeBtn}
+      <button id="btn-upd-${s.id}" onclick="triggerSelfUpdate('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Update Server Binary from GitHub">⬆️ Update</button>
       <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 SSH</button>
       <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">🌐 Info</a></div>
       ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
@@ -517,6 +574,7 @@ function renderPingAnalytics() {
   const totMbps = rxMbps + txMbps;
   setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
+  setHTML('svg-daily-bw', buildDailyBWChart(sysMetrics.daily_usage || []));
 
   if (!pingSummary) return;
   setText('kpi-reach', pingSummary.reach_str || '20 / 20');

@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +27,7 @@ type ServerNode struct {
 	SSHPass   string `json:"ssh_pass"`
 	PanelPort string `json:"panel_port"`
 	CertPin   string `json:"cert_pin"`
+	Version   string `json:"version,omitempty"`
 	Status    string `json:"status"`
 	ViaMethod string `json:"via_method,omitempty"`
 	Probing   bool   `json:"probing,omitempty"`
@@ -60,6 +63,12 @@ type PingPoint struct {
 	Error     string `json:"err,omitempty"`
 }
 
+type DailyBW struct {
+	Date string  `json:"date"` // "2026-10-28"
+	RxMB uint64  `json:"rx_mb"`
+	TxMB uint64  `json:"tx_mb"`
+}
+
 type SystemMetrics struct {
 	CPUPercent float64   `json:"cpu_pct"`
 	RAMUsedMB  uint64    `json:"ram_used_mb"`
@@ -72,6 +81,7 @@ type SystemMetrics struct {
 	SrvTotalGB float64   `json:"srv_total_gb"`
 	BBRStatus  string    `json:"bbr_status"`
 	Qdisc      string    `json:"qdisc"`
+	DailyUsage []DailyBW `json:"daily_usage,omitempty"`
 }
 
 type UIPrefs struct {
@@ -85,6 +95,9 @@ type Database struct {
 	Servers        []ServerNode `json:"servers"`
 	Tunnels        []Tunnel     `json:"tunnels"`
 	PingHistory    []PingPoint  `json:"ping_history"`
+	DailyUsage     []DailyBW    `json:"daily_usage"`
+	LastRawRx      uint64       `json:"last_raw_rx"`
+	LastRawTx      uint64       `json:"last_raw_tx"`
 	AppBaseBytes   uint64       `json:"app_base_bytes"`
 	EnrollToken    string       `json:"enroll_token"`
 	CtrlL4Port     string       `json:"ctrl_l4_port"`
@@ -103,6 +116,74 @@ type ConfigReq struct {
 	CtrlDirect  string `json:"ctrl_direct"`
 	CtrlWSS     string `json:"ctrl_wss"`
 	CtrlMethods string `json:"ctrl_methods"`
+}
+
+// Shared Per-Tunnel Token Bucket so multi-stream speedtests cannot bypass SpeedLimit
+type SharedRateLimiter struct {
+	mu         sync.Mutex
+	rateBps    float64
+	tokens     float64
+	lastUpdate time.Time
+}
+
+var (
+	tunnelLimiters   = make(map[string]*SharedRateLimiter)
+	tunnelLimitersMu sync.Mutex
+)
+
+func updateTunnelLimiter(tunID, speedLimitStr string) {
+	mbps, _ := strconv.ParseFloat(strings.TrimSpace(speedLimitStr), 64)
+	baseID := strings.TrimSuffix(tunID, "-exit")
+	tunnelLimitersMu.Lock()
+	defer tunnelLimitersMu.Unlock()
+	if mbps <= 0 {
+		delete(tunnelLimiters, tunID)
+		delete(tunnelLimiters, baseID)
+		return
+	}
+	bps := mbps * 1024 * 1024
+	lim := &SharedRateLimiter{rateBps: bps, tokens: bps * 0.25, lastUpdate: time.Now()}
+	tunnelLimiters[tunID] = lim
+	tunnelLimiters[baseID] = lim
+}
+
+func getTunnelLimiter(tunID string) *SharedRateLimiter {
+	tunnelLimitersMu.Lock()
+	defer tunnelLimitersMu.Unlock()
+	if lim, ok := tunnelLimiters[tunID]; ok {
+		return lim
+	}
+	baseID := strings.TrimSuffix(tunID, "-exit")
+	return tunnelLimiters[baseID]
+}
+
+func (l *SharedRateLimiter) WaitBytes(n int) {
+	if l == nil || n <= 0 {
+		return
+	}
+	l.mu.Lock()
+	now := time.Now()
+	elapsed := now.Sub(l.lastUpdate).Seconds()
+	if elapsed > 0 {
+		l.tokens += elapsed * l.rateBps
+		maxBurst := l.rateBps * 0.25 // 250ms max burst window
+		if maxBurst < 65536 {
+			maxBurst = 65536
+		}
+		if l.tokens > maxBurst {
+			l.tokens = maxBurst
+		}
+		l.lastUpdate = now
+	}
+	l.tokens -= float64(n)
+	var waitDur time.Duration
+	if l.tokens < 0 {
+		waitDur = time.Duration((-l.tokens / l.rateBps) * float64(time.Second))
+	}
+	l.mu.Unlock()
+	if waitDur > 0 {
+		time.Sleep(waitDur)
+	}
 }
 
 func encryptSecret(plain string) string {
@@ -358,6 +439,7 @@ func loadDBFromDisk(port string) {
 			db.Servers[i].IP = localIP
 			db.Servers[i].PanelPort = port
 			db.Servers[i].CertPin = localPinHex
+			db.Servers[i].Version = appVersion
 			db.Servers[i].Status = "Online"
 			db.Servers[i].IsLocal = true
 			hasLocal = true
@@ -367,7 +449,7 @@ func loadDBFromDisk(port string) {
 	if !hasLocal {
 		master := ServerNode{
 			ID: "local", Name: "Master", IP: localIP, SSHPort: "22",
-			SSHUser: "root", PanelPort: port, CertPin: localPinHex, Status: "Online", IsLocal: true,
+			SSHUser: "root", PanelPort: port, CertPin: localPinHex, Version: appVersion, Status: "Online", IsLocal: true,
 		}
 		db.Servers = append([]ServerNode{master}, db.Servers...)
 	}
@@ -381,6 +463,7 @@ func loadDBFromDisk(port string) {
 }
 
 func dispatchTunnelEngine(t Tunnel) {
+	updateTunnelLimiter(t.ID, t.SpeedLimit)
 	switch t.Method {
 	case "direct", "spoof":
 		go startDirectTLSEngine(t)

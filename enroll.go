@@ -45,10 +45,7 @@ type EnrollReply struct {
 	CtrlMethods string        `json:"ctrl_methods,omitempty"`
 }
 
-var (
-	appliedSentinelExits = make(map[string]string)
-	reverseDialPaused    bool
-)
+var appliedSentinelExits = make(map[string]string)
 
 func isControlMethodAllowed(m string) bool {
 	for _, allowed := range getAllowedControlMethods() {
@@ -284,18 +281,6 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 	}
 
-	if targetSrv != nil && targetSrv.ReversePaused {
-		var cmds []string
-		if q, ok := pendingRemoteCmds[targetSrv.ID]; ok && len(q) > 0 {
-			cmds = append([]string{}, q...)
-			delete(pendingRemoteCmds[targetSrv.ID])
-		}
-		cmds = append(cmds, "pause-dial")
-		cMethods := db.CtrlMethods
-		mu.Unlock()
-		return EnrollReply{OK: true, MasterPin: localPinHex, NodeID: targetSrv.ID, PendingCmds: cmds, CtrlMethods: cMethods}
-	}
-
 	if targetSrv == nil {
 		name := strings.TrimSpace(hb.NodeName)
 		if name == "" || strings.HasPrefix(name, "Sentinel") {
@@ -434,46 +419,78 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 	if nodeName == "" {
 		nodeName = "Server-2"
 	}
-	_, l4, dir, wss := parseMasterAddrSpec(masterSpec)
-	fmt.Println("\033[1;36m┌── Ghoghnoos Sentinel Dial-In & Listener Setup ──────────────────┐\033[0m")
+	host, l4, dir, wss := parseMasterAddrSpec(masterSpec)
+	listenOnly := "0"
+
+	// Interactive terminal prompts via /dev/tty (works even inside curl | bash)
+	if tty, err := os.Open("/dev/tty"); err == nil {
+		defer tty.Close()
+		rd := bufio.NewReader(tty)
+		fmt.Println("\033[1;36m┌── Ghoghnoos Sentinel Interactive Setup ─────────────────────────┐\033[0m")
+		fmt.Printf("  Master IP Address [%s]: ", host)
+		if inp, _ := rd.ReadString('\n'); strings.TrimSpace(inp) != "" {
+			host = strings.TrimSpace(inp)
+		}
+		fmt.Println("  Select Connection Mode:")
+		fmt.Println("    \033[1;32m[1]\033[0m Connect to Master & Listen on Ports \033[1;33m(Default - Bidirectional)\033[0m")
+		fmt.Println("    \033[1;36m[2]\033[0m Listen Only on Ports \033[1;33m(Passive Mode - Master Probes Sentinel)\033[0m")
+		fmt.Print("  Enter Choice [1]: ")
+		if inp, _ := rd.ReadString('\n'); strings.TrimSpace(inp) == "2" {
+			listenOnly = "1"
+		}
+		fmt.Printf("  Control Ports L4:Direct:WSS [%s:%s:%s]: ", l4, dir, wss)
+		if inp, _ := rd.ReadString('\n'); strings.TrimSpace(inp) != "" {
+			pts := strings.Split(strings.TrimSpace(inp), ":")
+			if len(pts) == 3 {
+				l4, dir, wss = strings.TrimSpace(pts[0]), strings.TrimSpace(pts[1]), strings.TrimSpace(pts[2])
+			}
+		}
+	}
+
+	masterSpec = fmt.Sprintf("%s:%s:%s:%s", host, l4, dir, wss)
+	fmt.Println("\033[1;36m├── Sentinel Configuration Summary ───────────────────────────────┤\033[0m")
 	fmt.Printf("\033[1;36m│\033[0m Master Target : %-47s \033[1;36m│\033[0m\n", masterSpec)
 	fmt.Printf("\033[1;36m│\033[0m Control Ports : WSS :%s | Direct-TLS :%s | L4 :%-12s \033[1;36m│\033[0m\n", wss, dir, l4)
 
-	methods := []struct{ id, label, port string }{
-		{"wss", "WSS (85% Stealth)", wss},
-		{"direct", "Direct-TLS (75%) ", dir},
-		{"forward", "L4 API (20% Raw) ", l4},
-	}
 	winningMethod := "wss"
-	connectedNow := false
-
-	for idx, m := range methods {
-		fmt.Printf("\033[1;36m│\033[0m [%d/3] %-17s (:%-5s) ... ", idx+1, m.label, m.port)
-		if rep, ms, err := tryDialControl(masterSpec, token, nodeName, m.id, false, nil); err == nil && rep.OK {
-			fmt.Printf("\033[1;32m[✔ Connected | %d ms]\033[0m    \033[1;36m│\033[0m\n", ms)
-			winningMethod = m.id
-			connectedNow = true
-			break
+	if listenOnly == "1" {
+		fmt.Printf("\033[1;36m│\033[0m \033[1;32m✔ Mode: LISTEN ONLY on :%s, :%s, :%s (Waiting for Master Probe)\033[0m\033[1;36m│\033[0m\n", l4, dir, wss)
+	} else {
+		methods := []struct{ id, label, port string }{
+			{"wss", "WSS (85% Stealth)", wss},
+			{"direct", "Direct-TLS (75%) ", dir},
+			{"forward", "L4 API (20% Raw) ", l4},
 		}
-		fmt.Printf("\033[1;33m[Pending / Queued]\033[0m      \033[1;36m│\033[0m\n")
-	}
-
-	if !connectedNow {
-		fmt.Println("\033[1;36m│\033[0m \033[1;33m» Direct dial blocked. Starting background 120-150s Survival Loop\033[0m\033[1;36m│\033[0m")
-		fmt.Printf("\033[1;36m│\033[0m \033[1;32m» Also listening on :%s, :%s, :%s for Master Rendezvous!\033[0m   \033[1;36m│\033[0m\n", l4, dir, wss)
+		connectedNow := false
+		for idx, m := range methods {
+			fmt.Printf("\033[1;36m│\033[0m [%d/3] %-17s (:%-5s) ... ", idx+1, m.label, m.port)
+			if rep, ms, err := tryDialControl(masterSpec, token, nodeName, m.id, false, nil); err == nil && rep.OK {
+				fmt.Printf("\033[1;32m[✔ Connected | %d ms]\033[0m    \033[1;36m│\033[0m\n", ms)
+				winningMethod = m.id
+				connectedNow = true
+				break
+			}
+			fmt.Printf("\033[1;33m[Pending / Queued]\033[0m      \033[1;36m│\033[0m\n")
+		}
+		if !connectedNow {
+			fmt.Println("\033[1;36m│\033[0m \033[1;33m» Direct dial blocked. Starting 120-150s Loop + Passive Listeners\033[0m\033[1;36m│\033[0m")
+		}
 	}
 	fmt.Println("\033[1;36m└─────────────────────────────────────────────────────────────────┘\033[0m")
-	saveEnrollmentConfig(masterSpec, token, nodeName, winningMethod, l4, dir, wss)
+	saveEnrollmentConfig(masterSpec, token, nodeName, winningMethod, l4, dir, wss, listenOnly)
 }
 
-func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss string) {
+func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, listenOnly string) {
 	_ = os.MkdirAll("/opt/litetun", 0755)
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
 		port = "6001"
 	}
-	content := fmt.Sprintf("PANEL_PORT=%s\nPANEL_PATH=sentinel\nPANEL_USER=admin\nPANEL_PASS=admin\nMASTER_ADDR=%s\nENROLL_TOKEN=%s\nNODE_NAME=%s\nACTIVE_METHOD=%s\nCTRL_L4_PORT=%s\nCTRL_DIRECT_PORT=%s\nCTRL_WSS_PORT=%s\n",
-		port, masterSpec, token, nodeName, activeMethod, l4, dir, wss)
+	if listenOnly == "" {
+		listenOnly = strings.TrimSpace(os.Getenv("LISTEN_ONLY"))
+	}
+	content := fmt.Sprintf("PANEL_PORT=%s\nPANEL_PATH=sentinel\nPANEL_USER=admin\nPANEL_PASS=admin\nMASTER_ADDR=%s\nENROLL_TOKEN=%s\nNODE_NAME=%s\nACTIVE_METHOD=%s\nCTRL_L4_PORT=%s\nCTRL_DIRECT_PORT=%s\nCTRL_WSS_PORT=%s\nLISTEN_ONLY=%s\n",
+		port, masterSpec, token, nodeName, activeMethod, l4, dir, wss, listenOnly)
 	_ = os.WriteFile(confPath, []byte(content), 0644)
 }
 
@@ -485,24 +502,19 @@ func startSentinelSurvivalLoop() {
 	if masterSpec == "" || token == "" {
 		return
 	}
+	l4, dir, wss := getControlPorts()
+	if strings.TrimSpace(os.Getenv("LISTEN_ONLY")) == "1" {
+		addLog(fmt.Sprintf("PASSIVE-MODE: Listen-Only active on :%s/:%s/:%s (Outbound Reverse Dial disabled)", l4, dir, wss))
+		return
+	}
 	if activeMethod == "" {
 		activeMethod = "wss"
 	}
-	l4, dir, wss := getControlPorts()
 	addLog(fmt.Sprintf("SURVIVAL: Reverse Loop (120-150s) -> %s | Listening on :%s/:%s/:%s", masterSpec, l4, dir, wss))
 
 	lastUpgradeCheck := time.Now()
 
 	for {
-		mu.Lock()
-		paused := reverseDialPaused
-		mu.Unlock()
-		if paused {
-			jitterBig, _ := rand.Int(rand.Reader, big.NewInt(30))
-			time.Sleep(time.Duration(120+int(jitterBig.Int64())) * time.Second)
-			continue
-		}
-
 		order := getAllowedControlMethods()
 		if !isControlMethodAllowed(activeMethod) && len(order) > 0 {
 			activeMethod = order[0]
@@ -516,7 +528,7 @@ func startSentinelSurvivalLoop() {
 				}
 				if rUp, _, errUp := tryDialControl(masterSpec, token, nodeName, cand, false, nil); errUp == nil && rUp.OK {
 					activeMethod = cand
-					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss)
+					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, "0")
 					addLog(fmt.Sprintf("SURVIVAL-UPGRADE: Upgraded Control Highway to %s!", strings.ToUpper(activeMethod)))
 					break
 				}
@@ -530,7 +542,7 @@ func startSentinelSurvivalLoop() {
 					activeMethod = cand
 					rep = r2
 					err = nil
-					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss)
+					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, "0")
 					addLog(fmt.Sprintf("SURVIVAL-OK: Connected via %s!", strings.ToUpper(activeMethod)))
 					break
 				}

@@ -17,20 +17,19 @@ import (
 )
 
 type ServerNode struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	IP            string `json:"ip"`
-	SSHPort       string `json:"ssh_port"`
-	SSHUser       string `json:"ssh_user"`
-	SSHPass       string `json:"ssh_pass"`
-	PanelPort     string `json:"panel_port"`
-	CertPin       string `json:"cert_pin"`
-	Status        string `json:"status"`
-	ViaMethod     string `json:"via_method,omitempty"`
-	Probing       bool   `json:"probing,omitempty"`
-	ReversePaused bool   `json:"reverse_paused,omitempty"`
-	LastSeen      int64  `json:"last_seen,omitempty"`
-	IsLocal       bool   `json:"is_local"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	IP        string `json:"ip"`
+	SSHPort   string `json:"ssh_port"`
+	SSHUser   string `json:"ssh_user"`
+	SSHPass   string `json:"ssh_pass"`
+	PanelPort string `json:"panel_port"`
+	CertPin   string `json:"cert_pin"`
+	Status    string `json:"status"`
+	ViaMethod string `json:"via_method,omitempty"`
+	Probing   bool   `json:"probing,omitempty"`
+	LastSeen  int64  `json:"last_seen,omitempty"`
+	IsLocal   bool   `json:"is_local"`
 }
 
 type Tunnel struct {
@@ -222,7 +221,7 @@ func executeLocalConsoleCmd(cmd, port string) {
 	addLog("root@litetun:~# " + cmd)
 	switch strings.ToLower(cmd) {
 	case "help":
-		addLog("Commands: status | bbr | pin | pause-dial | resume-dial | clear | restart")
+		addLog("Commands: status | bbr | pin | clear | restart")
 	case "status":
 		ram, goCnt := getMemoryStats()
 		l4, dir, wss := getControlPorts()
@@ -232,16 +231,6 @@ func executeLocalConsoleCmd(cmd, port string) {
 		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
 	case "pin":
 		addLog("SHA256-PIN: " + localPinHex)
-	case "pause-dial":
-		mu.Lock()
-		reverseDialPaused = true
-		mu.Unlock()
-		addLog("SURVIVAL-PAUSED: Outbound reverse dial-in paused. Passive listeners remain active!")
-	case "resume-dial":
-		mu.Lock()
-		reverseDialPaused = false
-		mu.Unlock()
-		addLog("SURVIVAL-RESUMED: Outbound reverse dial-in resumed!")
 	case "clear":
 		mu.Lock()
 		logs = []string{"[SYSTEM] Terminal cleared."}

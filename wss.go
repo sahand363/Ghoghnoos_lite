@@ -12,25 +12,48 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
-type throttledWriter struct {
-	w                io.Writer
-	counter          *uint64
+type sharedThrottleBucket struct {
+	mu               sync.Mutex
 	bytesLimitPerSec int64
 	bytesSentThisSec int64
 	lastSecStart     time.Time
 }
 
+type throttledWriter struct {
+	w       io.Writer
+	counter *uint64
+	bucket  *sharedThrottleBucket
+}
+
+var (
+	sharedBuckets   = make(map[int64]*sharedThrottleBucket)
+	sharedBucketsMu sync.Mutex
+)
+
 func newThrottledWriter(w io.Writer, counter *uint64, mbPerSec float64) io.Writer {
 	limit := int64(mbPerSec * 1024.0 * 1024.0)
+	if limit <= 0 {
+		return &throttledWriter{w: w, counter: counter, bucket: nil}
+	}
+	sharedBucketsMu.Lock()
+	b, ok := sharedBuckets[limit]
+	if !ok {
+		b = &sharedThrottleBucket{
+			bytesLimitPerSec: limit,
+			lastSecStart:     time.Now(),
+		}
+		sharedBuckets[limit] = b
+	}
+	sharedBucketsMu.Unlock()
 	return &throttledWriter{
-		w:                w,
-		counter:          counter,
-		bytesLimitPerSec: limit,
-		lastSecStart:     time.Now(),
+		w:       w,
+		counter: counter,
+		bucket:  b,
 	}
 }
 
@@ -43,7 +66,7 @@ func parseSpeedLimit(raw string) float64 {
 }
 
 func (t *throttledWriter) Write(p []byte) (int, error) {
-	if t.bytesLimitPerSec <= 0 {
+	if t.bucket == nil || t.bucket.bytesLimitPerSec <= 0 {
 		n, err := t.w.Write(p)
 		if n > 0 {
 			atomic.AddUint64(t.counter, uint64(n))
@@ -52,13 +75,19 @@ func (t *throttledWriter) Write(p []byte) (int, error) {
 	}
 	total := 0
 	for len(p) > 0 {
+		t.bucket.mu.Lock()
 		now := time.Now()
-		if now.Sub(t.lastSecStart) >= time.Second {
-			t.bytesSentThisSec = 0
-			t.lastSecStart = now
+		if now.Sub(t.bucket.lastSecStart) >= 250*time.Millisecond {
+			t.bucket.bytesSentThisSec = 0
+			t.bucket.lastSecStart = now
 		}
-		avail := t.bytesLimitPerSec - t.bytesSentThisSec
+		windowLimit := t.bucket.bytesLimitPerSec / 4 // 250ms smooth window
+		if windowLimit < 16384 {
+			windowLimit = 16384
+		}
+		avail := windowLimit - t.bucket.bytesSentThisSec
 		if avail <= 0 {
+			t.bucket.mu.Unlock()
 			time.Sleep(15 * time.Millisecond)
 			continue
 		}
@@ -66,10 +95,15 @@ func (t *throttledWriter) Write(p []byte) (int, error) {
 		if chunk > avail {
 			chunk = avail
 		}
+		if chunk > 32768 {
+			chunk = 32768
+		}
+		t.bucket.bytesSentThisSec += chunk
+		t.bucket.mu.Unlock()
+
 		n, err := t.w.Write(p[:chunk])
 		total += n
 		if n > 0 {
-			t.bytesSentThisSec += int64(n)
 			atomic.AddUint64(t.counter, uint64(n))
 		}
 		if err != nil {

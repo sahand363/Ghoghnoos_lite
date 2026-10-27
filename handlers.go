@@ -125,7 +125,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
-		w.Header().Set("Cache-Control", "private, no-cache")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(i18nJS)
 	})
@@ -134,7 +134,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
-		w.Header().Set("Cache-Control", "private, no-cache")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(appJS)
 	})
@@ -248,11 +248,13 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 		if strings.HasSuffix(reqPath, "i18n.js") {
+			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 			w.Write(i18nJS)
 			return
 		}
 		if strings.HasSuffix(reqPath, "app.js") {
+			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 			w.Write(appJS)
 			return
@@ -288,6 +290,9 @@ func registerRoutes(port, panelPath string) {
 			recentLocalLogs = append([]string{}, logs...)
 		}
 		metricsCopy := sysMetrics
+		if activeTab == "logs" || activeTab == "" {
+			metricsCopy.DailyUsage = append([]DailyBW{}, db.DailyUsage...)
+		}
 		var pingSummary map[string]interface{}
 		if activeTab == "logs" {
 			pingSummary = buildPingSummary(db.PingHistory, targetSrvID, rangeStr)
@@ -304,7 +309,7 @@ func registerRoutes(port, panelPath string) {
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 1800 * time.Millisecond}
-				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort)); err == nil {
+				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state?tab=logs", srv.IP, srv.PanelPort)); err == nil {
 					defer resp.Body.Close()
 					var rem map[string]interface{}
 					if json.NewDecoder(resp.Body).Decode(&rem) == nil {
@@ -549,6 +554,7 @@ func registerRoutes(port, panelPath string) {
 			id := r.URL.Query().Get("id")
 			mu.Lock()
 			stopTunnelIfRunning(id)
+			updateTunnelLimiter(id, "0")
 			var updated []Tunnel
 			for _, item := range db.Tunnels {
 				if item.ID != id {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -105,7 +104,6 @@ func startMasterForwardProber(srvID string) {
 		order := []string{"wss", "direct", "forward"}
 		activeMethod := ""
 		lastUpgrade := time.Now()
-		appliedExits := make(map[string]string)
 
 		for {
 			select {
@@ -129,22 +127,31 @@ func startMasterForwardProber(srvID string) {
 				queuedCmds = append([]string{}, q...)
 				delete(pendingRemoteCmds, srvID)
 			}
+			var exitsForSrv []Tunnel
+			for _, t := range db.Tunnels {
+				if t.TargetServer == srvID && t.Role != "server" {
+					exitsForSrv = append(exitsForSrv, Tunnel{
+						ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
+						TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
+						Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
+					})
+				}
+			}
 			mu.Unlock()
 
 			l4, dir, wss := getControlPorts()
 			targetSpec := fmt.Sprintf("%s:%s:%s:%s", ip, l4, dir, wss)
 			cmdPayload := strings.Join(queuedCmds, "||")
 
-			// 12-Hour Opportunistic Stealth Upgrade if connected via lower-stealth forward method
 			if activeMethod != "" && activeMethod != "wss" && time.Since(lastUpgrade) >= 12*time.Hour {
 				lastUpgrade = time.Now()
 				for _, cand := range order {
 					if cand == activeMethod {
 						break
 					}
-					if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true); err == nil && rep.OK {
+					if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true, exitsForSrv); err == nil && rep.OK {
 						activeMethod = cand
-						applyForwardProbeSuccess(srvID, cand, rep, &appliedExits)
+						applyForwardProbeSuccess(srvID, cand, rep)
 						addLog(fmt.Sprintf("RENDEZVOUS-UPGRADE [%s]: Upgraded Forward Link to FWD-%s!", sName, strings.ToUpper(cand)))
 						break
 					}
@@ -153,19 +160,19 @@ func startMasterForwardProber(srvID string) {
 
 			connected := false
 			if activeMethod != "" {
-				if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, activeMethod, true); err == nil && rep.OK {
+				if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, activeMethod, true, exitsForSrv); err == nil && rep.OK {
 					connected = true
-					applyForwardProbeSuccess(srvID, activeMethod, rep, &appliedExits)
+					applyForwardProbeSuccess(srvID, activeMethod, rep)
 				}
 			}
 
 			if !connected {
 				addLog(fmt.Sprintf("RENDEZVOUS-HUNT [%s]: Probing %s (WSS :%s ➔ Direct :%s ➔ L4 :%s)...", sName, ip, wss, dir, l4))
 				for _, cand := range order {
-					if rep, ms, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true); err == nil && rep.OK {
+					if rep, ms, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true, exitsForSrv); err == nil && rep.OK {
 						activeMethod = cand
 						connected = true
-						applyForwardProbeSuccess(srvID, cand, rep, &appliedExits)
+						applyForwardProbeSuccess(srvID, cand, rep)
 						addLog(fmt.Sprintf("RENDEZVOUS-OK [%s]: Connected to %s via FWD-%s (%d ms)!", sName, ip, strings.ToUpper(cand), ms))
 						break
 					}
@@ -187,7 +194,7 @@ func startMasterForwardProber(srvID string) {
 	}()
 }
 
-func applyForwardProbeSuccess(srvID, method string, rep EnrollReply, appliedExits *map[string]string) {
+func applyForwardProbeSuccess(srvID, method string, rep EnrollReply) {
 	mu.Lock()
 	srv := findServerByID(srvID)
 	if srv == nil {
@@ -199,6 +206,7 @@ func applyForwardProbeSuccess(srvID, method string, rep EnrollReply, appliedExit
 	}
 	if rep.MasterPin != "" {
 		srv.CertPin = rep.MasterPin
+		syncServerTunnelsPinLocked(srvID, rep.MasterPin)
 	}
 	srv.Status = "Online"
 	srv.Probing = false
@@ -213,30 +221,6 @@ func applyForwardProbeSuccess(srvID, method string, rep EnrollReply, appliedExit
 		Metrics:    rep.Metrics,
 		Logs:       rep.Logs,
 	}
-
-	var exitsToPush []Tunnel
-	for _, t := range db.Tunnels {
-		if t.TargetServer == srvID && t.Role != "server" {
-			sig := fmt.Sprintf("%s:%s:%s:%s", t.Method, t.TunnelPort, t.InboundPorts, t.SpeedLimit)
-			if (*appliedExits)[t.ID] != sig {
-				(*appliedExits)[t.ID] = sig
-				exitsToPush = append(exitsToPush, Tunnel{
-					ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
-					TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
-					Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
-				})
-			}
-		}
-	}
-	sIP, sPort := srv.IP, srv.PanelPort
 	saveDBLocked()
 	mu.Unlock()
-
-	for _, et := range exitsToPush {
-		body, _ := json.Marshal(et)
-		client := &http.Client{Timeout: 3 * time.Second}
-		if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/tunnel", sIP, sPort), "application/json", bytes.NewReader(body)); err == nil {
-			resp.Body.Close()
-		}
-	}
 }

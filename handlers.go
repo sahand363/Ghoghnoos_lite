@@ -13,6 +13,94 @@ import (
 	"time"
 )
 
+func buildPingSummary(all []PingPoint, targetSrvID, rangeStr string) map[string]interface{} {
+	nowSec := time.Now().Unix()
+	rangeSec := int64(86400)
+	if rangeStr == "7d" {
+		rangeSec = 7 * 86400
+	}
+	var srvHist []PingPoint
+	for _, p := range all {
+		if targetSrvID == "" || targetSrvID == "local" || p.ServerID == "" || p.ServerID == targetSrvID {
+			srvHist = append(srvHist, p)
+		}
+	}
+	last20 := srvHist
+	if len(last20) > 20 {
+		last20 = last20[len(last20)-20:]
+	}
+	rOk := 0
+	for _, x := range last20 {
+		if x.OK {
+			rOk++
+		}
+	}
+	reachStr := "20 / 20"
+	if len(last20) > 0 {
+		reachStr = fmt.Sprintf("%d / %d", rOk, len(last20))
+	}
+
+	var filtered []PingPoint
+	var okSum int64
+	var okCnt, fails int
+	var latestMs int64 = 50
+	var recentPings []int64
+	var windows []string
+	var curStart int64
+
+	for _, p := range srvHist {
+		if p.Timestamp >= nowSec-rangeSec {
+			filtered = append(filtered, p)
+			if p.OK && p.LatencyMS > 0 {
+				okSum += p.LatencyMS
+				okCnt++
+				latestMs = p.LatencyMS
+				recentPings = append(recentPings, p.LatencyMS)
+				if curStart != 0 {
+					windows = append(windows, fmt.Sprintf("%s ➔ %s", time.Unix(curStart, 0).Format("01-02 15:04"), time.Unix(p.Timestamp, 0).Format("15:04")))
+					curStart = 0
+				}
+			} else if !p.OK {
+				fails++
+				if curStart == 0 {
+					curStart = p.Timestamp
+				}
+			}
+		}
+	}
+	if curStart != 0 {
+		windows = append(windows, fmt.Sprintf("%s ➔ NOW", time.Unix(curStart, 0).Format("01-02 15:04")))
+	}
+	if len(recentPings) > 25 {
+		recentPings = recentPings[len(recentPings)-25:]
+	}
+	if len(windows) > 4 {
+		windows = windows[len(windows)-4:]
+	}
+	avgMs := int64(50)
+	if okCnt > 0 {
+		avgMs = okSum / int64(okCnt)
+	}
+	uptimePct := "100.0"
+	if len(filtered) > 0 {
+		uptimePct = fmt.Sprintf("%.1f", float64(okCnt)*100.0/float64(len(filtered)))
+	}
+	chartPts := filtered
+	if len(chartPts) > 90 {
+		chartPts = chartPts[len(chartPts)-90:]
+	}
+	return map[string]interface{}{
+		"reach_str":    reachStr,
+		"uptime_pct":   uptimePct,
+		"avg_ms":       avgMs,
+		"latest_ms":    latestMs,
+		"fails":        fails,
+		"recent_pings": recentPings,
+		"windows":      windows,
+		"chart_points": chartPts,
+	}
+}
+
 func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		handleLoginRoute(w, r, panelPath)
@@ -37,6 +125,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
+		w.Header().Set("Cache-Control", "private, max-age=3600")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(i18nJS)
 	})
@@ -45,6 +134,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
+		w.Header().Set("Cache-Control", "private, max-age=3600")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(appJS)
 	})
@@ -176,22 +266,32 @@ func registerRoutes(port, panelPath string) {
 			return
 		}
 		targetSrvID := r.URL.Query().Get("server_id")
+		activeTab := r.URL.Query().Get("tab")
+		rangeStr := r.URL.Query().Get("range")
 		ramMB, goroutines := getMemoryStats()
 		l4Port, dirPort, wssPort := getControlPorts()
 
 		mu.Lock()
-		serversCopy := append([]ServerNode{}, db.Servers...)
+		serversCopy := make([]ServerNode, len(db.Servers))
+		for i, s := range db.Servers {
+			s.SSHPass = "" // Never expose SSH password to browser JSON
+			serversCopy[i] = s
+		}
 		tunnelsCopy := append([]Tunnel{}, db.Tunnels...)
-		historyCopy := append([]PingPoint{}, db.PingHistory...)
 		prefsCopy := db.Prefs
 		enrollTok := db.EnrollToken
+		updAvail := updateAvailable
 		var recentLocalLogs []string
-		if len(logs) > 150 {
-			recentLocalLogs = append([]string{}, logs[len(logs)-150:]...)
+		if len(logs) > 35 {
+			recentLocalLogs = append([]string{}, logs[len(logs)-35:]...)
 		} else {
 			recentLocalLogs = append([]string{}, logs...)
 		}
 		metricsCopy := sysMetrics
+		var pingSummary map[string]interface{}
+		if activeTab == "logs" {
+			pingSummary = buildPingSummary(db.PingHistory, targetSrvID, rangeStr)
+		}
 		mu.Unlock()
 
 		activeLogs, activePort, activePath, activePin := recentLocalLogs, port, panelPath, localPinHex
@@ -203,7 +303,7 @@ func registerRoutes(port, panelPath string) {
 			cachedHB, hasCached := remoteStateCache[targetSrvID]
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
-				client := &http.Client{Timeout: 2000 * time.Millisecond}
+				client := &http.Client{Timeout: 1800 * time.Millisecond}
 				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state", srv.IP, srv.PanelPort)); err == nil {
 					defer resp.Body.Close()
 					var rem map[string]interface{}
@@ -212,6 +312,9 @@ func registerRoutes(port, panelPath string) {
 							activeLogs = []string{}
 							for _, item := range rl {
 								activeLogs = append(activeLogs, fmt.Sprintf("%v", item))
+							}
+							if len(activeLogs) > 35 {
+								activeLogs = activeLogs[len(activeLogs)-35:]
 							}
 						}
 						if rm, ok := rem["metrics"].(map[string]interface{}); ok {
@@ -251,11 +354,11 @@ func registerRoutes(port, panelPath string) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"version": appVersion, "ram_mb": ramMB, "goroutines": goroutines, "server_time": srvTime,
-			"metrics": metricsCopy, "servers": serversCopy, "tunnels": tunnelsCopy, "ping_history": historyCopy,
-			"prefs": prefsCopy, "logs": activeLogs, "panel_port": activePort, "panel_path": activePath,
-			"panel_user": panelUser, "cert_pin": activePin, "enroll_token": enrollTok, "master_ip": localIP,
-			"dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
+			"version": appVersion, "update_available": updAvail, "ram_mb": ramMB, "goroutines": goroutines,
+			"server_time": srvTime, "metrics": metricsCopy, "servers": serversCopy, "tunnels": tunnelsCopy,
+			"ping_summary": pingSummary, "prefs": prefsCopy, "logs": activeLogs, "panel_port": activePort,
+			"panel_path": activePath, "panel_user": panelUser, "cert_pin": activePin, "enroll_token": enrollTok,
+			"master_ip": localIP, "dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
 		})
 	})
 

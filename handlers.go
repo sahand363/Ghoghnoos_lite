@@ -274,7 +274,7 @@ func registerRoutes(port, panelPath string) {
 		mu.Lock()
 		serversCopy := make([]ServerNode, len(db.Servers))
 		for i, s := range db.Servers {
-			s.SSHPass = "" // Never expose SSH password to browser JSON
+			s.SSHPass = ""
 			serversCopy[i] = s
 		}
 		tunnelsCopy := append([]Tunnel{}, db.Tunnels...)

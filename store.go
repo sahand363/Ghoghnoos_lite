@@ -1,8 +1,14 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -97,6 +103,72 @@ type ConfigReq struct {
 	CtrlWSS    string `json:"ctrl_wss"`
 }
 
+func encryptSecret(plain string) string {
+	if plain == "" || strings.HasPrefix(plain, "enc:") {
+		return plain
+	}
+	key := sha256.Sum256([]byte("ghq-vault-" + localPinHex))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return plain
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return plain
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	_, _ = io.ReadFull(rand.Reader, nonce)
+	sealed := gcm.Seal(nonce, nonce, []byte(plain), nil)
+	return "enc:" + base64.StdEncoding.EncodeToString(sealed)
+}
+
+func decryptSecret(val string) string {
+	if !strings.HasPrefix(val, "enc:") {
+		return val
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(val, "enc:"))
+	if err != nil {
+		return ""
+	}
+	key := sha256.Sum256([]byte("ghq-vault-" + localPinHex))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return ""
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil || len(raw) < gcm.NonceSize() {
+		return ""
+	}
+	ns := gcm.NonceSize()
+	plain, err := gcm.Open(nil, raw[:ns], raw[ns:], nil)
+	if err != nil {
+		return ""
+	}
+	return string(plain)
+}
+
+// Auto-heals any tunnel whose TargetServer updated its Certificate Pin
+func syncServerTunnelsPinLocked(srvID, newPin string) {
+	if newPin == "" {
+		return
+	}
+	for i := range db.Tunnels {
+		if db.Tunnels[i].TargetServer == srvID && db.Tunnels[i].Role != "server" {
+			if db.Tunnels[i].CertPin != newPin {
+				db.Tunnels[i].CertPin = newPin
+				tCopy := db.Tunnels[i]
+				if tCopy.SourceServer == "" || tCopy.SourceServer == "local" {
+					go func(t Tunnel) {
+						dispatchTunnelEngine(t)
+						time.Sleep(400 * time.Millisecond)
+						probeTunnelOnce(t)
+					}(tCopy)
+				}
+			}
+		}
+	}
+}
+
 func getControlPorts() (l4, direct, wss string) {
 	l4 = strings.TrimSpace(os.Getenv("CTRL_L4_PORT"))
 	if l4 == "" {
@@ -131,7 +203,7 @@ func executeLocalConsoleCmd(cmd, port string) {
 	case "status":
 		ram, goCnt := getMemoryStats()
 		l4, dir, wss := getControlPorts()
-		addLog(fmt.Sprintf("STATUS: Online | Goroutines: %d | RAM: %d MB | Panel: :%s | Ctrl: :%s/:%s/:%s", goCnt, ram, port, l4, dir, wss))
+		addLog(fmt.Sprintf("STATUS: %s | Goroutines: %d | RAM: %d MB | Panel: :%s | Ctrl: :%s/:%s/:%s", appVersion, goCnt, ram, port, l4, dir, wss))
 	case "bbr":
 		cc, qd := checkBBRStatus()
 		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
@@ -143,8 +215,9 @@ func executeLocalConsoleCmd(cmd, port string) {
 		_ = os.WriteFile(logPath, []byte(logs[0]+"\n"), 0644)
 		mu.Unlock()
 	case "restart":
-		case "self-update": go triggerLocalBinaryUpdate()
 		go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
+	case "self-update":
+		go triggerLocalBinaryUpdate()
 	default:
 		if cmd != "" {
 			addLog("bash: " + cmd + ": command not found")
@@ -204,14 +277,23 @@ func loadLogsFromDisk() {
 
 func saveDBLocked() {
 	_ = os.MkdirAll("/opt/litetun", 0755)
-	data, _ := json.MarshalIndent(db, "", "  ")
-	_ = os.WriteFile(dbPath, data, 0644)
+	dbCopy := db
+	dbCopy.Servers = make([]ServerNode, len(db.Servers))
+	for i, s := range db.Servers {
+		s.SSHPass = encryptSecret(s.SSHPass)
+		dbCopy.Servers[i] = s
+	}
+	data, _ := json.MarshalIndent(dbCopy, "", "  ")
+	_ = os.WriteFile(dbPath, data, 0600)
 }
 
 func loadDBFromDisk(port string) {
 	localIP = detectLocalIP()
 	if data, err := os.ReadFile(dbPath); err == nil {
 		_ = json.Unmarshal(data, &db)
+	}
+	for i := range db.Servers {
+		db.Servers[i].SSHPass = decryptSecret(db.Servers[i].SSHPass)
 	}
 	if db.Prefs.Theme == "" {
 		db.Prefs.Theme = "cyan"
@@ -257,7 +339,7 @@ func loadDBFromDisk(port string) {
 	saveDBLocked()
 
 	for _, t := range db.Tunnels {
-		if t.SourceServer == "" || t.SourceServer == "local" {
+		if t.SourceServer == "" || t.SourceServer == "local" || t.Role == "server" {
 			dispatchTunnelEngine(t)
 		}
 	}

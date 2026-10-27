@@ -38,7 +38,7 @@
       <div>
         <div class="flex items-center gap-1.5">
           <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos-lite</span>
-          <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.5.0</span>
+          <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.6.0</span>
         </div>
         <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">LiteTun 3-Engine Relay</span>
       </div>
@@ -118,7 +118,7 @@
               </div>
               <div>
                 <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_ip">Server IP Address</label>
-                <input id="srv-ip" placeholder="e.g. 205.234.152.182" class="w-full rounded-lg p-2.5 text-xs font-mono">
+                <input id="srv-ip" placeholder="e.g. 203.0.113.10" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
               <div>
                 <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_port">SSH Port</label>
@@ -185,7 +185,7 @@
               </div>
               <p class="text-xs text-slate-400 leading-relaxed" data-i18n="rv_sub">If reverse dial-in is blocked (or Sentinel was installed in Listen-Only mode), enter the remote server's IP below and press Play (▶). Master will probe enabled methods until connected!</p>
               <div class="flex flex-col sm:flex-row gap-2">
-                <input id="rv-target-ip" placeholder="Remote Sentinel IP (e.g. 205.234.152.182)" class="flex-1 rounded-xl p-2.5 text-xs font-mono">
+                <input id="rv-target-ip" placeholder="Remote Sentinel IP (e.g. 203.0.113.10)" class="flex-1 rounded-xl p-2.5 text-xs font-mono">
                 <button type="button" onclick="startRendezvousFromBox()" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition flex items-center justify-center gap-1.5 shrink-0">
                   <span>▶</span><span data-i18n="btn_start_rv">Start Forward Probe</span>
                 </button>
@@ -221,7 +221,6 @@
             </div>
           </div>
 
-          <!-- DEDICATED 3 CONTROL PORTS & ALLOWED TRANSPORT CHECKBOXES -->
           <div class="bg-[#080d14] p-3.5 rounded-xl border border-slate-800 space-y-3">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-1.5">
@@ -551,6 +550,21 @@
 
           <div id="svg-history-ping" class="w-full h-44 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
+
+        <!-- 30-DAY DAILY DOWNLOAD & UPLOAD BANDWIDTH HISTOGRAM -->
+        <div class="card rounded-2xl p-5 space-y-3">
+          <div class="flex flex-wrap justify-between items-center gap-2">
+            <div>
+              <span class="text-xs sm:text-sm font-bold text-emerald-400 block">📊 30-DAY DAILY INTERNET USAGE (DOWNLOAD & UPLOAD PER DAY)</span>
+              <span class="text-[11px] text-slate-400">Each day shows two side-by-side columns: Left (Emerald) = Download | Right (Indigo) = Upload</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs font-mono">
+              <span id="pill-month-rx" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">↓ 30d Rx: 0.00 GB</span>
+              <span id="pill-month-tx" class="px-2.5 py-1 rounded-lg bg-indigo-950/90 text-indigo-400 border border-indigo-800/80">↑ 30d Tx: 0.00 GB</span>
+            </div>
+          </div>
+          <div id="svg-daily-bw" class="w-full h-48 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+        </div>
       </section>
 
     </div>
@@ -602,10 +616,7 @@
     </div>
   </div>
 
-  <script src="/i18n.js"></script>
-  <script src="/app.js"></script>
-  
-<script src="/i18n.js?v=2.5.1"></script>
-  <script src="/app.js?v=2.5.1"></script>
+  <script src="/i18n.js?v=2.6.0"></script>
+  <script src="/app.js?v=2.6.0"></script>
 </body>
 </html>

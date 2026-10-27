@@ -9,6 +9,7 @@ let masterIP = '';
 let ctrlL4 = '6005';
 let ctrlDirect = '6006';
 let ctrlWSS = '6007';
+let ctrlMethods = 'wss,direct';
 let currentServers = [];
 let currentTunnels = [];
 let pingSummary = null;
@@ -164,6 +165,11 @@ async function startRendezvousFromBox() {
 
 async function toggleServerProbe(id, stop) {
   await fetch('/api/servers/probe', { method: 'POST', body: JSON.stringify({ id, stop }) });
+  fetchState();
+}
+
+async function setServerReverseMode(id, action) {
+  await fetch('/api/servers/probe', { method: 'POST', body: JSON.stringify({ id, action }) });
   fetchState();
 }
 
@@ -361,9 +367,16 @@ async function saveConfig() {
   const ctrl_l4 = (el('cfg-ctrl-l4')?.value || '').trim() || '6005';
   const ctrl_direct = (el('cfg-ctrl-direct')?.value || '').trim() || '6006';
   const ctrl_wss = (el('cfg-ctrl-wss')?.value || '').trim() || '6007';
+  const methods = [];
+  if (el('chk-ctrl-wss')?.checked) methods.push('wss');
+  if (el('chk-ctrl-direct')?.checked) methods.push('direct');
+  if (el('chk-ctrl-l4')?.checked) methods.push('forward');
+  if (methods.length === 0) return alert('Please keep at least one Control Transport method checked!');
+  const ctrl_methods = methods.join(',');
+
   await fetch('/api/config?server_id=' + selectedServer, {
     method: 'POST',
-    body: JSON.stringify({ port, path, user, pass, ctrl_l4, ctrl_direct, ctrl_wss })
+    body: JSON.stringify({ port, path, user, pass, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_methods })
   });
   if (selectedServer === 'local') setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
   else alert('Remote Sentinel configuration updated!');
@@ -457,12 +470,17 @@ function renderServers() {
     bbrBadge.innerText = cc === 'bbr' ? '● BBR Active (Optimized)' : `● ${cc.toUpperCase()} (Not BBR)`;
   }
   setHTML('server-cards-list', currentServers.map(s => {
-    const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
+    const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400';
     const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
     const probeBtn = !s.is_local
       ? (s.probing
           ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/70 hover:bg-amber-900 text-xs font-semibold animate-pulse">⏸ Probing...</button>`
           : `<button onclick="toggleServerProbe('${s.id}', false)" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Start Master Forward Rendezvous Probe">▶ Probe</button>`)
+      : '';
+    const revBtn = !s.is_local
+      ? (s.reverse_paused
+          ? `<button onclick="setServerReverseMode('${s.id}', 'resume')" class="px-2.5 py-1 rounded-lg bg-indigo-950 text-indigo-300 border border-indigo-800/70 hover:bg-indigo-900 text-xs font-semibold" title="Resume Sentinel Reverse Dial-In">🔗 Resume Rev</button>`
+          : `<button onclick="setServerReverseMode('${s.id}', 'disconnect')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-300 border border-rose-800/70 hover:bg-rose-900 text-xs font-semibold" title="Disconnect & Pause Sentinel Reverse Dial-In (Keep Listening)">🔌 Disconnect</button>`)
       : '';
     return `<div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
       <div class="flex justify-between items-start"><div><div class="flex flex-wrap items-center gap-1.5"><h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
@@ -473,6 +491,7 @@ function renderServers() {
       <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60"><div class="flex flex-wrap items-center gap-1.5">
       <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
       ${probeBtn}
+      ${revBtn}
       <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 SSH</button>
       <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">🌐 Info</a></div>
       ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
@@ -544,6 +563,7 @@ async function fetchState() {
     if (data.ctrl_l4_port) ctrlL4 = data.ctrl_l4_port;
     if (data.ctrl_direct_port) ctrlDirect = data.ctrl_direct_port;
     if (data.ctrl_wss_port) ctrlWSS = data.ctrl_wss_port;
+    if (data.ctrl_methods) ctrlMethods = data.ctrl_methods;
     if (data.enroll_token && data.enroll_token !== enrollToken) {
       enrollToken = data.enroll_token;
       masterIP = data.master_ip || window.location.hostname;
@@ -570,6 +590,10 @@ async function fetchState() {
       if (el('cfg-ctrl-l4')) el('cfg-ctrl-l4').value = ctrlL4;
       if (el('cfg-ctrl-direct')) el('cfg-ctrl-direct').value = ctrlDirect;
       if (el('cfg-ctrl-wss')) el('cfg-ctrl-wss').value = ctrlWSS;
+      const mSet = (ctrlMethods || 'wss,direct').split(',');
+      if (el('chk-ctrl-wss')) el('chk-ctrl-wss').checked = mSet.includes('wss');
+      if (el('chk-ctrl-direct')) el('chk-ctrl-direct').checked = mSet.includes('direct');
+      if (el('chk-ctrl-l4')) el('chk-ctrl-l4').checked = mSet.includes('forward');
     }
   } catch (err) { console.error('State sync error:', err); }
 }

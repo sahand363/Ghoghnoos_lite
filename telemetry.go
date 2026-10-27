@@ -106,10 +106,47 @@ func readNetDevBytes() (rx, tx uint64) {
 	return rx, tx
 }
 
+var (
+	dayAccumRxBytes uint64
+	dayAccumTxBytes uint64
+	lastDaySave     time.Time
+)
+
+func recordDailyBandwidthLocked(deltaRx, deltaTx uint64) {
+	today := time.Now().UTC().Format("2006-01-02")
+	n := len(db.DailyUsage)
+	if n == 0 || db.DailyUsage[n-1].Date != today {
+		db.DailyUsage = append(db.DailyUsage, DailyBW{Date: today, RxMB: 0, TxMB: 0})
+		if len(db.DailyUsage) > 31 {
+			db.DailyUsage = db.DailyUsage[len(db.DailyUsage)-31:]
+		}
+		dayAccumRxBytes = 0
+		dayAccumTxBytes = 0
+		n = len(db.DailyUsage)
+	}
+	dayAccumRxBytes += deltaRx
+	dayAccumTxBytes += deltaTx
+	if dayAccumRxBytes >= 1024*1024 {
+		addMB := dayAccumRxBytes / (1024 * 1024)
+		db.DailyUsage[n-1].RxMB += addMB
+		dayAccumRxBytes %= (1024 * 1024)
+	}
+	if dayAccumTxBytes >= 1024*1024 {
+		addMB := dayAccumTxBytes / (1024 * 1024)
+		db.DailyUsage[n-1].TxMB += addMB
+		dayAccumTxBytes %= (1024 * 1024)
+	}
+	if time.Since(lastDaySave) >= 5*time.Minute {
+		lastDaySave = time.Now()
+		saveDBLocked()
+	}
+}
+
 func startTelemetryMonitor() {
 	mu.Lock()
 	sysMetrics.TpHistory = []float64{0.05, 0.08, 0.06, 0.10, 0.07, 0.09}
 	sysMetrics.BBRStatus, sysMetrics.Qdisc = checkBBRStatus()
+	recordDailyBandwidthLocked(0, 0)
 	mu.Unlock()
 
 	prevIdle, prevTotal := readCPUSample()
@@ -124,12 +161,15 @@ func startTelemetryMonitor() {
 		prevIdle, prevTotal = idle, total
 
 		rx, tx := readNetDevBytes()
+		var dRx, dTx uint64
 		var rxMbps, txMbps float64
 		if rx >= prevRx {
-			rxMbps = float64((rx-prevRx)*8) / (2.0 * 1000000.0)
+			dRx = rx - prevRx
+			rxMbps = float64(dRx*8) / (2.0 * 1000000.0)
 		}
 		if tx >= prevTx {
-			txMbps = float64((tx-prevTx)*8) / (2.0 * 1000000.0)
+			dTx = tx - prevTx
+			txMbps = float64(dTx*8) / (2.0 * 1000000.0)
 		}
 		prevRx, prevTx = rx, tx
 
@@ -138,6 +178,7 @@ func startTelemetryMonitor() {
 		appBytes := db.AppBaseBytes + atomic.LoadUint64(&appRxBytes) + atomic.LoadUint64(&appTxBytes)
 
 		mu.Lock()
+		recordDailyBandwidthLocked(dRx, dTx)
 		sysMetrics.CPUPercent = float64(int(cpuPct*10)) / 10.0
 		sysMetrics.RAMUsedMB = usedMB
 		sysMetrics.RAMTotalMB = totalMB
@@ -180,10 +221,14 @@ func deploySentinelSSH(s ServerNode) {
 			var st map[string]interface{}
 			if json.NewDecoder(resp.Body).Decode(&st) == nil {
 				remotePin, _ := st["cert_pin"].(string)
+				remoteVer, _ := st["version"].(string)
 				mu.Lock()
 				if srv := findServerByID(s.ID); srv != nil {
 					srv.PanelPort = detectedPort
 					srv.CertPin = remotePin
+					if remoteVer != "" {
+						srv.Version = remoteVer
+					}
 					srv.Status = "Online"
 					if srv.ViaMethod == "" {
 						srv.ViaMethod = "SSH"
@@ -258,23 +303,28 @@ func deploySentinelSSH(s ServerNode) {
 	time.Sleep(2 * time.Second)
 
 	remotePin := ""
+	remoteVer := appVersion
 	if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
 		defer resp.Body.Close()
 		var st map[string]interface{}
 		if json.NewDecoder(resp.Body).Decode(&st) == nil {
 			remotePin, _ = st["cert_pin"].(string)
+			if rv, ok := st["version"].(string); ok && rv != "" {
+				remoteVer = rv
+			}
 		}
 	}
 	mu.Lock()
 	if srv := findServerByID(s.ID); srv != nil {
 		srv.PanelPort = detectedPort
 		srv.CertPin = remotePin
+		srv.Version = remoteVer
 		srv.Status = "Online"
 		srv.ViaMethod = "SSH"
 		saveDBLocked()
 	}
 	mu.Unlock()
-	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel verified & online on :%s!", s.Name, detectedPort))
+	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel (%s) verified & online on :%s!", s.Name, remoteVer, detectedPort))
 }
 
 func uninstallSentinelRemote(s ServerNode) {

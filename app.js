@@ -11,7 +11,7 @@ let ctrlDirect = '6006';
 let ctrlWSS = '6007';
 let currentServers = [];
 let currentTunnels = [];
-let pingHistory = [];
+let pingSummary = null;
 let sysMetrics = {};
 let pingResults = {};
 let initialLoaded = false;
@@ -110,7 +110,6 @@ function updateEnrollCommandUI() {
   setText('enroll-cmd-box', cmd);
 }
 
-// Silent copy that works on plain HTTP without opening any browser prompt() window
 function copyTextSilent(text) {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
@@ -217,14 +216,17 @@ function setTab(t, persist) {
   });
   el('view-' + t)?.classList.remove('hidden');
   el('tab-' + t)?.classList.add('active-tab');
-  if (persist) savePrefsToServer();
+  if (persist) {
+    savePrefsToServer();
+    if (t === 'logs') fetchState();
+  }
 }
 
 function setHistoryRange(r) {
   historyRange = r;
   if (el('btn-range-24h')) el('btn-range-24h').className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
   if (el('btn-range-7d')) el('btn-range-7d').className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
-  renderPingAnalytics();
+  fetchState();
 }
 
 function autoUpdateTunnelName() {
@@ -386,15 +388,12 @@ function buildSVGChart(values, unit, strokeColor, gradId) {
     <polygon points="${area}" fill="url(#${gradId})"/><polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${pts}"/></svg>`;
 }
 
-function fmtShortTime(ts, withDate) {
+function fmtShortTime(ts) {
   if (!ts) return '--:--';
   const d = new Date(ts * 1000);
-  const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
-  if (!withDate) return `${hh}:${mm}`;
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hh}:${mm}`;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// Builds 24h/7d SVG chart with red vertical OFFLINE zones + X-axis timestamps
 function buildHistorySVGChart(points) {
   let list = (points && points.length) ? points.slice(-90) : [];
   const nowSec = Math.floor(Date.now() / 1000);
@@ -407,9 +406,7 @@ function buildHistorySVGChart(points) {
   let redBars = '';
   list.forEach((p, idx) => {
     if (!p.ok) {
-      const cx = padL + idx * stepW;
-      const bw = Math.max(stepW * 1.15, 7);
-      const bx = Math.max(padL, cx - bw / 2);
+      const cx = padL + idx * stepW, bw = Math.max(stepW * 1.15, 7), bx = Math.max(padL, cx - bw / 2);
       redBars += `<rect x="${bx.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${plotH}" fill="rgba(244,63,94,0.28)"/>`;
       redBars += `<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${padT + plotH}" stroke="#f43f5e" stroke-width="1.3" stroke-opacity="0.75"/>`;
     }
@@ -417,7 +414,7 @@ function buildHistorySVGChart(points) {
 
   const pts = vals.map((v, idx) => `${(padL + idx * stepW).toFixed(1)},${(padT + plotH - ((v / maxVal) * plotH)).toFixed(1)}`).join(' ');
   const area = `${padL},${padT + plotH} ${pts} ${padL + plotW},${padT + plotH}`;
-  const tStart = fmtShortTime(list[0].ts, false), tMid = fmtShortTime(list[Math.floor(list.length / 2)].ts, false), tEnd = fmtShortTime(list[list.length - 1].ts, false);
+  const tStart = fmtShortTime(list[0].ts), tMid = fmtShortTime(list[Math.floor(list.length / 2)].ts), tEnd = fmtShortTime(list[list.length - 1].ts);
 
   return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
     <defs><linearGradient id="gradHist" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#38bdf8" stop-opacity="0.40"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/></linearGradient></defs>
@@ -504,49 +501,45 @@ function renderTunnels() {
 }
 
 function renderPingAnalytics() {
-  if (!el('kpi-cpu')) return;
+  if (!el('kpi-cpu') || currentTab !== 'logs') return;
   const cpu = sysMetrics.cpu_pct || 0, ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
   const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0, appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
   setText('kpi-cpu', `${cpu.toFixed(1)}%`); setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot} MB)`); setHTML('kpi-tp', `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`);
-  const srvHistory = (selectedServer && selectedServer !== 'local') ? pingHistory.filter(p => !p.sid || p.sid === selectedServer) : pingHistory;
-  const last20 = srvHistory.slice(-20);
-  setText('kpi-reach', last20.length ? `${last20.filter(x => x.ok).length} / ${last20.length}` : `20 / 20`);
   setText('bw-app', `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`); setText('bw-srv', `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`);
-  const nowSec = Math.floor(Date.now() / 1000), rangeSec = historyRange === '24h' ? 86400 : 7 * 86400;
-  const filtered = srvHistory.filter(p => p.ts >= nowSec - rangeSec), okList = filtered.filter(p => p.ok && p.ms > 0), fails = filtered.filter(p => !p.ok).length;
-  const avgMs = okList.length ? Math.round(okList.reduce((a, b) => a + b.ms, 0) / okList.length) : 50;
-  const uptimePct = filtered.length ? ((okList.length / filtered.length) * 100).toFixed(1) : '100.0', latestMs = okList.length ? okList[okList.length - 1].ms : avgMs;
-  setText('recent-ping-val', `${latestMs} ms`);
   const totMbps = rxMbps + txMbps;
   setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
-  const recentPings = okList.slice(-25).map(x => x.ms);
-  setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
 
-  setText('pill-uptime', `● Online Uptime: ${uptimePct}%`);
+  if (!pingSummary) return;
+  setText('kpi-reach', pingSummary.reach_str || '20 / 20');
+  setText('recent-ping-val', `${pingSummary.latest_ms || 50} ms`);
+  const recentPings = pingSummary.recent_pings || [];
+  setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
+  const fails = pingSummary.fails || 0;
+  setText('pill-uptime', `● Online Uptime: ${pingSummary.uptime_pct || '100.0'}%`);
   setText('pill-down', `● Total Offline Time: ${fails * 10}m (${fails} checks)`);
-  setText('pill-avg', `⚡ Avg Ping: ${avgMs} ms`);
-
-  // Compute Outage Windows list
-  let windows = [], curStart = null;
-  filtered.forEach(p => {
-    if (!p.ok && curStart === null) curStart = p.ts;
-    else if (p.ok && curStart !== null) {
-      windows.push(`${fmtShortTime(curStart, true)} ➔ ${fmtShortTime(p.ts, false)}`);
-      curStart = null;
-    }
-  });
-  if (curStart !== null) windows.push(`${fmtShortTime(curStart, true)} ➔ NOW`);
-  setText('pill-outage-windows', windows.length ? `🕒 Outage Windows: ${windows.slice(-4).join(' | ')}` : `🕒 Outage Windows: None — 100% Continuous Uptime`);
-  setHTML('svg-history-ping', buildHistorySVGChart(filtered));
+  setText('pill-avg', `⚡ Avg Ping: ${pingSummary.avg_ms || 50} ms`);
+  const wins = pingSummary.windows || [];
+  setText('pill-outage-windows', wins.length ? `🕒 Outage Windows: ${wins.join(' | ')}` : `🕒 Outage Windows: None — 100% Continuous Uptime`);
+  setHTML('svg-history-ping', buildHistorySVGChart(pingSummary.chart_points || []));
 }
 
 async function fetchState() {
   try {
-    const res = await fetch('/api/state?server_id=' + selectedServer);
+    const res = await fetch(`/api/state?server_id=${selectedServer}&tab=${currentTab}&range=${historyRange}`);
     if (res.status === 401) { window.location.href = 'login'; return; }
     const data = await res.json();
     if (data.version) setText('app-version-badge', data.version);
+    const updBtn = el('btn-self-update');
+    if (updBtn && !updBtn.innerText.includes('Updating')) {
+      if (data.update_available) {
+        updBtn.className = 'px-2.5 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse flex items-center gap-1';
+        updBtn.innerHTML = '<span>🔥</span><span class="hidden sm:inline">Update Ready!</span>';
+      } else {
+        updBtn.className = 'px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/80 text-xs font-bold hover:bg-emerald-900 transition flex items-center gap-1';
+        updBtn.innerHTML = '<span>⬆️</span><span class="hidden sm:inline">Update</span>';
+      }
+    }
     if (data.server_time) setText('top-server-clock', data.server_time);
     if (data.ctrl_l4_port) ctrlL4 = data.ctrl_l4_port;
     if (data.ctrl_direct_port) ctrlDirect = data.ctrl_direct_port;
@@ -561,7 +554,8 @@ async function fetchState() {
       applyLangUI(); applyTheme(data.prefs.theme || 'cyan', false); setTab(data.prefs.active_tab || 'servers', false);
     }
     currentServers = data.servers || []; currentTunnels = data.tunnels || [];
-    pingHistory = data.ping_history || []; sysMetrics = data.metrics || {};
+    if (data.ping_summary) pingSummary = data.ping_summary;
+    sysMetrics = data.metrics || {};
     renderServers(); renderTunnels(); renderPingAnalytics();
     const puttyEl = el('putty-box');
     if (puttyEl) {

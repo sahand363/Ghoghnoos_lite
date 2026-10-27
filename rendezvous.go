@@ -212,6 +212,9 @@ func applyForwardProbeSuccess(srvID, method string, rep EnrollReply) {
 	if rep.PanelPort != "" {
 		srv.PanelPort = rep.PanelPort
 	}
+	if rep.Version != "" {
+		srv.Version = rep.Version
+	}
 	if rep.MasterPin != "" {
 		srv.CertPin = rep.MasterPin
 		syncServerTunnelsPinLocked(srvID, rep.MasterPin)
@@ -225,6 +228,7 @@ func applyForwardProbeSuccess(srvID, method string, rep EnrollReply) {
 		IP:         srv.IP,
 		PanelPort:  srv.PanelPort,
 		CertPin:    srv.CertPin,
+		Version:    srv.Version,
 		ServerTime: rep.ServerTime,
 		Metrics:    rep.Metrics,
 		Logs:       rep.Logs,

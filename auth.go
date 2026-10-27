@@ -16,7 +16,11 @@ import (
 	"time"
 )
 
-var sessionSecret []byte
+var (
+	sessionSecret   []byte
+	updateAvailable bool
+	latestRemoteTag string
+)
 
 func initSessionSecret() {
 	sessionSecret = make([]byte, 32)
@@ -35,10 +39,64 @@ func makeCaptchaToken(ansStr string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Replaces browser Basic Auth popup with Cookie Session & custom Login Page redirect
+// Checks GitHub once every 24 hours to see if a newer release binary is available
+func startDailyUpdateChecker() {
+	time.Sleep(15 * time.Second)
+	for {
+		checkGitHubReleaseOnce()
+		time.Sleep(24 * time.Hour)
+	}
+}
+
+func checkGitHubReleaseOnce() {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodHead, "https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite", nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	lastModStr := resp.Header.Get("Last-Modified")
+	if lastModStr == "" {
+		return
+	}
+	remoteTime, err := http.ParseTime(lastModStr)
+	if err != nil {
+		return
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		exePath = "/opt/litetun/ghoghnoos_lite"
+	}
+	info, err := os.Stat(exePath)
+	if err != nil {
+		return
+	}
+	mu.Lock()
+	if remoteTime.After(info.ModTime().Add(2 * time.Minute)) {
+		updateAvailable = true
+		latestRemoteTag = remoteTime.UTC().Format("01-02 15:04")
+	} else {
+		updateAvailable = false
+	}
+	mu.Unlock()
+}
+
+// Replaces browser Basic Auth popup with SameSite Cookie Session & CSRF protection
 func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
 	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
 		return true
+	}
+	// CSRF Origin protection for state-changing requests
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		if orig := r.Header.Get("Origin"); orig != "" && !strings.Contains(orig, r.Host) {
+			http.Error(w, "403 CSRF Origin Mismatch", http.StatusForbidden)
+			return false
+		}
 	}
 	if panelUser == "" && panelPass == "" {
 		return true
@@ -49,7 +107,6 @@ func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) 
 			return true
 		}
 	}
-	// Allow API fallback via BasicAuth if ever called programmatically
 	if u, p, ok := r.BasicAuth(); ok {
 		uOk := subtle.ConstantTimeCompare([]byte(u), []byte(panelUser)) == 1
 		pOk := subtle.ConstantTimeCompare([]byte(p), []byte(panelPass)) == 1
@@ -93,6 +150,7 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 				Value:    makeSessionToken(panelUser, panelPass),
 				Path:     "/",
 				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
 				MaxAge:   86400 * 30,
 			})
 			dest := "/"

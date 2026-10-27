@@ -31,8 +31,8 @@
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+  <!-- TOP NAVIGATION BAR (Locked to dir="ltr" so icons/layout never flip in Persian) -->
+  <header dir="ltr" class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
     <div class="flex items-center gap-2.5">
       <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
       <div>
@@ -45,16 +45,16 @@
     </div>
 
     <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
-      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
+      <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>🖥️</span><span data-i18n="servers">Servers</span>
       </button>
-      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
+      <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>⚙️</span><span data-i18n="config">Config</span>
       </button>
-      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
+      <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
       </button>
-      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1">
+      <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
         <span>📋</span><span data-i18n="logs">Log</span>
       </button>
     </nav>
@@ -89,11 +89,11 @@
     </div>
   </header>
 
-  <!-- MAIN WORKSPACE -->
-  <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+  <!-- MAIN WORKSPACE (Full-Width Stacked Layout) -->
+  <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-6 space-y-6">
 
-    <!-- LEFT COLUMN (7 Cols) -->
-    <div class="lg:col-span-7">
+    <!-- FULL-WIDTH ACTIVE TAB CONTENT -->
+    <div class="w-full">
 
       <!-- TAB 1: SERVERS -->
       <section id="view-servers" class="space-y-4 sm:space-y-6">
@@ -111,7 +111,7 @@
 
           <!-- METHOD A: DIRECT SSH PUSH -->
           <div id="box-deploy-ssh" class="space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
               <div>
                 <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_name">Server Name</label>
                 <input id="srv-name" oninput="userEditedSrvName=true" placeholder="Server-2" class="w-full rounded-lg p-2.5 text-xs">
@@ -124,9 +124,6 @@
                 <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_port">SSH Port</label>
                 <input id="srv-port" value="22" placeholder="22" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_user">SSH Username</label>
                 <input id="srv-user" value="root" placeholder="root" class="w-full rounded-lg p-2.5 text-xs">
@@ -169,7 +166,7 @@
                 <label class="text-xs text-emerald-400 font-semibold" data-i18n="enroll_cmd_lbl">Paste this One-Liner on your Remote Server Terminal:</label>
                 <button type="button" onclick="rotateEnrollToken()" class="text-[11px] text-amber-400 hover:underline font-mono" data-i18n="btn_rotate_tok">🔄 Rotate Token</button>
               </div>
-              <div class="bg-[#05080d] border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400 break-all select-all" dir="ltr" id="enroll-cmd-box">Loading token...</div>
+              <div class="bg-[#05080d] border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400 break-all select-all text-left" dir="ltr" id="enroll-cmd-box">Loading token...</div>
             </div>
 
             <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy Reverse Enrollment One-Liner Command</button>
@@ -194,7 +191,8 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4" id="server-cards-list"></div>
+        <!-- WIDER 3-COLUMN SERVER CARDS GRID -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="server-cards-list"></div>
       </section>
 
       <!-- TAB 2: CONFIG -->
@@ -204,7 +202,7 @@
             <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port, Control Ports & Login Configuration</h3>
             <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <div class="flex items-center gap-1.5 mb-1">
                 <label class="text-xs text-slate-400" data-i18n="lbl_panel_port">Web Panel Port</label>
@@ -218,6 +216,14 @@
                 <button type="button" onclick="showHelpModal('path')" class="help-btn">?</button>
               </div>
               <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_user">Panel Username</label>
+              <input id="cfg-user" placeholder="admin" class="w-full rounded-lg p-2.5 text-sm font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_pass">New Panel Password (blank = keep current)</label>
+              <input id="cfg-pass" type="password" placeholder="••••••••" class="w-full rounded-lg p-2.5 text-sm font-mono">
             </div>
           </div>
 
@@ -255,16 +261,6 @@
             <p class="text-[11px] text-slate-400">Uncheck any method above (such as L4 Raw) to disable it from both Reverse Dial-In and Forward Rendezvous Probing.</p>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_user">Panel Username</label>
-              <input id="cfg-user" placeholder="admin" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="lbl_panel_pass">New Panel Password (blank = keep current)</label>
-              <input id="cfg-pass" type="password" placeholder="••••••••" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-          </div>
           <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
         </div>
 
@@ -470,7 +466,7 @@
 
         <div class="space-y-3">
           <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End Latency Ping & Edit)</h3>
-          <div id="tunnel-list" class="space-y-3"></div>
+          <div id="tunnel-list" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
         </div>
       </section>
 
@@ -548,7 +544,7 @@
             🕒 Outage Windows: None — 100% Continuous Uptime
           </div>
 
-          <div id="svg-history-ping" class="w-full h-44 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+          <div id="svg-history-ping" class="w-full h-48 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
 
         <!-- 30-DAY DAILY DOWNLOAD & UPLOAD BANDWIDTH HISTOGRAM -->
@@ -563,14 +559,14 @@
               <span id="pill-month-tx" class="px-2.5 py-1 rounded-lg bg-indigo-950/90 text-indigo-400 border border-indigo-800/80">↑ 30d Tx: 0.00 GB</span>
             </div>
           </div>
-          <div id="svg-daily-bw" class="w-full h-48 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
+          <div id="svg-daily-bw" class="w-full h-52 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
       </section>
 
     </div>
 
-    <!-- RIGHT COLUMN (5 Cols): Persistent PuTTY Live Console -->
-    <aside class="lg:col-span-5 lg:sticky lg:top-20 w-full">
+    <!-- BOTTOM FULL-WIDTH PUTTY LIVE CONSOLE (Locked to dir="ltr" and text-left) -->
+    <section dir="ltr" class="w-full text-left pt-2">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
           <div class="flex items-center gap-2 truncate">
@@ -584,21 +580,21 @@
             <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:text-white transition" title="Download complete 24h operational log">📥 24h Log</button>
             <button onclick="fetchState()" class="text-[11px] text-slate-400 hover:text-white" title="Manual instant refresh">🔄</button>
             <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
-            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="lg:hidden text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
+            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
           </div>
         </div>
 
-        <div id="putty-body" class="flex flex-col h-[340px] sm:h-[540px]">
-          <div id="putty-box" class="flex-1 p-3.5 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text"></div>
+        <div id="putty-body" class="flex flex-col h-[220px] sm:h-[260px]">
+          <div id="putty-box" class="flex-1 p-3.5 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text text-left"></div>
 
           <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
             <span class="text-xs font-bold shrink-0" style="color: var(--accent)">root@litetun:~#</span>
-            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none">
-            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">Run</button>
+            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none text-left">
+            <button onclick="runConsoleInput()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 font-semibold">Run</button>
           </div>
         </div>
       </div>
-    </aside>
+    </section>
 
   </main>
 
@@ -616,7 +612,7 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.6.0"></script>
-  <script src="/app.js?v=2.6.0"></script>
+  <script src="/i18n.js?v=2.6.1"></script>
+  <script src="/app.js?v=2.6.1"></script>
 </body>
 </html>

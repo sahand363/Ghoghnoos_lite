@@ -125,7 +125,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
-		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Header().Set("Cache-Control", "private, no-cache")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(i18nJS)
 	})
@@ -134,7 +134,7 @@ func registerRoutes(port, panelPath string) {
 		if !checkSessionAuth(w, r, panelPath) {
 			return
 		}
-		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Header().Set("Cache-Control", "private, no-cache")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(appJS)
 	})

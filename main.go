@@ -31,7 +31,7 @@ var i18nJS []byte
 var appJS []byte
 
 const (
-	appVersion = "v2.5.0"
+	appVersion = "v2.6.0"
 	wsGUID     = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	dbPath     = "/opt/litetun/panel_db.json"
 	logPath    = "/opt/litetun/panel.log"
@@ -45,6 +45,7 @@ var (
 		Servers:     []ServerNode{},
 		Tunnels:     []Tunnel{},
 		PingHistory: []PingPoint{},
+		DailyUsage:  []DailyBW{},
 		Prefs: UIPrefs{
 			Theme:          "cyan",
 			Lang:           "en",
@@ -88,7 +89,6 @@ func loadEnvFile() {
 	}
 }
 
-// Persists certificate on disk so server/service restarts NEVER change the SHA-256 Pin!
 func initSelfSignedCert() {
 	_ = os.MkdirAll("/opt/litetun", 0755)
 	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && len(cert.Certificate) > 0 {

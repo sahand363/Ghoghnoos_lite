@@ -17,11 +17,10 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 		return
 	}
 	var req struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		IP     string `json:"ip"`
-		Stop   bool   `json:"stop"`
-		Action string `json:"action"` // "disconnect" or "resume"
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		IP   string `json:"ip"`
+		Stop bool   `json:"stop"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	req.IP = strings.TrimSpace(req.IP)
@@ -60,61 +59,6 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 	if srv == nil {
 		mu.Unlock()
 		http.Error(w, "Server IP required", 400)
-		return
-	}
-
-	if req.Action == "disconnect" {
-		srv.ReversePaused = true
-		srv.Probing = false
-		srv.Status = "Disconnected"
-		srv.ViaMethod = ""
-		delete(remoteStateCache, srv.ID)
-		if ch, ok := activeProbeCancels[srv.ID]; ok {
-			close(ch)
-			delete(activeProbeCancels, srv.ID)
-		}
-		pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], "pause-dial")
-		sIP, sName := srv.IP, srv.Name
-		tok := db.EnrollToken
-		saveDBLocked()
-		mu.Unlock()
-
-		go func() {
-			l4, dir, wss := getControlPorts()
-			spec := fmt.Sprintf("%s:%s:%s:%s", sIP, l4, dir, wss)
-			for _, m := range getAllowedControlMethods() {
-				if rep, _, err := tryDialControl(spec, tok, "pause-dial", m, true, nil); err == nil && rep.OK {
-					break
-				}
-			}
-		}()
-		addLog(fmt.Sprintf("DISCONNECT [%s]: Sentinel set to Passive Listener mode (Reverse Dial Paused).", sName))
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if req.Action == "resume" {
-		srv.ReversePaused = false
-		if srv.Status == "Disconnected" {
-			srv.Status = "Waiting..."
-		}
-		pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], "resume-dial")
-		sIP, sName := srv.IP, srv.Name
-		tok := db.EnrollToken
-		saveDBLocked()
-		mu.Unlock()
-
-		go func() {
-			l4, dir, wss := getControlPorts()
-			spec := fmt.Sprintf("%s:%s:%s:%s", sIP, l4, dir, wss)
-			for _, m := range getAllowedControlMethods() {
-				if rep, _, err := tryDialControl(spec, tok, "resume-dial", m, true, nil); err == nil && rep.OK {
-					break
-				}
-			}
-		}()
-		addLog(fmt.Sprintf("RESUME [%s]: Signaled Sentinel to resume Reverse Dial-In.", sName))
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 

@@ -42,9 +42,22 @@ type EnrollReply struct {
 	Logs        []string      `json:"logs,omitempty"`
 	PendingCmds []string      `json:"pending_cmds,omitempty"`
 	ExitTunnels []Tunnel      `json:"exit_tunnels,omitempty"`
+	CtrlMethods string        `json:"ctrl_methods,omitempty"`
 }
 
-var appliedSentinelExits = make(map[string]string)
+var (
+	appliedSentinelExits = make(map[string]string)
+	reverseDialPaused    bool
+)
+
+func isControlMethodAllowed(m string) bool {
+	for _, allowed := range getAllowedControlMethods() {
+		if allowed == strings.ToLower(m) {
+			return true
+		}
+	}
+	return false
+}
 
 func applyIncomingExitTunnels(exits []Tunnel) {
 	if len(exits) == 0 {
@@ -122,8 +135,8 @@ func startControlListeners() {
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/enroll", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			if r.Method != http.MethodPost || !isControlMethodAllowed("forward") {
+				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
 			var hb EnrollHeartbeat
@@ -179,6 +192,9 @@ func startControlListeners() {
 
 func handleControlConn(conn net.Conn, mode string) {
 	defer conn.Close()
+	if !isControlMethodAllowed(mode) {
+		return
+	}
 	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
 	br := bufio.NewReader(conn)
 
@@ -268,6 +284,18 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 	}
 
+	if targetSrv != nil && targetSrv.ReversePaused {
+		var cmds []string
+		if q, ok := pendingRemoteCmds[targetSrv.ID]; ok && len(q) > 0 {
+			cmds = append([]string{}, q...)
+			delete(pendingRemoteCmds[targetSrv.ID])
+		}
+		cmds = append(cmds, "pause-dial")
+		cMethods := db.CtrlMethods
+		mu.Unlock()
+		return EnrollReply{OK: true, MasterPin: localPinHex, NodeID: targetSrv.ID, PendingCmds: cmds, CtrlMethods: cMethods}
+	}
+
 	if targetSrv == nil {
 		name := strings.TrimSpace(hb.NodeName)
 		if name == "" || strings.HasPrefix(name, "Sentinel") {
@@ -318,10 +346,11 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		cmds = append([]string{}, q...)
 		delete(pendingRemoteCmds, targetSrv.ID)
 	}
+	cMethods := db.CtrlMethods
 	saveDBLocked()
 	mu.Unlock()
 
-	return EnrollReply{OK: true, MasterPin: localPinHex, NodeID: targetSrv.ID, PendingCmds: cmds, ExitTunnels: assignedExits}
+	return EnrollReply{OK: true, MasterPin: localPinHex, NodeID: targetSrv.ID, PendingCmds: cmds, ExitTunnels: assignedExits, CtrlMethods: cMethods}
 }
 
 func resolveControlTarget(masterSpec, method string) string {
@@ -462,11 +491,24 @@ func startSentinelSurvivalLoop() {
 	l4, dir, wss := getControlPorts()
 	addLog(fmt.Sprintf("SURVIVAL: Reverse Loop (120-150s) -> %s | Listening on :%s/:%s/:%s", masterSpec, l4, dir, wss))
 
-	order := []string{"wss", "direct", "forward"}
 	lastUpgradeCheck := time.Now()
 
 	for {
-		if activeMethod != "wss" && time.Since(lastUpgradeCheck) >= 12*time.Hour {
+		mu.Lock()
+		paused := reverseDialPaused
+		mu.Unlock()
+		if paused {
+			jitterBig, _ := rand.Int(rand.Reader, big.NewInt(30))
+			time.Sleep(time.Duration(120+int(jitterBig.Int64())) * time.Second)
+			continue
+		}
+
+		order := getAllowedControlMethods()
+		if !isControlMethodAllowed(activeMethod) && len(order) > 0 {
+			activeMethod = order[0]
+		}
+
+		if activeMethod != "wss" && isControlMethodAllowed("wss") && time.Since(lastUpgradeCheck) >= 12*time.Hour {
 			lastUpgradeCheck = time.Now()
 			for _, cand := range order {
 				if cand == activeMethod {
@@ -496,6 +538,9 @@ func startSentinelSurvivalLoop() {
 		}
 
 		if err == nil && rep.OK {
+			if rep.CtrlMethods != "" {
+				_ = os.Setenv("CTRL_METHODS", rep.CtrlMethods)
+			}
 			for _, cmd := range rep.PendingCmds {
 				executeLocalConsoleCmd(cmd, os.Getenv("PANEL_PORT"))
 			}

@@ -358,7 +358,8 @@ func registerRoutes(port, panelPath string) {
 			"server_time": srvTime, "metrics": metricsCopy, "servers": serversCopy, "tunnels": tunnelsCopy,
 			"ping_summary": pingSummary, "prefs": prefsCopy, "logs": activeLogs, "panel_port": activePort,
 			"panel_path": activePath, "panel_user": panelUser, "cert_pin": activePin, "enroll_token": enrollTok,
-			"master_ip": localIP, "dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort, "ctrl_wss_port": wssPort,
+			"master_ip": localIP, "dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort,
+			"ctrl_wss_port": wssPort, "ctrl_methods": strings.Join(getAllowedControlMethods(), ","),
 		})
 	})
 
@@ -679,6 +680,9 @@ func registerRoutes(port, panelPath string) {
 		}
 		if req.CtrlWSS != "" {
 			db.CtrlWSSPort = req.CtrlWSS
+		}
+		if req.CtrlMethods != "" {
+			db.CtrlMethods = req.CtrlMethods
 		}
 		saveDBLocked()
 		mu.Unlock()

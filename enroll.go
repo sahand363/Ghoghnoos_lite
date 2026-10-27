@@ -23,6 +23,7 @@ type EnrollHeartbeat struct {
 	IP          string        `json:"ip"`
 	PanelPort   string        `json:"panel_port"`
 	CertPin     string        `json:"cert_pin"`
+	Version     string        `json:"version,omitempty"`
 	ViaMethod   string        `json:"via_method"`
 	IsMaster    bool          `json:"is_master,omitempty"`
 	ServerTime  string        `json:"server_time"`
@@ -34,6 +35,7 @@ type EnrollHeartbeat struct {
 type EnrollReply struct {
 	OK          bool          `json:"ok"`
 	MasterPin   string        `json:"master_pin"`
+	Version     string        `json:"version,omitempty"`
 	NodeID      string        `json:"node_id"`
 	NodeName    string        `json:"node_name,omitempty"`
 	PanelPort   string        `json:"panel_port,omitempty"`
@@ -251,6 +253,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 			logsCopy = logsCopy[len(logsCopy)-35:]
 		}
 		mCopy := sysMetrics
+		mCopy.DailyUsage = append([]DailyBW{}, db.DailyUsage...)
 		nodeName := os.Getenv("NODE_NAME")
 		if nodeName == "" {
 			nodeName = "Sentinel"
@@ -267,7 +270,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 		applyIncomingExitTunnels(hb.ExitTunnels)
 		return EnrollReply{
-			OK: true, MasterPin: localPinHex, NodeName: nodeName,
+			OK: true, MasterPin: localPinHex, Version: appVersion, NodeName: nodeName,
 			PanelPort: pPort, ServerTime: time.Now().UTC().Format("15:04:05 UTC"),
 			Metrics: mCopy, Logs: logsCopy,
 		}
@@ -289,7 +292,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		newNode := ServerNode{
 			ID: fmt.Sprintf("srv-%d", time.Now().Unix()%10000), Name: name, IP: hb.IP,
 			SSHPort: "22", SSHUser: "root", PanelPort: hb.PanelPort, CertPin: hb.CertPin,
-			Status: "Online", ViaMethod: strings.ToUpper(hb.ViaMethod), LastSeen: time.Now().Unix(),
+			Version: hb.Version, Status: "Online", ViaMethod: strings.ToUpper(hb.ViaMethod), LastSeen: time.Now().Unix(),
 		}
 		db.Servers = append(db.Servers, newNode)
 		targetSrv = &db.Servers[len(db.Servers)-1]
@@ -300,6 +303,9 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 		if hb.PanelPort != "" {
 			targetSrv.PanelPort = hb.PanelPort
+		}
+		if hb.Version != "" {
+			targetSrv.Version = hb.Version
 		}
 		if hb.CertPin != "" {
 			targetSrv.CertPin = hb.CertPin
@@ -335,7 +341,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 	saveDBLocked()
 	mu.Unlock()
 
-	return EnrollReply{OK: true, MasterPin: localPinHex, NodeID: targetSrv.ID, PendingCmds: cmds, ExitTunnels: assignedExits, CtrlMethods: cMethods}
+	return EnrollReply{OK: true, MasterPin: localPinHex, Version: appVersion, NodeID: targetSrv.ID, PendingCmds: cmds, ExitTunnels: assignedExits, CtrlMethods: cMethods}
 }
 
 func resolveControlTarget(masterSpec, method string) string {
@@ -361,11 +367,12 @@ func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool, e
 		logsCopy = logsCopy[len(logsCopy)-35:]
 	}
 	metricsCopy := sysMetrics
+	metricsCopy.DailyUsage = append([]DailyBW{}, db.DailyUsage...)
 	mu.Unlock()
 
 	hb := EnrollHeartbeat{
 		Token: token, NodeName: nodeName, IP: detectLocalIP(), PanelPort: os.Getenv("PANEL_PORT"),
-		CertPin: localPinHex, ViaMethod: method, IsMaster: isMaster,
+		CertPin: localPinHex, Version: appVersion, ViaMethod: method, IsMaster: isMaster,
 		ServerTime: time.Now().UTC().Format("15:04:05 UTC"), Metrics: metricsCopy, Logs: logsCopy, ExitTunnels: exits,
 	}
 	payloadBytes, _ := json.Marshal(hb)
@@ -422,7 +429,6 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 	host, l4, dir, wss := parseMasterAddrSpec(masterSpec)
 	listenOnly := "0"
 
-	// Interactive terminal prompts via /dev/tty (works even inside curl | bash)
 	if tty, err := os.Open("/dev/tty"); err == nil {
 		defer tty.Close()
 		rd := bufio.NewReader(tty)

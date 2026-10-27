@@ -17,17 +17,18 @@ import (
 )
 
 type EnrollHeartbeat struct {
-	Token      string        `json:"token"`
-	NodeID     string        `json:"node_id"`
-	NodeName   string        `json:"node_name"`
-	IP         string        `json:"ip"`
-	PanelPort  string        `json:"panel_port"`
-	CertPin    string        `json:"cert_pin"`
-	ViaMethod  string        `json:"via_method"`
-	IsMaster   bool          `json:"is_master,omitempty"`
-	ServerTime string        `json:"server_time"`
-	Metrics    SystemMetrics `json:"metrics"`
-	Logs       []string      `json:"logs"`
+	Token       string        `json:"token"`
+	NodeID      string        `json:"node_id"`
+	NodeName    string        `json:"node_name"`
+	IP          string        `json:"ip"`
+	PanelPort   string        `json:"panel_port"`
+	CertPin     string        `json:"cert_pin"`
+	ViaMethod   string        `json:"via_method"`
+	IsMaster    bool          `json:"is_master,omitempty"`
+	ServerTime  string        `json:"server_time"`
+	Metrics     SystemMetrics `json:"metrics"`
+	Logs        []string      `json:"logs"`
+	ExitTunnels []Tunnel      `json:"exit_tunnels,omitempty"`
 }
 
 type EnrollReply struct {
@@ -41,6 +42,39 @@ type EnrollReply struct {
 	Logs        []string      `json:"logs,omitempty"`
 	PendingCmds []string      `json:"pending_cmds,omitempty"`
 	ExitTunnels []Tunnel      `json:"exit_tunnels,omitempty"`
+}
+
+var appliedSentinelExits = make(map[string]string)
+
+func applyIncomingExitTunnels(exits []Tunnel) {
+	if len(exits) == 0 {
+		return
+	}
+	mu.Lock()
+	changed := false
+	for _, et := range exits {
+		sig := fmt.Sprintf("%s:%s:%s:%s", et.Method, et.TunnelPort, et.InboundPorts, et.SpeedLimit)
+		if appliedSentinelExits[et.ID] != sig {
+			appliedSentinelExits[et.ID] = sig
+			replaced := false
+			for i := range db.Tunnels {
+				if db.Tunnels[i].ID == et.ID {
+					db.Tunnels[i] = et
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				db.Tunnels = append(db.Tunnels, et)
+			}
+			changed = true
+			dispatchTunnelEngine(et)
+		}
+	}
+	if changed {
+		saveDBLocked()
+	}
+	mu.Unlock()
 }
 
 func ensureEnrollToken() string {
@@ -81,12 +115,10 @@ func parseMasterAddrSpec(spec string) (host, l4, direct, wss string) {
 	return host, defL4, defDir, defWSS
 }
 
-// Binds all 3 dedicated Control Listeners (6005 L4, 6006 Direct-TLS, 6007 WSS) on BOTH Master and Sentinel
 func startControlListeners() {
 	l4Port, directPort, wssPort := getControlPorts()
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{localCert}, MinVersion: tls.VersionTLS12}
 
-	// 1. Dedicated L4 Control Listener (:6005)
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/enroll", func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +144,6 @@ func startControlListeners() {
 		_ = http.ListenAndServe(":"+l4Port, mux)
 	}()
 
-	// 2. Dedicated Direct-TLS 1.3 Control Listener (:6006)
 	go func() {
 		ln, err := tls.Listen("tcp", ":"+directPort, tlsCfg)
 		if err != nil {
@@ -129,7 +160,6 @@ func startControlListeners() {
 		}
 	}()
 
-	// 3. Dedicated WSS WebSocket Control Listener (:6007)
 	go func() {
 		ln, err := tls.Listen("tcp", ":"+wssPort, tlsCfg)
 		if err != nil {
@@ -202,11 +232,10 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		return EnrollReply{OK: false}
 	}
 
-	// If this node is a Sentinel receiving a Forward Rendezvous Probe from Master:
 	if hb.IsMaster {
 		logsCopy := append([]string{}, logs...)
-		if len(logsCopy) > 40 {
-			logsCopy = logsCopy[len(logsCopy)-40:]
+		if len(logsCopy) > 35 {
+			logsCopy = logsCopy[len(logsCopy)-35:]
 		}
 		mCopy := sysMetrics
 		nodeName := os.Getenv("NODE_NAME")
@@ -223,6 +252,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 				executeLocalConsoleCmd(cmd, pPort)
 			}
 		}
+		applyIncomingExitTunnels(hb.ExitTunnels)
 		return EnrollReply{
 			OK: true, MasterPin: localPinHex, NodeName: nodeName,
 			PanelPort: pPort, ServerTime: time.Now().UTC().Format("15:04:05 UTC"),
@@ -260,6 +290,7 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 		if hb.CertPin != "" {
 			targetSrv.CertPin = hb.CertPin
+			syncServerTunnelsPinLocked(targetSrv.ID, hb.CertPin)
 		}
 		prev := targetSrv.ViaMethod
 		targetSrv.ViaMethod = strings.ToUpper(hb.ViaMethod)
@@ -305,15 +336,15 @@ func resolveControlTarget(masterSpec, method string) string {
 	}
 }
 
-func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool) (EnrollReply, int64, error) {
+func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool, exits []Tunnel) (EnrollReply, int64, error) {
 	var empty EnrollReply
 	start := time.Now()
 	targetAddr := resolveControlTarget(targetSpec, method)
 
 	mu.Lock()
 	logsCopy := append([]string{}, logs...)
-	if len(logsCopy) > 40 {
-		logsCopy = logsCopy[len(logsCopy)-40:]
+	if len(logsCopy) > 35 {
+		logsCopy = logsCopy[len(logsCopy)-35:]
 	}
 	metricsCopy := sysMetrics
 	mu.Unlock()
@@ -321,7 +352,7 @@ func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool) (
 	hb := EnrollHeartbeat{
 		Token: token, NodeName: nodeName, IP: detectLocalIP(), PanelPort: os.Getenv("PANEL_PORT"),
 		CertPin: localPinHex, ViaMethod: method, IsMaster: isMaster,
-		ServerTime: time.Now().UTC().Format("15:04:05 UTC"), Metrics: metricsCopy, Logs: logsCopy,
+		ServerTime: time.Now().UTC().Format("15:04:05 UTC"), Metrics: metricsCopy, Logs: logsCopy, ExitTunnels: exits,
 	}
 	payloadBytes, _ := json.Marshal(hb)
 
@@ -368,7 +399,6 @@ func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool) (
 	return rep, time.Since(start).Milliseconds(), nil
 }
 
-// Fast initial check (NO 20s pauses, NO os.Exit(1) on failure — always saves config so background daemon & listeners start!)
 func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 	initSelfSignedCert()
 	localIP = detectLocalIP()
@@ -390,7 +420,7 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 
 	for idx, m := range methods {
 		fmt.Printf("\033[1;36m│\033[0m [%d/3] %-17s (:%-5s) ... ", idx+1, m.label, m.port)
-		if rep, ms, err := tryDialControl(masterSpec, token, nodeName, m.id, false); err == nil && rep.OK {
+		if rep, ms, err := tryDialControl(masterSpec, token, nodeName, m.id, false, nil); err == nil && rep.OK {
 			fmt.Printf("\033[1;32m[✔ Connected | %d ms]\033[0m    \033[1;36m│\033[0m\n", ms)
 			winningMethod = m.id
 			connectedNow = true
@@ -433,7 +463,6 @@ func startSentinelSurvivalLoop() {
 	addLog(fmt.Sprintf("SURVIVAL: Reverse Loop (120-150s) -> %s | Listening on :%s/:%s/:%s", masterSpec, l4, dir, wss))
 
 	order := []string{"wss", "direct", "forward"}
-	appliedExits := make(map[string]string)
 	lastUpgradeCheck := time.Now()
 
 	for {
@@ -443,7 +472,7 @@ func startSentinelSurvivalLoop() {
 				if cand == activeMethod {
 					break
 				}
-				if rUp, _, errUp := tryDialControl(masterSpec, token, nodeName, cand, false); errUp == nil && rUp.OK {
+				if rUp, _, errUp := tryDialControl(masterSpec, token, nodeName, cand, false, nil); errUp == nil && rUp.OK {
 					activeMethod = cand
 					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss)
 					addLog(fmt.Sprintf("SURVIVAL-UPGRADE: Upgraded Control Highway to %s!", strings.ToUpper(activeMethod)))
@@ -452,10 +481,10 @@ func startSentinelSurvivalLoop() {
 			}
 		}
 
-		rep, _, err := tryDialControl(masterSpec, token, nodeName, activeMethod, false)
+		rep, _, err := tryDialControl(masterSpec, token, nodeName, activeMethod, false, nil)
 		if err != nil || !rep.OK {
 			for _, cand := range order {
-				if r2, _, err2 := tryDialControl(masterSpec, token, nodeName, cand, false); err2 == nil && r2.OK {
+				if r2, _, err2 := tryDialControl(masterSpec, token, nodeName, cand, false, nil); err2 == nil && r2.OK {
 					activeMethod = cand
 					rep = r2
 					err = nil
@@ -470,13 +499,7 @@ func startSentinelSurvivalLoop() {
 			for _, cmd := range rep.PendingCmds {
 				executeLocalConsoleCmd(cmd, os.Getenv("PANEL_PORT"))
 			}
-			for _, et := range rep.ExitTunnels {
-				sig := fmt.Sprintf("%s:%s:%s:%s", et.Method, et.TunnelPort, et.InboundPorts, et.SpeedLimit)
-				if appliedExits[et.ID] != sig {
-					appliedExits[et.ID] = sig
-					dispatchTunnelEngine(et)
-				}
-			}
+			applyIncomingExitTunnels(rep.ExitTunnels)
 		}
 
 		jitterBig, _ := rand.Int(rand.Reader, big.NewInt(30))

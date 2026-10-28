@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -64,6 +67,22 @@ func (protoRawCodec) Unmarshal(data []byte, v any) error {
 
 func init() {
 	encoding.RegisterCodec(protoRawCodec{})
+}
+
+func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
+	expectedPin = strings.TrimSpace(expectedPin)
+	if expectedPin == "" {
+		return nil
+	}
+	if len(rawCerts) == 0 {
+		return fmt.Errorf("no peer certificate presented")
+	}
+	sum := sha256.Sum256(rawCerts[0])
+	actualPin := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(actualPin, expectedPin) {
+		return fmt.Errorf("certificate pin mismatch: got %s, expected %s", actualPin, expectedPin)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------
@@ -149,6 +168,7 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 				return
 			}
 			if len(inBuf) > 0 {
+				atomic.AddUint64(&appRxBytes, uint64(len(inBuf)))
 				if _, err := targetConn.Write(inBuf); err != nil {
 					return
 				}
@@ -165,6 +185,7 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 		default:
 			n, err := targetConn.Read(buf)
 			if n > 0 {
+				atomic.AddUint64(&appTxBytes, uint64(n))
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				if err := stream.SendMsg(chunk); err != nil {
@@ -220,10 +241,7 @@ func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, err
 		NextProtos:         []string{"h2"},
 		MinVersion:         tls.VersionTLS13,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			if certPin == "" {
-				return nil
-			}
-			return verifyFingerprintPin(rawCerts, certPin)
+			return verifyGRPCCertPin(rawCerts, certPin)
 		},
 	}
 
@@ -292,12 +310,10 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 		return
 	}
 
-	// Attach target port header to stream context metadata
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-target-port", targetPort)
 
-	// Open a new multiplexed bidirectional stream on the single HTTP/2 connection
 	streamDesc := &grpc.StreamDesc{
 		StreamName:    "TunnelStream",
 		ServerStreams: true,
@@ -310,7 +326,7 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 		return
 	}
 
-	limiter := getTunnelLimiter(t.ID, t.SpeedLimit)
+	limiter := getTunnelLimiter(t.ID)
 
 	// Uplink: User TCP Connection -> gRPC Stream
 	go func() {
@@ -320,9 +336,9 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 			n, err := userConn.Read(buf)
 			if n > 0 {
 				if limiter != nil {
-					_ = limiter.WaitN(ctx, n)
+					limiter.WaitBytes(n)
 				}
-				recordAppTraffic(uint64(n), 0)
+				atomic.AddUint64(&appTxBytes, uint64(n))
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				if err := stream.SendMsg(chunk); err != nil {
@@ -342,7 +358,10 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 			return
 		}
 		if len(inBuf) > 0 {
-			recordAppTraffic(0, uint64(len(inBuf)))
+			if limiter != nil {
+				limiter.WaitBytes(len(inBuf))
+			}
+			atomic.AddUint64(&appRxBytes, uint64(len(inBuf)))
 			if _, err := userConn.Write(inBuf); err != nil {
 				return
 			}
@@ -350,8 +369,8 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 	}
 }
 
-
 func startGRPCEngine(t Tunnel) {
+	stopTunnelIfRunning(t.ID)
 	if t.Role == "server" {
 		startGRPCExitListener(t)
 	} else {

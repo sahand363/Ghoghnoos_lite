@@ -27,3 +27,8 @@ Run this one-line command on your **Master** server (Ubuntu/Debian):
 
 ```bash
 curl -Ls [https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh](https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh) | bash
+
+
+Once installed, open your browser and navigate to:
+
+http://<YOUR-SERVER-IP>:6001/admin/

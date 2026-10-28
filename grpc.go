@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -15,59 +14,12 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
-
-// Wire-level Protobuf Codec: encodes raw TCP bytes into standard Protobuf Field 1 (bytes)
-// Wire format: 0x0a (tag 1, wire type 2: length-delimited) + varint(len) + raw_bytes
-type protoRawCodec struct{}
-
-func (protoRawCodec) Name() string { return "proto" }
-
-func (protoRawCodec) Marshal(v any) ([]byte, error) {
-	data, ok := v.([]byte)
-	if !ok {
-		if ptr, isPtr := v.(*[]byte); isPtr {
-			data = *ptr
-		} else {
-			return nil, fmt.Errorf("unexpected payload type: %T", v)
-		}
-	}
-	var buf [10]byte
-	n := binary.PutUvarint(buf[:], uint64(len(data)))
-	header := append([]byte{0x0a}, buf[:n]...)
-	return append(header, data...), nil
-}
-
-func (protoRawCodec) Unmarshal(data []byte, v any) error {
-	ptr, ok := v.(*[]byte)
-	if !ok {
-		return fmt.Errorf("unexpected target type: %T", v)
-	}
-	if len(data) == 0 {
-		*ptr = (*ptr)[:0]
-		return nil
-	}
-	// Parse Protobuf tag & length if present (field 1 wire type 2: 0x0a)
-	if data[0] == 0x0a {
-		length, n := binary.Uvarint(data[1:])
-		if n > 0 && int(1+n+int(length)) <= len(data) {
-			payload := data[1+n : 1+n+int(length)]
-			*ptr = append((*ptr)[:0], payload...)
-			return nil
-		}
-	}
-	// Fallback to direct raw payload
-	*ptr = append((*ptr)[:0], data...)
-	return nil
-}
-
-func init() {
-	encoding.RegisterCodec(protoRawCodec{})
-}
 
 func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
 	expectedPin = strings.TrimSpace(expectedPin)
@@ -91,6 +43,8 @@ func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
 
 type grpcTunnelServer struct{}
 
+var activeGRPCServers = make(map[string]*grpc.Server)
+
 func startGRPCExitListener(t Tunnel) {
 	listenAddr := "0.0.0.0:" + t.TunnelPort
 	lis, err := net.Listen("tcp", listenAddr)
@@ -100,17 +54,24 @@ func startGRPCExitListener(t Tunnel) {
 	}
 
 	mu.Lock()
+	if oldSrv, ok := activeGRPCServers[t.ID]; ok && oldSrv != nil {
+		oldSrv.Stop()
+	}
 	activeListeners[t.ID] = append(activeListeners[t.ID], lis)
 	mu.Unlock()
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{localCert},
 		NextProtos:   []string{"h2"},
-		MinVersion:   tls.VersionTLS13,
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	s := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(tlsConfig)),
+		grpc.InitialWindowSize(4*1024*1024),
+		grpc.InitialConnWindowSize(16*1024*1024),
+		grpc.MaxRecvMsgSize(16*1024*1024),
+		grpc.MaxSendMsgSize(16*1024*1024),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    15 * time.Second,
 			Timeout: 5 * time.Second,
@@ -120,6 +81,10 @@ func startGRPCExitListener(t Tunnel) {
 			PermitWithoutStream: true,
 		}),
 	)
+
+	mu.Lock()
+	activeGRPCServers[t.ID] = s
+	mu.Unlock()
 
 	// Register Streaming RPC: /GhoghnoosService/TunnelStream
 	s.RegisterService(&grpc.ServiceDesc{
@@ -135,10 +100,12 @@ func startGRPCExitListener(t Tunnel) {
 		},
 	}, &grpcTunnelServer{})
 
-	addLog(fmt.Sprintf("GRPC-EXIT-OK [%s]: Listening on :%s (TLS 1.3 / ALPN h2)", t.Name, t.TunnelPort))
+	addLog(fmt.Sprintf("GRPC-EXIT-OK [%s]: Listening on :%s (TLS / ALPN h2)", t.Name, t.TunnelPort))
 	go func() {
 		if err := s.Serve(lis); err != nil {
-			addLog(fmt.Sprintf("GRPC-EXIT-STOP [%s]: %v", t.Name, err))
+			if !strings.Contains(err.Error(), "use of closed network connection") {
+				addLog(fmt.Sprintf("GRPC-EXIT-STOP [%s]: %v", t.Name, err))
+			}
 		}
 	}()
 }
@@ -150,53 +117,60 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 		targetPort = vals[0]
 	}
 
-	targetConn, err := net.DialTimeout("tcp", "127.0.0.1:"+targetPort, 3*time.Second)
+	targetConn, err := net.DialTimeout("tcp", "127.0.0.1:"+targetPort, 4*time.Second)
 	if err != nil {
+		addLog(fmt.Sprintf("GRPC-EXIT-DIAL-ERR: Local port 127.0.0.1:%s unreachable: %v", targetPort, err))
 		return err
 	}
 	defer targetConn.Close()
 
-	ctx, cancel := context.WithCancel(stream.Context())
-	defer cancel()
+	errCh := make(chan error, 2)
 
-	// Uplink: gRPC Stream -> Local Target Port
+	// Uplink: gRPC Stream -> Local X-UI Target Port
 	go func() {
-		defer cancel()
-		var inBuf []byte
 		for {
-			if err := stream.RecvMsg(&inBuf); err != nil {
+			var inMsg wrapperspb.BytesValue
+			if err := stream.RecvMsg(&inMsg); err != nil {
+				if tcpConn, ok := targetConn.(*net.TCPConn); ok {
+					_ = tcpConn.CloseWrite()
+				}
+				errCh <- err
 				return
 			}
-			if len(inBuf) > 0 {
-				atomic.AddUint64(&appRxBytes, uint64(len(inBuf)))
-				if _, err := targetConn.Write(inBuf); err != nil {
+			if len(inMsg.Value) > 0 {
+				atomic.AddUint64(&appRxBytes, uint64(len(inMsg.Value)))
+				if _, err := targetConn.Write(inMsg.Value); err != nil {
+					errCh <- err
 					return
 				}
 			}
 		}
 	}()
 
-	// Downlink: Local Target Port -> gRPC Stream
-	buf := make([]byte, 32*1024)
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
+	// Downlink: Local X-UI Target Port -> gRPC Stream
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
 			n, err := targetConn.Read(buf)
 			if n > 0 {
 				atomic.AddUint64(&appTxBytes, uint64(n))
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				if err := stream.SendMsg(chunk); err != nil {
-					return err
+				outMsg := &wrapperspb.BytesValue{Value: buf[:n]}
+				if sendErr := stream.SendMsg(outMsg); sendErr != nil {
+					errCh <- sendErr
+					return
 				}
 			}
 			if err != nil {
-				return nil
+				errCh <- err
+				return
 			}
 		}
-	}
+	}()
+
+	// Wait for both directions or context cancellation
+	<-errCh
+	<-errCh
+	return nil
 }
 
 // ---------------------------------------------------------
@@ -215,11 +189,12 @@ var grpcPools = make(map[string]*grpcClientPool)
 var grpcPoolsMu sync.Mutex
 
 func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, error) {
+	poolKey := fmt.Sprintf("%s|%s|%s", remoteAddr, sni, certPin)
 	grpcPoolsMu.Lock()
-	pool, exists := grpcPools[remoteAddr]
+	pool, exists := grpcPools[poolKey]
 	if !exists {
 		pool = &grpcClientPool{target: remoteAddr, sni: sni, pin: certPin}
-		grpcPools[remoteAddr] = pool
+		grpcPools[poolKey] = pool
 	}
 	grpcPoolsMu.Unlock()
 
@@ -227,11 +202,11 @@ func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, err
 	defer pool.mu.Unlock()
 
 	if pool.conn != nil {
-		state := pool.conn.GetState().String()
-		if state == "READY" || state == "IDLE" {
+		st := pool.conn.GetState()
+		if st == connectivity.Ready || st == connectivity.Idle || st == connectivity.Connecting {
 			return pool.conn, nil
 		}
-		pool.conn.Close()
+		_ = pool.conn.Close()
 		pool.conn = nil
 	}
 
@@ -239,17 +214,20 @@ func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, err
 		ServerName:         sni,
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h2"},
-		MinVersion:         tls.VersionTLS13,
+		MinVersion:         tls.VersionTLS12,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			return verifyGRPCCertPin(rawCerts, certPin)
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, remoteAddr,
+	conn, err := grpc.Dial(remoteAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithInitialWindowSize(4*1024*1024),
+		grpc.WithInitialConnWindowSize(16*1024*1024),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(16*1024*1024),
+			grpc.MaxCallSendMsgSize(16*1024*1024),
+		),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                15 * time.Second,
 			Timeout:             5 * time.Second,
@@ -270,9 +248,9 @@ func startGRPCEntryListener(t Tunnel) {
 		return
 	}
 
-	sni := t.SNI
+	sni := strings.TrimSpace(t.SNI)
 	if sni == "" {
-		sni = "www.cloudflare.com"
+		sni = "www.speedtest.net"
 	}
 
 	for _, p := range ports {
@@ -287,7 +265,7 @@ func startGRPCEntryListener(t Tunnel) {
 		activeListeners[t.ID] = append(activeListeners[t.ID], lis)
 		mu.Unlock()
 
-		addLog(fmt.Sprintf("GRPC-RELAY-OK [%s]: Forwarding :%s -> gRPC :%s (Multiplexed)", t.Name, pStr, t.TunnelPort))
+		addLog(fmt.Sprintf("GRPC-RELAY-OK [%s]: Forwarding :%s -> gRPC %s (Multiplexed H2)", t.Name, pStr, t.RemoteAddr))
 
 		go func() {
 			for {
@@ -327,10 +305,10 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 	}
 
 	limiter := getTunnelLimiter(t.ID)
+	errCh := make(chan error, 2)
 
 	// Uplink: User TCP Connection -> gRPC Stream
 	go func() {
-		defer cancel()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := userConn.Read(buf)
@@ -339,34 +317,46 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 					limiter.WaitBytes(n)
 				}
 				atomic.AddUint64(&appTxBytes, uint64(n))
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				if err := stream.SendMsg(chunk); err != nil {
+				outMsg := &wrapperspb.BytesValue{Value: buf[:n]}
+				if sendErr := stream.SendMsg(outMsg); sendErr != nil {
+					errCh <- sendErr
 					return
 				}
 			}
 			if err != nil {
+				_ = stream.CloseSend()
+				errCh <- err
 				return
 			}
 		}
 	}()
 
 	// Downlink: gRPC Stream -> User TCP Connection
-	var inBuf []byte
-	for {
-		if err := stream.RecvMsg(&inBuf); err != nil {
-			return
-		}
-		if len(inBuf) > 0 {
-			if limiter != nil {
-				limiter.WaitBytes(len(inBuf))
-			}
-			atomic.AddUint64(&appRxBytes, uint64(len(inBuf)))
-			if _, err := userConn.Write(inBuf); err != nil {
+	go func() {
+		for {
+			var inMsg wrapperspb.BytesValue
+			if err := stream.RecvMsg(&inMsg); err != nil {
+				if tcpConn, ok := userConn.(*net.TCPConn); ok {
+					_ = tcpConn.CloseWrite()
+				}
+				errCh <- err
 				return
 			}
+			if len(inMsg.Value) > 0 {
+				if limiter != nil {
+					limiter.WaitBytes(len(inMsg.Value))
+				}
+				atomic.AddUint64(&appRxBytes, uint64(len(inMsg.Value)))
+				if _, err := userConn.Write(inMsg.Value); err != nil {
+					errCh <- err
+					return
+				}
+			}
 		}
-	}
+	}()
+
+	<-errCh
+	<-errCh
 }
 
 func startGRPCEngine(t Tunnel) {

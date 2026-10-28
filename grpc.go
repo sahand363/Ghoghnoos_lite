@@ -349,3 +349,12 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 		}
 	}
 }
+
+
+func startGRPCEngine(t Tunnel) {
+	if t.Role == "server" {
+		startGRPCExitListener(t)
+	} else {
+		startGRPCEntryListener(t)
+	}
+}

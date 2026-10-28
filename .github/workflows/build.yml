@@ -3,6 +3,7 @@ name: Build and Release
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,21 +12,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      - name: Fetch Native Go SSH & Compile Binary
+      - name: Install Dependencies
         run: |
-          go get golang.org/x/crypto/ssh
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ghoghnoos_lite .
+          go mod tidy
 
-      - name: Publish to Latest GitHub Release
+      - name: Build Binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ghoghnoos-tunnel .
+
+      - name: Create or Update Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
         with:
           tag_name: latest
-          name: Latest Automatic Build
-          files: ghoghnoos_lite
+          name: "Latest Automatic Build"
+          draft: false
+          prerelease: false
+          files: ghoghnoos-tunnel
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

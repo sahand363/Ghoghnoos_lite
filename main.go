@@ -31,13 +31,13 @@ var i18nJS []byte
 var appJS []byte
 
 const (
-	appVersion = "v2.6.0"
+	appVersion = "v2.7.0"
 	wsGUID     = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	dbPath     = "/opt/litetun/panel_db.json"
-	logPath    = "/opt/litetun/panel.log"
-	confPath   = "/opt/litetun/config.env"
-	certFile   = "/opt/litetun/cert.pem"
-	keyFile    = "/opt/litetun/key.pem"
+	dbPath     = "/opt/ghoghnoos/panel_db.json"
+	logPath    = "/opt/ghoghnoos/panel.log"
+	confPath   = "/opt/ghoghnoos/config.env"
+	certFile   = "/opt/ghoghnoos/cert.pem"
+	keyFile    = "/opt/ghoghnoos/key.pem"
 )
 
 var (
@@ -68,6 +68,20 @@ var (
 	mu                sync.Mutex
 )
 
+func migrateLegacyData() {
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
+	legacyFiles := []string{"panel_db.json", "config.env", "panel.log", "cert.pem", "key.pem"}
+	for _, f := range legacyFiles {
+		newP := "/opt/ghoghnoos/" + f
+		oldP := "/opt/litetun/" + f
+		if _, err := os.Stat(newP); os.IsNotExist(err) {
+			if data, errOld := os.ReadFile(oldP); errOld == nil && len(data) > 0 {
+				_ = os.WriteFile(newP, data, 0600)
+			}
+		}
+	}
+}
+
 func loadEnvFile() {
 	data, err := os.ReadFile(confPath)
 	if err != nil {
@@ -90,7 +104,7 @@ func loadEnvFile() {
 }
 
 func initSelfSignedCert() {
-	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && len(cert.Certificate) > 0 {
 		sum := sha256.Sum256(cert.Certificate[0])
 		localPinHex = hex.EncodeToString(sum[:])
@@ -131,6 +145,7 @@ func initSelfSignedCert() {
 }
 
 func main() {
+	migrateLegacyData()
 	loadEnvFile()
 	initSessionSecret()
 
@@ -166,10 +181,23 @@ func main() {
 	go startDailyUpdateChecker()
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("Ghoghnoos-lite %s running on port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")
-	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
-		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
+	sslCert := strings.TrimSpace(os.Getenv("PANEL_SSL_CERT"))
+	sslKey := strings.TrimSpace(os.Getenv("PANEL_SSL_KEY"))
+
+	if sslCert != "" && sslKey != "" {
+		if _, err := os.Stat(sslCert); err == nil {
+			fmt.Printf("Ghoghnoos Tunnel %s running on HTTPS port %s (Path: /%s/ | Domain: %s)\n", appVersion, port, panelPath, os.Getenv("PANEL_DOMAIN"))
+			if err := http.ListenAndServeTLS(":"+port, sslCert, sslKey, nil); err != nil {
+				fmt.Printf("HTTPS error (%v), falling back to HTTP...\n", err)
+			}
+		}
+	}
+
+	if _, err := os.Stat("/opt/ghoghnoos/server.crt"); err == nil {
+		fmt.Printf("Ghoghnoos Tunnel %s running on HTTPS port %s (Path: /%s/)\n", appVersion, port, panelPath)
+		_ = http.ListenAndServeTLS(":"+port, "/opt/ghoghnoos/server.crt", "/opt/ghoghnoos/server.key", nil)
 	} else {
-		http.ListenAndServe(":"+port, nil)
+		fmt.Printf("Ghoghnoos Tunnel %s running on HTTP port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")
+		_ = http.ListenAndServe(":"+port, nil)
 	}
 }

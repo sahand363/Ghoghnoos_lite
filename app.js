@@ -551,17 +551,27 @@ function renderTunnels() {
     if (t.method === 'direct' || t.method === 'spoof') { mBadge = '⚡ DIRECT-TLS'; stealthBadge = '🛡️ 75%'; }
     if (t.method === 'forward') { mBadge = '🔄 FORWARD'; stealthBadge = '🛡️ 20%'; }
     const spdTxt = (t.speed_limit && parseFloat(t.speed_limit) > 0) ? `${t.speed_limit} MB/s` : 'Unlimited';
-    return `<div class="card p-4 sm:p-5 rounded-2xl flex flex-col gap-3" dir="ltr"><div class="flex flex-wrap justify-between items-center gap-2"><div class="flex flex-wrap items-center gap-2">
-      <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
-      <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
-      <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
-      <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span></div>
-      <div class="flex items-center gap-1.5"><button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingResults[t.id] || '⚡ Ping / Test'}</button>
-      <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
-      <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button></div></div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
-      <div>Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div><div>Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
-      <div>Speed: <b class="text-amber-400">${spdTxt}</b></div><div>SNI: <b class="text-slate-200">${t.method === 'forward' ? 'L4 Pass' : t.sni}</b></div></div></div>`;
+    return `<div class="card p-4 sm:p-5 rounded-2xl flex flex-col justify-between gap-3" dir="ltr">
+      <div class="flex flex-wrap justify-between items-center gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
+          <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
+          <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
+          <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingResults[t.id] || '⚡ Ping / Test'}</button>
+          <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
+          <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-400 pt-2.5 border-t border-slate-800/70 font-mono">
+        <div class="truncate">Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
+        <div class="truncate">Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
+        <div class="truncate">Speed: <b class="text-amber-400">${spdTxt}</b></div>
+        <div class="truncate">SNI: <b class="text-slate-200">${t.method === 'forward' ? 'L4 Pass' : t.sni}</b></div>
+      </div>
+    </div>`;
   }).join(''));
 }
 

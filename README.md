@@ -8,6 +8,14 @@
 
 ---
 
+## 📸 Screenshots
+
+### Network Dashboard
+![Ghoghnoos Tunnel Network Dashboard](docs/images/Ghoghnoos%20Tunnel%20Network%20Dashboard.png)
+
+### Tunnel Monitoring
+![Neon Tunnel Monitoring Dashboard](docs/images/Neon%20Tunnel%20Monitoring%20Dashboard.png)
+
 ## 🌟 Key Features
 
 - **3 Built-in Transport Engines**

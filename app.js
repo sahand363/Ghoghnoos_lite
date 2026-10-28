@@ -184,7 +184,7 @@ function updateSpeedBadge() {
 function selectTunnelMethod(m) {
   if (m === 'spoof' || m === 'tls') m = 'direct';
   selectedMethod = m || 'wss';
-  ['wss', 'direct', 'forward'].forEach(k => {
+  ['wss', 'direct', 'forward', 'grpc'].forEach(k => {
     const card = el('method-card-' + k), badge = el('badge-method-' + k);
     if (k === selectedMethod) {
       if (card) card.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition';
@@ -194,13 +194,40 @@ function selectTunnelMethod(m) {
       if (badge) { badge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; badge.innerText = 'READY'; }
     }
   });
-  const rSniWrap = el('row-tls-sni-wrap'), rWsPath = el('row-ws-path'), rDirect = el('row-direct-opts'), rForward = el('row-forward-opts'), rPin = el('row-cert-pin');
+  const rSniWrap = el('row-tls-sni-wrap');
+  const rWsPath = el('row-ws-path');
+  const rDirect = el('row-direct-opts');
+  const rForward = el('row-forward-opts');
+  const rGrpc = el('row-grpc-opts');
+  const rPin = el('row-cert-pin');
+
   if (selectedMethod === 'forward') {
-    rSniWrap?.classList.add('hidden'); rDirect?.classList.add('hidden'); rForward?.classList.remove('hidden'); rPin?.classList.add('hidden');
+    rSniWrap?.classList.add('hidden');
+    rDirect?.classList.add('hidden');
+    rForward?.classList.remove('hidden');
+    rGrpc?.classList.add('hidden');
+    rPin?.classList.add('hidden');
   } else if (selectedMethod === 'direct') {
-    rSniWrap?.classList.remove('hidden'); rWsPath?.classList.add('hidden'); rDirect?.classList.remove('hidden'); rForward?.classList.add('hidden'); rPin?.classList.remove('hidden');
+    rSniWrap?.classList.remove('hidden');
+    rWsPath?.classList.add('hidden');
+    rDirect?.classList.remove('hidden');
+    rForward?.classList.add('hidden');
+    rGrpc?.classList.add('hidden');
+    rPin?.classList.remove('hidden');
+  } else if (selectedMethod === 'grpc') {
+    rSniWrap?.classList.remove('hidden');
+    rWsPath?.classList.add('hidden');
+    rDirect?.classList.add('hidden');
+    rForward?.classList.add('hidden');
+    rGrpc?.classList.remove('hidden');
+    rPin?.classList.remove('hidden');
   } else {
-    rSniWrap?.classList.remove('hidden'); rWsPath?.classList.remove('hidden'); rDirect?.classList.add('hidden'); rForward?.classList.add('hidden'); rPin?.classList.remove('hidden');
+    rSniWrap?.classList.remove('hidden');
+    rWsPath?.classList.remove('hidden');
+    rDirect?.classList.add('hidden');
+    rForward?.classList.add('hidden');
+    rGrpc?.classList.add('hidden');
+    rPin?.classList.remove('hidden');
   }
 }
 
@@ -373,7 +400,7 @@ async function saveConfig() {
     method: 'POST',
     body: JSON.stringify({ port, path, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_methods })
   });
-  if (selectedServer === 'local') setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
+  if (selectedServer === 'local') setTimeout(() => { window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}/${path}/`; }, 2000);
   else alert('Remote Sentinel configuration updated!');
 }
 
@@ -521,7 +548,7 @@ function renderServers() {
   setHTML('server-cards-list', currentServers.map(s => {
     const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
     const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
-    const verBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-sky-400 border border-slate-700 font-mono">${s.version || 'v2.6.0'}</span>`;
+    const verBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-sky-400 border border-slate-700 font-mono">${s.version || 'v2.7.0'}</span>`;
     const probeBtn = !s.is_local
       ? (s.probing
           ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/70 hover:bg-amber-900 text-xs font-semibold animate-pulse">⏸ Probing...</button>`
@@ -549,6 +576,7 @@ function renderTunnels() {
     let mBadge = '🌐 WSS', stealthBadge = '🛡️ 85%';
     if (t.method === 'direct' || t.method === 'spoof') { mBadge = '⚡ DIRECT-TLS'; stealthBadge = '🛡️ 75%'; }
     if (t.method === 'forward') { mBadge = '🔄 FORWARD'; stealthBadge = '🛡️ 20%'; }
+    if (t.method === 'grpc') { mBadge = '🚀 gRPC (H2)'; stealthBadge = '🛡️ 90%'; }
     const spdTxt = (t.speed_limit && parseFloat(t.speed_limit) > 0) ? `${t.speed_limit} MB/s` : 'Unlimited';
     return `<div class="card p-4 sm:p-5 rounded-2xl flex flex-col justify-between gap-3" dir="ltr">
       <div class="flex flex-wrap justify-between items-center gap-2">

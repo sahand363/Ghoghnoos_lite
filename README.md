@@ -22,3 +22,8 @@
 ---
 
 ## ⚡ Quick Start & Installation
+
+Run this one-line command on your **Master** server (Ubuntu/Debian):
+
+```bash
+curl -Ls [https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh](https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh) | bash

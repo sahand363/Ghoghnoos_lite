@@ -11,9 +11,9 @@
 ## 🌟 Key Features
 
 - **3 Built-in Transport Engines**
-  - **WSS :** Standards-compliant WebSocket handshake over TLS 1.3, masqueraded under common CDN/SNI hostnames.
-  - **Direct-TLS 1.3 :** Zero-HTTP-overhead raw TLS stream relay with selectable browser TLS cipher fingerprinting.
-  - **Port Forward :** High-throughput TCP byte relay designed for endpoints already using outer obfuscation, such as REALITY.
+  - **WSS:** Standards-compliant WebSocket handshake over TLS 1.3, masqueraded under common CDN/SNI hostnames.
+  - **Direct TLS 1.3:** Raw TLS stream relay with no HTTP overhead and selectable browser TLS cipher fingerprinting.
+  - **Port Forward (Raw L4):** High-throughput TCP byte relay designed for endpoints already using outer obfuscation, such as REALITY.
 - **Unified Token-Bucket Speed Limiter:** Shared bandwidth throttling per tunnel across concurrent parallel connections, preventing speed-test limit bypasses.
 - **Bidirectional Rendezvous & Sentinel Mode:** Connects remote nodes even when inbound SSH is blocked, supporting both active reverse dialing and passive listen-only probing.
 - **30-Day Bandwidth Tracking:** Real-time kernel counter monitoring in RAM, with aggregated usage flushed to disk hourly to reduce SSD writes.
@@ -29,18 +29,15 @@ Run the following command on your **Master server** (Ubuntu/Debian):
 curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | bash
 ```
 
-Once installed, open your browser and navigate to:
+During installation, you will be prompted to create your **dashboard username and password**.
+
+Once installation is complete, open your browser and navigate to:
 
 ```text
 http://<YOUR-SERVER-IP>:6001/admin/
 ```
 
-**Default Login Credentials**
-
-- **Username:** `admin`
-- **Password:** `admin`
-
-> ⚠️ **Security Notice:** Change the default credentials immediately after your first login. Do not expose the dashboard publicly while using default credentials.
+> 🔐 **Security:** Choose a strong, unique username and password during installation. Keep your dashboard credentials secure.
 
 ---
 
@@ -61,7 +58,7 @@ During enrollment, you can select one of the following modes:
 
 ## ⌨️ CLI Management
 
-Manage the service, view logs, change credentials, or update the binary directly from your SSH terminal:
+Manage the service, view logs, or update the binary directly from your SSH terminal:
 
 ```bash
 ghoghnoos

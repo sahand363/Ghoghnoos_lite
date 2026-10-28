@@ -64,9 +64,9 @@ type PingPoint struct {
 }
 
 type DailyBW struct {
-	Date string  `json:"date"` // "2026-10-28"
-	RxMB uint64  `json:"rx_mb"`
-	TxMB uint64  `json:"tx_mb"`
+	Date string `json:"date"`
+	RxMB uint64 `json:"rx_mb"`
+	TxMB uint64 `json:"tx_mb"`
 }
 
 type SystemMetrics struct {
@@ -118,7 +118,6 @@ type ConfigReq struct {
 	CtrlMethods string `json:"ctrl_methods"`
 }
 
-// Shared Per-Tunnel Token Bucket so multi-stream speedtests cannot bypass SpeedLimit
 type SharedRateLimiter struct {
 	mu         sync.Mutex
 	rateBps    float64
@@ -166,7 +165,7 @@ func (l *SharedRateLimiter) WaitBytes(n int) {
 	elapsed := now.Sub(l.lastUpdate).Seconds()
 	if elapsed > 0 {
 		l.tokens += elapsed * l.rateBps
-		maxBurst := l.rateBps * 0.25 // 250ms max burst window
+		maxBurst := l.rateBps * 0.25
 		if maxBurst < 65536 {
 			maxBurst = 65536
 		}
@@ -299,7 +298,7 @@ func getAllowedControlMethods() []string {
 
 func executeLocalConsoleCmd(cmd, port string) {
 	cmd = strings.TrimSpace(cmd)
-	addLog("root@litetun:~# " + cmd)
+	addLog("root@ghoghnoos:~# " + cmd)
 	switch strings.ToLower(cmd) {
 	case "help":
 		addLog("Commands: status | bbr | pin | clear | restart")
@@ -355,7 +354,7 @@ func addLog(msg string) {
 	if len(logs) > 5000 {
 		logs = logs[len(logs)-5000:]
 	}
-	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 		_, _ = f.WriteString(line + "\n")
 		f.Close()
@@ -385,11 +384,11 @@ func loadLogsFromDisk() {
 		}
 		logs = valid
 	}
-	addLog("SYS: Ghoghnoos-lite initialized.")
+	addLog("SYS: Ghoghnoos Tunnel initialized.")
 }
 
 func saveDBLocked() {
-	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	dbCopy := db
 	dbCopy.Servers = make([]ServerNode, len(db.Servers))
 	for i, s := range db.Servers {
@@ -469,6 +468,8 @@ func dispatchTunnelEngine(t Tunnel) {
 		go startDirectTLSEngine(t)
 	case "forward":
 		go startPortForwardEngine(t)
+	case "grpc":
+		go startGRPCEngine(t)
 	default:
 		go startWSSEngine(t)
 	}
@@ -517,7 +518,7 @@ func updateConfigFile(req ConfigReq) error {
 	for k, v := range kv {
 		out = append(out, k+"="+v)
 	}
-	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	return os.WriteFile(confPath, []byte(strings.Join(out, "\n")+"\n"), 0644)
 }
 

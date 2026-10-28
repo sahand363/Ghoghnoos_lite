@@ -172,7 +172,6 @@ func savePanelConfigEnv(req ConfigReq) {
 		cMeth,
 	)
 	_ = os.WriteFile(confPath, []byte(envContent), 0600)
-	_ = os.WriteFile("/opt/litetun/config.env", []byte(envContent), 0600)
 }
 
 func registerRoutes(port, panelPath string) {
@@ -648,13 +647,14 @@ func registerRoutes(port, panelPath string) {
 		var t Tunnel
 		json.NewDecoder(r.Body).Decode(&t)
 		t.Status = "Online"
-		if t.Method == "" || t.Method == "spoof" || t.Method == "tls" {
-			if t.Method == "spoof" || t.Method == "tls" {
-				t.Method = "direct"
-			} else {
-				t.Method = "wss"
-			}
+
+		// Clean method normalization
+		if t.Method == "spoof" || t.Method == "tls" {
+			t.Method = "direct"
+		} else if t.Method == "" {
+			t.Method = "wss"
 		}
+
 		if !strings.HasPrefix(t.WSPath, "/") {
 			t.WSPath = "/" + strings.Trim(t.WSPath, "/")
 		}

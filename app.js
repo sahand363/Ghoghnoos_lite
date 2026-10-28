@@ -359,7 +359,6 @@ async function saveTunnel() {
 
 async function saveConfig() {
   const port = (el('cfg-port')?.value || '').trim() || '6001', path = (el('cfg-path')?.value || '').trim();
-  const user = (el('cfg-user')?.value || '').trim(), pass = (el('cfg-pass')?.value || '').trim();
   const ctrl_l4 = (el('cfg-ctrl-l4')?.value || '').trim() || '6005';
   const ctrl_direct = (el('cfg-ctrl-direct')?.value || '').trim() || '6006';
   const ctrl_wss = (el('cfg-ctrl-wss')?.value || '').trim() || '6007';
@@ -372,7 +371,7 @@ async function saveConfig() {
 
   await fetch('/api/config?server_id=' + selectedServer, {
     method: 'POST',
-    body: JSON.stringify({ port, path, user, pass, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_methods })
+    body: JSON.stringify({ port, path, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_methods })
   });
   if (selectedServer === 'local') setTimeout(() => { window.location.href = `http://${window.location.hostname}:${port}/${path}/`; }, 2000);
   else alert('Remote Sentinel configuration updated!');

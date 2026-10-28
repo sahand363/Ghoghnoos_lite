@@ -27,3 +27,30 @@ Run this one-line command on your **Master** server (Ubuntu/Debian):
 
 ```bash
 curl -Ls [https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh](https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh) | bash
+
+
+
+Once installed, access your dashboard at:
+
+
+Default Username: admin
+
+    Default Password: admin
+
+🖥️ Sentinel Remote Setup (Exit Node)
+
+To enroll a remote exit server without opening standard SSH credentials, execute the interactive enrollment command generated directly within your dashboard's Servers tab:
+
+
+curl -Ls [https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh](https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh) | bash -s -- --enroll <MASTER_IP>:6005:6006:6007 <ENROLL_TOKEN> Server-2
+
+
+The interactive prompt allows you to choose between:
+
+    Bidirectional Mode (Default): Connects outbound to Master while keeping local fallback listeners active.
+
+    Listen-Only Mode: Keeps passive listeners open, awaiting Master's forward rendezvous probe.
+
+⌨️ CLI Access
+
+After installation, you can launch the console interface from any SSH session simply by running:

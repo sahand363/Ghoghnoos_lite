@@ -235,10 +235,10 @@ case "$OPT" in
       EMAIL_ARG="--email $INPUT_EMAIL"
     fi
 
-    certbot certonly --standalone -d "$INPUT_DOMAIN" --non-interactive --agree-tos $EMAIL_ARG
+    certbot certonly --standalone -d "$INPUT_DOMAIN" --cert-name "ghoghnoos" --key-type ecdsa --keep-until-expiring --non-interactive --agree-tos $EMAIL_ARG
 
-    CERT_LIVE="/etc/letsencrypt/live/$INPUT_DOMAIN/fullchain.pem"
-    KEY_LIVE="/etc/letsencrypt/live/$INPUT_DOMAIN/privkey.pem"
+CERT_LIVE="/etc/letsencrypt/live/ghoghnoos/fullchain.pem"
+KEY_LIVE="/etc/letsencrypt/live/ghoghnoos/privkey.pem"
 
     if [[ -f "$CERT_LIVE" ]] && [[ -f "$KEY_LIVE" ]]; then
       cp -f "$CERT_LIVE" "$INSTALL_DIR/ssl_cert.pem"

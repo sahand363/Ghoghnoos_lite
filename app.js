@@ -108,7 +108,7 @@ function updateEnrollCommandUI() {
   if (addrIn && !addrIn.value && masterIP) addrIn.value = defaultSpec;
   const targetSpec = (addrIn?.value || defaultSpec).trim();
   const nodeName = (el('enroll-node-name')?.value || getNextDefaultServerName()).trim().replace(/\s+/g, '-');
-  const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | bash -s -- --enroll ${targetSpec} ${enrollToken} ${nodeName}`;
+  const cmd = `curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | bash -s -- --enroll ${targetSpec} ${enrollToken} ${nodeName}`;
   setText('enroll-cmd-box', cmd);
 }
 

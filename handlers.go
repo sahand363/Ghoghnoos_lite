@@ -101,6 +101,80 @@ func buildPingSummary(all []PingPoint, targetSrvID, rangeStr string) map[string]
 	}
 }
 
+func savePanelConfigEnv(req ConfigReq) {
+	loadEnvFile()
+	pPort := strings.TrimSpace(req.Port)
+	if pPort == "" {
+		pPort = os.Getenv("PANEL_PORT")
+	}
+	if pPort == "" {
+		pPort = "6001"
+	}
+	pPath := strings.Trim(strings.TrimSpace(req.Path), "/")
+	if pPath == "" {
+		pPath = strings.Trim(os.Getenv("PANEL_PATH"), "/")
+	}
+	pUser := strings.TrimSpace(req.User)
+	if pUser == "" {
+		pUser = panelUser
+	}
+	if pUser == "" {
+		pUser = "admin"
+	}
+	pPass := strings.TrimSpace(req.Pass)
+	if pPass == "" {
+		pPass = panelPass
+	}
+	if pPass == "" {
+		pPass = "admin"
+	}
+	cL4 := strings.TrimSpace(req.CtrlL4)
+	if cL4 == "" {
+		cL4 = os.Getenv("CTRL_L4_PORT")
+	}
+	if cL4 == "" {
+		cL4 = "6005"
+	}
+	cDir := strings.TrimSpace(req.CtrlDirect)
+	if cDir == "" {
+		cDir = os.Getenv("CTRL_DIRECT_PORT")
+	}
+	if cDir == "" {
+		cDir = "6006"
+	}
+	cWSS := strings.TrimSpace(req.CtrlWSS)
+	if cWSS == "" {
+		cWSS = os.Getenv("CTRL_WSS_PORT")
+	}
+	if cWSS == "" {
+		cWSS = "6007"
+	}
+	cMeth := strings.TrimSpace(req.CtrlMethods)
+	if cMeth == "" {
+		cMeth = os.Getenv("CTRL_METHODS")
+	}
+	if cMeth == "" {
+		cMeth = "wss,direct"
+	}
+
+	envContent := fmt.Sprintf(
+		"PANEL_PORT=%s\nPANEL_PATH=%s\nPANEL_USER=%s\nPANEL_PASS=%s\nPANEL_DOMAIN=%s\nPANEL_SSL_CERT=%s\nPANEL_SSL_KEY=%s\nCTRL_L4_PORT=%s\nCTRL_DIRECT_PORT=%s\nCTRL_WSS_PORT=%s\nCTRL_METHODS=%s\n",
+		pPort,
+		pPath,
+		pUser,
+		pPass,
+		os.Getenv("PANEL_DOMAIN"),
+		os.Getenv("PANEL_SSL_CERT"),
+		os.Getenv("PANEL_SSL_KEY"),
+		cL4,
+		cDir,
+		cWSS,
+		cMeth,
+	)
+	_ = os.WriteFile(confPath, []byte(envContent), 0600)
+	_ = os.WriteFile("/opt/litetun/config.env", []byte(envContent), 0600)
+}
+
 func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		handleLoginRoute(w, r, panelPath)
@@ -227,7 +301,7 @@ func registerRoutes(port, panelPath string) {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos-lite %s — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, appVersion, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos Tunnel %s — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, appVersion, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -403,7 +477,7 @@ func registerRoutes(port, panelPath string) {
 			w.WriteHeader(http.StatusOK)
 			go func() {
 				time.Sleep(400 * time.Millisecond)
-				_ = exec.Command("bash", "-c", "systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun; systemctl stop litetun").Run()
+				_ = exec.Command("bash", "-c", "systemctl disable ghoghnoos litetun 2>/dev/null; rm -f /etc/systemd/system/ghoghnoos.service /etc/systemd/system/litetun.service /etc/cron.d/ghoghnoos-ssl; systemctl daemon-reload; rm -rf /opt/ghoghnoos /opt/litetun /usr/local/bin/ghoghnoos /usr/local/bin/litetun; systemctl stop ghoghnoos litetun").Run()
 				os.Exit(0)
 			}()
 		}
@@ -692,6 +766,7 @@ func registerRoutes(port, panelPath string) {
 		}
 		saveDBLocked()
 		mu.Unlock()
+		savePanelConfigEnv(req)
 		_ = updateConfigFile(req)
 		w.WriteHeader(http.StatusOK)
 		go func() { time.Sleep(1 * time.Second); os.Exit(0) }()

@@ -21,6 +21,12 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
+	if tun.Method == "grpc" {
+		probeGRPCTunnelOnce(tun, firstPort, &pt)
+		recordPingPoint(pt)
+		return pt
+	}
+
 	if tun.Method == "forward" {
 		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
 		if err != nil {

@@ -144,18 +144,19 @@ func parsePortList(raw string) []string {
 }
 
 func stopTunnelIfRunning(id string) {
+	mu.Lock()
 	if list, ok := activeListeners[id]; ok {
 		for _, ln := range list {
 			_ = ln.Close()
 		}
 		delete(activeListeners, id)
 	}
+	mu.Unlock()
+	stopGRPCServerIfRunning(id)
 }
 
 func startWSSEngine(t Tunnel) {
-	mu.Lock()
 	stopTunnelIfRunning(t.ID)
-	mu.Unlock()
 
 	t.WSPath = strings.TrimSpace(t.WSPath)
 	if t.WSPath == "" {

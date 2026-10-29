@@ -147,11 +147,11 @@ func startMasterForwardProber(srvID string) {
 				activeMethod = ""
 			}
 
-			l4, dir, wss := getControlPorts()
-			targetSpec := fmt.Sprintf("%s:%s:%s:%s", ip, l4, dir, wss)
+			l4, dir, wss, grpcP := getControlPorts()
+			targetSpec := fmt.Sprintf("%s:%s:%s:%s:%s", ip, l4, dir, wss, grpcP)
 			cmdPayload := strings.Join(queuedCmds, "||")
 
-			if activeMethod != "" && activeMethod != "wss" && isControlMethodAllowed("wss") && time.Since(lastUpgrade) >= 12*time.Hour {
+			if activeMethod != "" && len(order) > 0 && activeMethod != order[0] && time.Since(lastUpgrade) >= 12*time.Hour {
 				lastUpgrade = time.Now()
 				for _, cand := range order {
 					if cand == activeMethod {

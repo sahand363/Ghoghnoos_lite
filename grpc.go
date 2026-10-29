@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -22,7 +24,7 @@ import (
 )
 
 func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
-	expectedPin = strings.TrimSpace(expectedPin)
+	expectedPin = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(expectedPin, ":", "")))
 	if expectedPin == "" {
 		return nil
 	}
@@ -37,35 +39,23 @@ func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
 	return nil
 }
 
-// ---------------------------------------------------------
-// EXIT NODE: gRPC Server Implementation
-// ---------------------------------------------------------
-
 type grpcTunnelServer struct{}
 
 var activeGRPCServers = make(map[string]*grpc.Server)
 
-func startGRPCExitListener(t Tunnel) {
-	listenAddr := "0.0.0.0:" + t.TunnelPort
-	lis, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		addLog(fmt.Sprintf("GRPC-EXIT-ERR [%s]: Failed to bind :%s: %v", t.Name, t.TunnelPort, err))
-		return
+func stopGRPCServerIfRunning(id string) {
+	if srv, ok := activeGRPCServers[id]; ok && srv != nil {
+		srv.Stop()
+		delete(activeGRPCServers, id)
 	}
+}
 
-	mu.Lock()
-	if oldSrv, ok := activeGRPCServers[t.ID]; ok && oldSrv != nil {
-		oldSrv.Stop()
-	}
-	activeListeners[t.ID] = append(activeListeners[t.ID], lis)
-	mu.Unlock()
-
+func newConfiguredGRPCServer() *grpc.Server {
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{localCert},
 		NextProtos:   []string{"h2"},
 		MinVersion:   tls.VersionTLS12,
 	}
-
 	s := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(tlsConfig)),
 		grpc.InitialWindowSize(4*1024*1024),
@@ -81,12 +71,6 @@ func startGRPCExitListener(t Tunnel) {
 			PermitWithoutStream: true,
 		}),
 	)
-
-	mu.Lock()
-	activeGRPCServers[t.ID] = s
-	mu.Unlock()
-
-	// Register Streaming RPC: /GhoghnoosService/TunnelStream
 	s.RegisterService(&grpc.ServiceDesc{
 		ServiceName: "GhoghnoosService",
 		HandlerType: (*grpcTunnelServer)(nil),
@@ -99,8 +83,83 @@ func startGRPCExitListener(t Tunnel) {
 			},
 		},
 	}, &grpcTunnelServer{})
+	return s
+}
 
-	addLog(fmt.Sprintf("GRPC-EXIT-OK [%s]: Listening on :%s (TLS / ALPN h2)", t.Name, t.TunnelPort))
+func startGRPCControlListener(grpcPort string) {
+	lis, err := net.Listen("tcp", ":"+grpcPort)
+	if err != nil {
+		addLog(fmt.Sprintf("WARN [Control-gRPC]: Could not bind :%s -> %v", grpcPort, err))
+		return
+	}
+	s := newConfiguredGRPCServer()
+	addLog(fmt.Sprintf("CONTROL-READY: gRPC HTTP/2 Ingress listening on :%s", grpcPort))
+	if err := s.Serve(lis); err != nil {
+		addLog(fmt.Sprintf("WARN [Control-gRPC]: Stopped :%s -> %v", grpcPort, err))
+	}
+}
+
+func dialGRPCControl(targetAddr string, payloadBytes []byte) (EnrollReply, error) {
+	var empty EnrollReply
+	tlsConfig := &tls.Config{
+		ServerName:         "www.speedtest.net",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h2"},
+		MinVersion:         tls.VersionTLS12,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, targetAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return empty, err
+	}
+	defer conn.Close()
+
+	b64 := base64.StdEncoding.EncodeToString(payloadBytes)
+	streamCtx := metadata.AppendToOutgoingContext(ctx, "x-enroll-payload", b64)
+	streamDesc := &grpc.StreamDesc{
+		StreamName:    "TunnelStream",
+		ServerStreams: true,
+		ClientStreams: true,
+	}
+	stream, err := conn.NewStream(streamCtx, streamDesc, "/GhoghnoosService/TunnelStream")
+	if err != nil {
+		return empty, err
+	}
+	var outMsg wrapperspb.BytesValue
+	if err := stream.RecvMsg(&outMsg); err != nil {
+		return empty, err
+	}
+	var rep EnrollReply
+	if err := json.Unmarshal(outMsg.Value, &rep); err != nil || !rep.OK {
+		return empty, fmt.Errorf("grpc enroll rejected")
+	}
+	return rep, nil
+}
+
+func startGRPCExitListener(t Tunnel) {
+	tunPort := strings.TrimSpace(t.TunnelPort)
+	if tunPort == "" {
+		tunPort = "10201"
+	}
+	listenAddr := "0.0.0.0:" + tunPort
+	lis, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		addLog(fmt.Sprintf("GRPC-EXIT-ERR [%s]: Failed to bind :%s: %v", t.Name, tunPort, err))
+		return
+	}
+
+	s := newConfiguredGRPCServer()
+	mu.Lock()
+	activeListeners[t.ID] = append(activeListeners[t.ID], lis)
+	activeGRPCServers[t.ID] = s
+	mu.Unlock()
+
+	addLog(fmt.Sprintf("LISTEN [gRPC-Exit %s]: :%s (TLS / ALPN h2)", t.Name, tunPort))
 	go func() {
 		if err := s.Serve(lis); err != nil {
 			if !strings.Contains(err.Error(), "use of closed network connection") {
@@ -112,12 +171,29 @@ func startGRPCExitListener(t Tunnel) {
 
 func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
-	targetPort := "45454"
+
+	if vals := md.Get("x-enroll-payload"); len(vals) > 0 && vals[0] != "" {
+		if !isControlMethodAllowed("grpc") {
+			return fmt.Errorf("grpc control disabled")
+		}
+		if decoded, err := base64.StdEncoding.DecodeString(vals[0]); err == nil {
+			var hb EnrollHeartbeat
+			if json.Unmarshal(decoded, &hb) == nil {
+				hb.ViaMethod = "GRPC"
+				rep := processIncomingEnroll(hb)
+				b, _ := json.Marshal(rep)
+				_ = stream.SendMsg(&wrapperspb.BytesValue{Value: b})
+				return nil
+			}
+		}
+		return fmt.Errorf("invalid enroll payload")
+	}
+
+	targetPort := "2053"
 	if vals := md.Get("x-target-port"); len(vals) > 0 && vals[0] != "" {
 		targetPort = vals[0]
 	}
 
-	// Handle 1-RTT Latency Probe from Panel Ping Button
 	if strings.HasPrefix(targetPort, "probe:") {
 		var inMsg wrapperspb.BytesValue
 		_ = stream.RecvMsg(&inMsg)
@@ -131,11 +207,11 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 		return err
 	}
 	defer targetConn.Close()
+	enableKeepAlive(targetConn)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Uplink: gRPC Stream -> Local X-UI Target Port
 	go func() {
 		defer wg.Done()
 		for {
@@ -155,7 +231,6 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 		}
 	}()
 
-	// Downlink: Local X-UI Target Port -> gRPC Stream
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 32*1024)
@@ -181,10 +256,6 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 	return nil
 }
 
-// ---------------------------------------------------------
-// RELAY NODE: gRPC Client Multiplexer
-// ---------------------------------------------------------
-
 type grpcClientPool struct {
 	mu     sync.Mutex
 	conn   *grpc.ClientConn
@@ -193,8 +264,10 @@ type grpcClientPool struct {
 	pin    string
 }
 
-var grpcPools = make(map[string]*grpcClientPool)
-var grpcPoolsMu sync.Mutex
+var (
+	grpcPools   = make(map[string]*grpcClientPool)
+	grpcPoolsMu sync.Mutex
+)
 
 func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, error) {
 	poolKey := fmt.Sprintf("%s|%s|%s", remoteAddr, sni, certPin)
@@ -250,10 +323,56 @@ func getOrCreateGRPCConn(remoteAddr, sni, certPin string) (*grpc.ClientConn, err
 	return conn, nil
 }
 
+func probeGRPCTunnelOnce(tun Tunnel, firstPort string, pt *PingPoint) {
+	sni := strings.TrimSpace(tun.SNI)
+	if sni == "" {
+		sni = "www.speedtest.net"
+	}
+	certPin := tun.CertPin
+	mu.Lock()
+	if dstSrv := findServerByID(tun.TargetServer); dstSrv != nil && dstSrv.CertPin != "" {
+		certPin = dstSrv.CertPin
+	}
+	mu.Unlock()
+
+	grpcConn, err := getOrCreateGRPCConn(tun.RemoteAddr, sni, certPin)
+	if err != nil {
+		pt.OK = false
+		pt.Error = "gRPC Dial Failed"
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-target-port", "probe:"+firstPort)
+
+	streamDesc := &grpc.StreamDesc{
+		StreamName:    "TunnelStream",
+		ServerStreams: true,
+		ClientStreams: true,
+	}
+
+	rttStart := time.Now()
+	stream, err := grpcConn.NewStream(ctx, streamDesc, "/GhoghnoosService/TunnelStream")
+	if err != nil {
+		pt.OK = false
+		pt.Error = "gRPC Stream Error"
+		return
+	}
+	_ = stream.SendMsg(&wrapperspb.BytesValue{Value: []byte("PING")})
+	var outMsg wrapperspb.BytesValue
+	err = stream.RecvMsg(&outMsg)
+	pt.LatencyMS = time.Since(rttStart).Milliseconds()
+	pt.OK = err == nil && strings.HasPrefix(string(outMsg.Value), "OK")
+	if !pt.OK {
+		pt.Error = "gRPC Probe Rejected"
+	}
+}
+
 func startGRPCEntryListener(t Tunnel) {
 	ports := parsePortList(t.InboundPorts)
 	if len(ports) == 0 {
-		return
+		ports = []string{"2053"}
 	}
 
 	sni := strings.TrimSpace(t.SNI)
@@ -273,24 +392,24 @@ func startGRPCEntryListener(t Tunnel) {
 		activeListeners[t.ID] = append(activeListeners[t.ID], lis)
 		mu.Unlock()
 
-		addLog(fmt.Sprintf("GRPC-RELAY-OK [%s]: Forwarding :%s -> gRPC %s (Multiplexed H2)", t.Name, pStr, t.RemoteAddr))
+		addLog(fmt.Sprintf("LISTEN [gRPC-Entry %s]: :%s -> %s (Multiplexed H2 / SNI: %s)", t.Name, pStr, t.RemoteAddr, sni))
 
-		go func() {
+		go func(l net.Listener, targetPort string) {
 			for {
-				conn, err := lis.Accept()
+				conn, err := l.Accept()
 				if err != nil {
 					return
 				}
-				go handleGRPCClientInbound(t, conn, pStr, sni)
+				enableKeepAlive(conn)
+				go handleGRPCClientInbound(t, conn, targetPort, sni)
 			}
-		}()
+		}(lis, pStr)
 	}
 }
 
 func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string) {
 	defer userConn.Close()
 
-	// Always pick up latest CertPin for the target server
 	certPin := t.CertPin
 	mu.Lock()
 	if dstSrv := findServerByID(t.TargetServer); dstSrv != nil && dstSrv.CertPin != "" {
@@ -324,7 +443,6 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Uplink: User TCP Connection -> gRPC Stream
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 32*1024)
@@ -349,7 +467,6 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 		}
 	}()
 
-	// Downlink: gRPC Stream -> User TCP Connection
 	go func() {
 		defer wg.Done()
 		for {
@@ -376,7 +493,10 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 }
 
 func startGRPCEngine(t Tunnel) {
+	mu.Lock()
 	stopTunnelIfRunning(t.ID)
+	mu.Unlock()
+
 	if t.Role == "server" {
 		startGRPCExitListener(t)
 	} else {

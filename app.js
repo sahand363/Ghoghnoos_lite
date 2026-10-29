@@ -9,7 +9,8 @@ let masterIP = '';
 let ctrlL4 = '6005';
 let ctrlDirect = '6006';
 let ctrlWSS = '6007';
-let ctrlMethods = 'wss,direct';
+let ctrlGRPC = '6008';
+let ctrlMethods = 'grpc,wss,direct';
 let currentServers = [];
 let currentTunnels = [];
 let pingSummary = null;
@@ -104,7 +105,7 @@ function setDeployMode(mode) {
 
 function updateEnrollCommandUI() {
   const addrIn = el('enroll-master-addr');
-  const defaultSpec = `${masterIP || window.location.hostname}:${ctrlL4}:${ctrlDirect}:${ctrlWSS}`;
+  const defaultSpec = `${masterIP || window.location.hostname}:${ctrlL4}:${ctrlDirect}:${ctrlWSS}:${ctrlGRPC}`;
   if (addrIn && !addrIn.value && masterIP) addrIn.value = defaultSpec;
   const targetSpec = (addrIn?.value || defaultSpec).trim();
   const nodeName = (el('enroll-node-name')?.value || getNextDefaultServerName()).trim().replace(/\s+/g, '-');
@@ -389,7 +390,9 @@ async function saveConfig() {
   const ctrl_l4 = (el('cfg-ctrl-l4')?.value || '').trim() || '6005';
   const ctrl_direct = (el('cfg-ctrl-direct')?.value || '').trim() || '6006';
   const ctrl_wss = (el('cfg-ctrl-wss')?.value || '').trim() || '6007';
+  const ctrl_grpc = (el('cfg-ctrl-grpc')?.value || '').trim() || '6008';
   const methods = [];
+  if (el('chk-ctrl-grpc')?.checked) methods.push('grpc');
   if (el('chk-ctrl-wss')?.checked) methods.push('wss');
   if (el('chk-ctrl-direct')?.checked) methods.push('direct');
   if (el('chk-ctrl-l4')?.checked) methods.push('forward');
@@ -398,7 +401,7 @@ async function saveConfig() {
 
   await fetch('/api/config?server_id=' + selectedServer, {
     method: 'POST',
-    body: JSON.stringify({ port, path, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_methods })
+    body: JSON.stringify({ port, path, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_grpc, ctrl_methods })
   });
   if (selectedServer === 'local') setTimeout(() => { window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}/${path}/`; }, 2000);
   else alert('Remote Sentinel configuration updated!');
@@ -647,6 +650,7 @@ async function fetchState() {
     if (data.ctrl_l4_port) ctrlL4 = data.ctrl_l4_port;
     if (data.ctrl_direct_port) ctrlDirect = data.ctrl_direct_port;
     if (data.ctrl_wss_port) ctrlWSS = data.ctrl_wss_port;
+    if (data.ctrl_grpc_port) ctrlGRPC = data.ctrl_grpc_port;
     if (data.ctrl_methods) ctrlMethods = data.ctrl_methods;
     if (data.enroll_token && data.enroll_token !== enrollToken) {
       enrollToken = data.enroll_token;
@@ -674,7 +678,9 @@ async function fetchState() {
       if (el('cfg-ctrl-l4')) el('cfg-ctrl-l4').value = ctrlL4;
       if (el('cfg-ctrl-direct')) el('cfg-ctrl-direct').value = ctrlDirect;
       if (el('cfg-ctrl-wss')) el('cfg-ctrl-wss').value = ctrlWSS;
-      const mSet = (ctrlMethods || 'wss,direct').split(',');
+      if (el('cfg-ctrl-grpc')) el('cfg-ctrl-grpc').value = ctrlGRPC;
+      const mSet = (ctrlMethods || 'grpc,wss,direct').split(',');
+      if (el('chk-ctrl-grpc')) el('chk-ctrl-grpc').checked = mSet.includes('grpc');
       if (el('chk-ctrl-wss')) el('chk-ctrl-wss').checked = mSet.includes('wss');
       if (el('chk-ctrl-direct')) el('chk-ctrl-direct').checked = mSet.includes('direct');
       if (el('chk-ctrl-l4')) el('chk-ctrl-l4').checked = mSet.includes('forward');

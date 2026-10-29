@@ -114,21 +114,24 @@ func regenerateEnrollToken() string {
 	return db.EnrollToken
 }
 
-func parseMasterAddrSpec(spec string) (host, l4, direct, wss string) {
+func parseMasterAddrSpec(spec string) (host, l4, direct, wss, grpcPort string) {
 	parts := strings.Split(strings.TrimSpace(spec), ":")
 	host = parts[0]
-	defL4, defDir, defWSS := getControlPorts()
-	if len(parts) >= 4 {
-		return host, parts[1], parts[2], parts[3]
+	defL4, defDir, defWSS, defGRPC := getControlPorts()
+	if len(parts) >= 5 {
+		return host, parts[1], parts[2], parts[3], parts[4]
+	}
+	if len(parts) == 4 {
+		return host, parts[1], parts[2], parts[3], defGRPC
 	}
 	if len(parts) == 2 && parts[1] != "" {
-		return host, parts[1], defDir, defWSS
+		return host, parts[1], defDir, defWSS, defGRPC
 	}
-	return host, defL4, defDir, defWSS
+	return host, defL4, defDir, defWSS, defGRPC
 }
 
 func startControlListeners() {
-	l4Port, directPort, wssPort := getControlPorts()
+	l4Port, directPort, wssPort, grpcPort := getControlPorts()
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{localCert}, MinVersion: tls.VersionTLS12}
 
 	go func() {
@@ -187,6 +190,8 @@ func startControlListeners() {
 			go handleControlConn(conn, "wss")
 		}
 	}()
+
+	go startGRPCControlListener(grpcPort)
 }
 
 func handleControlConn(conn net.Conn, mode string) {
@@ -345,8 +350,10 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 }
 
 func resolveControlTarget(masterSpec, method string) string {
-	host, l4, direct, wss := parseMasterAddrSpec(masterSpec)
+	host, l4, direct, wss, grpcP := parseMasterAddrSpec(masterSpec)
 	switch method {
+	case "grpc":
+		return net.JoinHostPort(host, grpcP)
 	case "direct":
 		return net.JoinHostPort(host, direct)
 	case "wss":
@@ -376,6 +383,14 @@ func tryDialControl(targetSpec, token, nodeName, method string, isMaster bool, e
 		ServerTime: time.Now().UTC().Format("15:04:05 UTC"), Metrics: metricsCopy, Logs: logsCopy, ExitTunnels: exits,
 	}
 	payloadBytes, _ := json.Marshal(hb)
+
+	if method == "grpc" {
+		rep, err := dialGRPCControl(targetAddr, payloadBytes)
+		if err != nil {
+			return empty, 0, err
+		}
+		return rep, time.Since(start).Milliseconds(), nil
+	}
 
 	if method == "direct" || method == "wss" {
 		rawConn, err := (&net.Dialer{Timeout: 5 * time.Second}).Dial("tcp", targetAddr)
@@ -426,7 +441,7 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 	if nodeName == "" {
 		nodeName = "Server-2"
 	}
-	host, l4, dir, wss := parseMasterAddrSpec(masterSpec)
+	host, l4, dir, wss, grpcP := parseMasterAddrSpec(masterSpec)
 	listenOnly := "0"
 
 	if tty, err := os.Open("/dev/tty"); err == nil {
@@ -444,49 +459,52 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 		if inp, _ := rd.ReadString('\n'); strings.TrimSpace(inp) == "2" {
 			listenOnly = "1"
 		}
-		fmt.Printf("  Control Ports L4:Direct:WSS [%s:%s:%s]: ", l4, dir, wss)
+		fmt.Printf("  Control Ports L4:Direct:WSS:gRPC [%s:%s:%s:%s]: ", l4, dir, wss, grpcP)
 		if inp, _ := rd.ReadString('\n'); strings.TrimSpace(inp) != "" {
 			pts := strings.Split(strings.TrimSpace(inp), ":")
-			if len(pts) == 3 {
+			if len(pts) == 4 {
+				l4, dir, wss, grpcP = strings.TrimSpace(pts[0]), strings.TrimSpace(pts[1]), strings.TrimSpace(pts[2]), strings.TrimSpace(pts[3])
+			} else if len(pts) == 3 {
 				l4, dir, wss = strings.TrimSpace(pts[0]), strings.TrimSpace(pts[1]), strings.TrimSpace(pts[2])
 			}
 		}
 	}
 
-	masterSpec = fmt.Sprintf("%s:%s:%s:%s", host, l4, dir, wss)
+	masterSpec = fmt.Sprintf("%s:%s:%s:%s:%s", host, l4, dir, wss, grpcP)
 	fmt.Println("\033[1;36m├── Sentinel Configuration Summary ───────────────────────────────┤\033[0m")
 	fmt.Printf("\033[1;36m│\033[0m Master Target : %-47s \033[1;36m│\033[0m\n", masterSpec)
-	fmt.Printf("\033[1;36m│\033[0m Control Ports : WSS :%s | Direct-TLS :%s | L4 :%-12s \033[1;36m│\033[0m\n", wss, dir, l4)
+	fmt.Printf("\033[1;36m│\033[0m Control Ports : gRPC :%s | WSS :%s | Direct :%s | L4 :%-4s \033[1;36m│\033[0m\n", grpcP, wss, dir, l4)
 
-	winningMethod := "wss"
+	winningMethod := "grpc"
 	if listenOnly == "1" {
-		fmt.Printf("\033[1;36m│\033[0m \033[1;32m✔ Mode: LISTEN ONLY on :%s, :%s, :%s (Waiting for Master Probe)\033[0m\033[1;36m│\033[0m\n", l4, dir, wss)
+		fmt.Printf("\033[1;36m│\033[0m \033[1;32m✔ Mode: LISTEN ONLY on :%s, :%s, :%s, :%s (Waiting for Master)\033[0m\033[1;36m│\033[0m\n", l4, dir, wss, grpcP)
 	} else {
 		methods := []struct{ id, label, port string }{
-			{"wss", "WSS (85% Stealth)", wss},
-			{"direct", "Direct-TLS (75%) ", dir},
-			{"forward", "L4 API (20% Raw) ", l4},
+			{"grpc", "gRPC (90% Stealth)", grpcP},
+			{"wss", "WSS (85% Stealth) ", wss},
+			{"direct", "Direct-TLS (75%)  ", dir},
+			{"forward", "L4 API (20% Raw)  ", l4},
 		}
 		connectedNow := false
 		for idx, m := range methods {
-			fmt.Printf("\033[1;36m│\033[0m [%d/3] %-17s (:%-5s) ... ", idx+1, m.label, m.port)
+			fmt.Printf("\033[1;36m│\033[0m [%d/4] %-18s (:%-5s) ... ", idx+1, m.label, m.port)
 			if rep, ms, err := tryDialControl(masterSpec, token, nodeName, m.id, false, nil); err == nil && rep.OK {
-				fmt.Printf("\033[1;32m[✔ Connected | %d ms]\033[0m    \033[1;36m│\033[0m\n", ms)
+				fmt.Printf("\033[1;32m[✔ Connected | %d ms]\033[0m   \033[1;36m│\033[0m\n", ms)
 				winningMethod = m.id
 				connectedNow = true
 				break
 			}
-			fmt.Printf("\033[1;33m[Pending / Queued]\033[0m      \033[1;36m│\033[0m\n")
+			fmt.Printf("\033[1;33m[Pending / Queued]\033[0m     \033[1;36m│\033[0m\n")
 		}
 		if !connectedNow {
 			fmt.Println("\033[1;36m│\033[0m \033[1;33m» Direct dial blocked. Starting 120-150s Loop + Passive Listeners\033[0m\033[1;36m│\033[0m")
 		}
 	}
 	fmt.Println("\033[1;36m└─────────────────────────────────────────────────────────────────┘\033[0m")
-	saveEnrollmentConfig(masterSpec, token, nodeName, winningMethod, l4, dir, wss, listenOnly)
+	saveEnrollmentConfig(masterSpec, token, nodeName, winningMethod, l4, dir, wss, grpcP, listenOnly)
 }
 
-func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, listenOnly string) {
+func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, grpcP, listenOnly string) {
 	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
@@ -495,8 +513,8 @@ func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, ws
 	if listenOnly == "" {
 		listenOnly = strings.TrimSpace(os.Getenv("LISTEN_ONLY"))
 	}
-	content := fmt.Sprintf("PANEL_PORT=%s\nPANEL_PATH=sentinel\nPANEL_USER=admin\nPANEL_PASS=admin\nMASTER_ADDR=%s\nENROLL_TOKEN=%s\nNODE_NAME=%s\nACTIVE_METHOD=%s\nCTRL_L4_PORT=%s\nCTRL_DIRECT_PORT=%s\nCTRL_WSS_PORT=%s\nLISTEN_ONLY=%s\n",
-		port, masterSpec, token, nodeName, activeMethod, l4, dir, wss, listenOnly)
+	content := fmt.Sprintf("PANEL_PORT=%s\nPANEL_PATH=sentinel\nPANEL_USER=admin\nPANEL_PASS=admin\nMASTER_ADDR=%s\nENROLL_TOKEN=%s\nNODE_NAME=%s\nACTIVE_METHOD=%s\nCTRL_L4_PORT=%s\nCTRL_DIRECT_PORT=%s\nCTRL_WSS_PORT=%s\nCTRL_GRPC_PORT=%s\nLISTEN_ONLY=%s\n",
+		port, masterSpec, token, nodeName, activeMethod, l4, dir, wss, grpcP, listenOnly)
 	_ = os.WriteFile(confPath, []byte(content), 0644)
 }
 
@@ -508,15 +526,15 @@ func startSentinelSurvivalLoop() {
 	if masterSpec == "" || token == "" {
 		return
 	}
-	l4, dir, wss := getControlPorts()
+	l4, dir, wss, grpcP := getControlPorts()
 	if strings.TrimSpace(os.Getenv("LISTEN_ONLY")) == "1" {
-		addLog(fmt.Sprintf("PASSIVE-MODE: Listen-Only active on :%s/:%s/:%s (Outbound Reverse Dial disabled)", l4, dir, wss))
+		addLog(fmt.Sprintf("PASSIVE-MODE: Listen-Only active on :%s/:%s/:%s/:%s (Outbound Reverse Dial disabled)", l4, dir, wss, grpcP))
 		return
 	}
 	if activeMethod == "" {
-		activeMethod = "wss"
+		activeMethod = "grpc"
 	}
-	addLog(fmt.Sprintf("SURVIVAL: Reverse Loop (120-150s) -> %s | Listening on :%s/:%s/:%s", masterSpec, l4, dir, wss))
+	addLog(fmt.Sprintf("SURVIVAL: Reverse Loop (120-150s) -> %s | Listening on :%s/:%s/:%s/:%s", masterSpec, l4, dir, wss, grpcP))
 
 	lastUpgradeCheck := time.Now()
 
@@ -526,7 +544,7 @@ func startSentinelSurvivalLoop() {
 			activeMethod = order[0]
 		}
 
-		if activeMethod != "wss" && isControlMethodAllowed("wss") && time.Since(lastUpgradeCheck) >= 12*time.Hour {
+		if len(order) > 0 && activeMethod != order[0] && time.Since(lastUpgradeCheck) >= 12*time.Hour {
 			lastUpgradeCheck = time.Now()
 			for _, cand := range order {
 				if cand == activeMethod {
@@ -534,7 +552,7 @@ func startSentinelSurvivalLoop() {
 				}
 				if rUp, _, errUp := tryDialControl(masterSpec, token, nodeName, cand, false, nil); errUp == nil && rUp.OK {
 					activeMethod = cand
-					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, "0")
+					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, grpcP, "0")
 					addLog(fmt.Sprintf("SURVIVAL-UPGRADE: Upgraded Control Highway to %s!", strings.ToUpper(activeMethod)))
 					break
 				}
@@ -548,7 +566,7 @@ func startSentinelSurvivalLoop() {
 					activeMethod = cand
 					rep = r2
 					err = nil
-					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, "0")
+					saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, grpcP, "0")
 					addLog(fmt.Sprintf("SURVIVAL-OK: Connected via %s!", strings.ToUpper(activeMethod)))
 					break
 				}

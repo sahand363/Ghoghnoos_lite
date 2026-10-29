@@ -275,10 +275,9 @@ func deploySentinelSSH(s ServerNode) {
 	defer sshClient.Close()
 
 	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary...", s.Name))
-	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos /opt/litetun; "+
-		"if [ ! -L /opt/litetun ]; then ln -sfn /opt/ghoghnoos /opt/litetun 2>/dev/null || true; fi; "+
+	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos; "+
 		"if [ ! -f /opt/ghoghnoos/config.env ]; then printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\n' > /opt/ghoghnoos/config.env; fi; "+
-		"systemctl stop ghoghnoos litetun 2>/dev/null || true; "+
+		"systemctl stop ghoghnoos 2>/dev/null || true; "+
 		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.tmp && "+
 		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel", detectedPort)
 	if _, err := runSSHStep(sshClient, step1); err != nil {
@@ -347,9 +346,7 @@ func uninstallSentinelRemote(s ServerNode) {
 		}
 		if sc, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshCfg); err == nil {
 			defer sc.Close()
-			purgeCmd := "systemctl stop ghoghnoos litetun 2>/dev/null; systemctl disable ghoghnoos litetun 2>/dev/null; " +
-				"rm -f /etc/systemd/system/ghoghnoos.service /etc/systemd/system/litetun.service; systemctl daemon-reload; " +
-				"rm -rf /opt/ghoghnoos /opt/litetun /usr/local/bin/ghoghnoos /usr/local/bin/litetun"
+			purgeCmd := "systemctl stop ghoghnoos 2>/dev/null; systemctl disable ghoghnoos 2>/dev/null; rm -f /etc/systemd/system/ghoghnoos.service; systemctl daemon-reload; rm -rf /opt/ghoghnoos /usr/local/bin/ghoghnoos"
 			_, _ = runSSHStep(sc, purgeCmd)
 			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel completely removed from %s via SSH!", s.Name, s.IP))
 			return

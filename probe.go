@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -10,10 +11,31 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // Measures pure 1-RTT tunnel payload latency after TCP/TLS connection is established
 func probeTunnelOnce(tun Tunnel) PingPoint {
+	// Always sync the latest CertPin from the target server in case Sentinel was re-enrolled
+	mu.Lock()
+	if dstSrv := findServerByID(tun.TargetServer); dstSrv != nil && dstSrv.CertPin != "" {
+		if tun.CertPin != dstSrv.CertPin {
+			tun.CertPin = dstSrv.CertPin
+			for i := range db.Tunnels {
+				if db.Tunnels[i].ID == tun.ID {
+					db.Tunnels[i].CertPin = dstSrv.CertPin
+					saveDBLocked()
+					go dispatchTunnelEngine(db.Tunnels[i])
+					break
+				}
+			}
+		}
+	}
+	mu.Unlock()
+
 	ports := parsePortList(tun.InboundPorts)
 	firstPort := "2053"
 	if len(ports) > 0 {
@@ -21,6 +43,7 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 	}
 	pt := PingPoint{Timestamp: time.Now().Unix(), TunnelID: tun.ID, ServerID: tun.TargetServer}
 
+	// 1. Raw L4 Port Forward Probe
 	if tun.Method == "forward" {
 		c, err := net.DialTimeout("tcp", tun.RemoteAddr, 4*time.Second)
 		if err != nil {
@@ -43,6 +66,68 @@ func probeTunnelOnce(tun Tunnel) PingPoint {
 		return pt
 	}
 
+	// 2. gRPC (HTTP/2 Multiplexed) Probe
+	if tun.Method == "grpc" {
+		sni := strings.TrimSpace(tun.SNI)
+		if sni == "" {
+			sni = "www.speedtest.net"
+		}
+		grpcConn, err := getOrCreateGRPCConn(tun.RemoteAddr, sni, tun.CertPin)
+		if err != nil {
+			pt.OK = false
+			pt.Error = "Tunnel Offline"
+			recordPingPoint(pt)
+			return pt
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-target-port", "probe:"+firstPort)
+
+		streamDesc := &grpc.StreamDesc{
+			StreamName:    "TunnelStream",
+			ServerStreams: true,
+			ClientStreams: true,
+		}
+
+		rttStart := time.Now()
+		stream, err := grpcConn.NewStream(ctx, streamDesc, "/GhoghnoosService/TunnelStream")
+		if err != nil {
+			pt.OK = false
+			pt.Error = "Tunnel Offline"
+			recordPingPoint(pt)
+			return pt
+		}
+
+		if err := stream.SendMsg(&wrapperspb.BytesValue{Value: []byte("PING")}); err != nil {
+			pt.OK = false
+			pt.Error = "Stream Rejected"
+			recordPingPoint(pt)
+			return pt
+		}
+
+		var rep wrapperspb.BytesValue
+		if err := stream.RecvMsg(&rep); err != nil {
+			pt.OK = false
+			pt.Error = "Tunnel Offline"
+			recordPingPoint(pt)
+			return pt
+		}
+		_ = stream.CloseSend()
+
+		pt.LatencyMS = time.Since(rttStart).Milliseconds()
+		if pt.LatencyMS <= 0 {
+			pt.LatencyMS = 1
+		}
+		pt.OK = strings.HasPrefix(string(rep.Value), "OK")
+		if !pt.OK {
+			pt.Error = "Invalid Response"
+		}
+		recordPingPoint(pt)
+		return pt
+	}
+
+	// 3. Direct-TLS & WSS Probes
 	tlsCfg := buildTunnelTLSConfig(tun)
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", tun.RemoteAddr, tlsCfg)
 	if err != nil {

@@ -50,7 +50,7 @@ func startDailyUpdateChecker() {
 
 func checkGitHubReleaseOnce() {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodHead, "https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoostun", nil)
+	req, err := http.NewRequest(http.MethodHead, "https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite", nil)
 	if err != nil {
 		return
 	}
@@ -70,7 +70,7 @@ func checkGitHubReleaseOnce() {
 	}
 	exePath, err := os.Executable()
 	if err != nil {
-		exePath = "/opt/ghoghnoos/ghoghnoostun"
+		exePath = "/opt/litetun/ghoghnoos_lite"
 	}
 	info, err := os.Stat(exePath)
 	if err != nil {
@@ -180,7 +180,7 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Sign In — Ghoghnoos Tunnel %s</title>
+<title>Sign In — Ghoghnoos-lite %s</title>
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0c131f;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:16px;}
   .card{background:#131e2f;border:1px solid #1e2e46;border-radius:20px;max-width:390px;width:100%%;padding:28px;box-shadow:0 20px 50px rgba(0,0,0,0.6);}
@@ -198,8 +198,8 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 </style></head><body>
 <div class="card">
   <div class="logo">🦅</div>
-  <h2>Ghoghnoos Tunnel Control Panel</h2>
-  <div class="sub">4-Engine Stealth Relay • %s</div>
+  <h2>Ghoghnoos-lite Control Panel</h2>
+  <div class="sub">LiteTun 3-Engine Relay • %s</div>
   %s
   <form method="POST" action="%s">
     <input type="hidden" name="captcha_sig" value="%s">
@@ -257,12 +257,10 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 
 func triggerLocalBinaryUpdate() {
 	time.Sleep(400 * time.Millisecond)
-	cmd := "mkdir -p /opt/ghoghnoos && " +
-		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoostun -o /opt/ghoghnoos/ghoghnoostun.new && " +
-		"chmod +x /opt/ghoghnoos/ghoghnoostun.new && " +
-		"mv -f /opt/ghoghnoos/ghoghnoostun.new /opt/ghoghnoos/ghoghnoostun && " +
-		"cp -f /opt/ghoghnoos/ghoghnoostun /opt/litetun/ghoghnoos_lite 2>/dev/null || true && " +
-		"(systemctl restart ghoghnoos 2>/dev/null || systemctl restart litetun 2>/dev/null || true)"
+	cmd := "curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.new && " +
+		"chmod +x /opt/litetun/ghoghnoos_lite.new && " +
+		"mv -f /opt/litetun/ghoghnoos_lite.new /opt/litetun/ghoghnoos_lite && " +
+		"systemctl restart litetun"
 	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
 		addLog(fmt.Sprintf("UPDATE-ERR: Failed to download latest binary -> %v", err))
 		return

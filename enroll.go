@@ -487,7 +487,7 @@ func runCLIEnrollmentMatrix(masterSpec, token, nodeName string) {
 }
 
 func saveEnrollmentConfig(masterSpec, token, nodeName, activeMethod, l4, dir, wss, listenOnly string) {
-	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
+	_ = os.MkdirAll("/opt/litetun", 0755)
 	port := os.Getenv("PANEL_PORT")
 	if port == "" {
 		port = "6001"

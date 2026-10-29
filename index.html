@@ -39,9 +39,9 @@
         <div>
           <div class="flex items-center gap-1.5">
             <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos Tunnel</span>
-            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.7.0</span>
+            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.6.0</span>
           </div>
-          <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">4-Engine Stealth Relay</span>
+          <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">3-Engine Stealth Relay</span>
         </div>
       </div>
 
@@ -196,7 +196,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="server-cards-list"></div>
       </section>
 
-      <!-- TAB 2: CONFIG -->
+      <!-- TAB 2: CONFIG (Username & Password boxes removed) -->
       <section id="view-config" class="hidden space-y-4 sm:space-y-5">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -298,8 +298,7 @@
             </button>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <!-- METHOD 1: WSS -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">WSS</span>
@@ -317,7 +316,6 @@
               </div>
             </div>
 
-            <!-- METHOD 2: DIRECT TLS -->
             <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">Direct TLS</span>
@@ -335,7 +333,6 @@
               </div>
             </div>
 
-            <!-- METHOD 3: PORT FORWARD -->
             <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">Port Forward</span>
@@ -349,24 +346,6 @@
                 </div>
                 <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
                   <div class="h-full bg-amber-400 rounded-full" style="width: 20%"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- METHOD 4: gRPC (HTTP/2 MULTIPLEXING) -->
-            <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm">gRPC (H2)</span>
-                <span id="badge-method-grpc" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
-              </div>
-              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="grpc_desc">HTTP/2 Bidirectional Protobuf Multiplexing</div>
-              <div class="pt-1 border-t border-slate-800/80">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-indigo-400 font-bold">90% (Enterprise H2)</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                  <div class="h-full bg-indigo-400 rounded-full" style="width: 90%"></div>
                 </div>
               </div>
             </div>
@@ -465,17 +444,6 @@
               <span class="text-[10px] font-mono text-amber-400">Stealth: 20% (Raw L4)</span>
             </div>
             <p class="text-xs text-slate-400 leading-relaxed" data-i18n="forward_note">Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.</p>
-          </div>
-
-          <div id="row-grpc-opts" class="hidden space-y-2 bg-[#080d14]/90 p-3.5 rounded-xl border border-indigo-500/30">
-            <div class="flex items-center justify-between text-xs font-bold text-indigo-400">
-              <div class="flex items-center gap-1.5">
-                <span>🚀 gRPC HTTP/2 Bidirectional Protobuf Multiplexer (`grpc.go`)</span>
-                <button type="button" onclick="showHelpModal('grpc')" class="help-btn">?</button>
-              </div>
-              <span class="text-[10px] font-mono text-emerald-400">ALPN: h2 | application/grpc | Stealth: 90%</span>
-            </div>
-            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="grpc_note">Packs all concurrent user connections into a single persistent HTTP/2 TLS 1.3 connection (ALPN: h2) using standard application/grpc Protobuf framing.</p>
           </div>
 
           <div id="row-cert-pin">
@@ -590,7 +558,7 @@
 
     </div>
 
-    <!-- BOTTOM PUTTY LIVE CONSOLE -->
+    <!-- BOTTOM PUTTY LIVE CONSOLE (Locked to dir="ltr" and text-left) -->
     <section dir="ltr" class="w-full text-left pt-1">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
@@ -637,7 +605,7 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.7.0"></script>
-  <script src="/app.js?v=2.7.0"></script>
+  <script src="/i18n.js?v=2.6.3"></script>
+  <script src="/app.js?v=2.6.3"></script>
 </body>
 </html>

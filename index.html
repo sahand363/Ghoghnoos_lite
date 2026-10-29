@@ -41,7 +41,7 @@
             <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos Tunnel</span>
             <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.6.0</span>
           </div>
-          <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">3-Engine Stealth Relay</span>
+          <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">4-Engine Stealth Relay</span>
         </div>
       </div>
 
@@ -94,7 +94,6 @@
   <!-- MAIN WORKSPACE -->
   <main class="flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 space-y-5">
 
-    <!-- ACTIVE TAB CONTENT -->
     <div class="w-full">
 
       <!-- TAB 1: SERVERS -->
@@ -147,7 +146,7 @@
                   <span data-i18n="enroll_title">🔑 Step 1: Run Sentinel One-Liner (Interactive Mode & Port Selection)</span>
                   <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
                 </div>
-                <span class="text-[10px] font-mono text-emerald-400">WSS (85%) ➔ Direct (75%) ➔ L4 (20%)</span>
+                <span class="text-[10px] font-mono text-emerald-400">gRPC (90%) ➔ WSS (85%) ➔ Direct (75%) ➔ L4 (20%)</span>
               </div>
               <p class="text-xs text-slate-400 leading-relaxed" data-i18n="enroll_sub">Run this command on your remote VPS. It lets you choose between [1] Connect & Listen (Default) or [2] Listen Only (Passive Mode) and customize control ports.</p>
             </div>
@@ -158,7 +157,7 @@
                 <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-semibold">
               </div>
               <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_addr_lbl">Master Control Target (IP:L4:Direct:WSS)</label>
+                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_addr_lbl">Master Control Target (IP:L4:Direct:WSS:gRPC)</label>
                 <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-mono">
               </div>
             </div>
@@ -196,7 +195,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="server-cards-list"></div>
       </section>
 
-      <!-- TAB 2: CONFIG (Username & Password boxes removed) -->
+      <!-- TAB 2: CONFIG -->
       <section id="view-config" class="hidden space-y-4 sm:space-y-5">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
           <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -226,9 +225,16 @@
                 <span class="text-xs font-bold text-sky-400" data-i18n="ctrl_ports_title">🔗 Dedicated Control & Rendezvous Ports (Check to Enable Method)</span>
                 <button type="button" onclick="showHelpModal('ctrlports')" class="help-btn">?</button>
               </div>
-              <span class="text-[10px] font-mono text-slate-400">Default: 6005 / 6006 / 6007</span>
+              <span class="text-[10px] font-mono text-slate-400">Default: 6005 / 6006 / 6007 / 6008</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
+                <label class="flex items-center justify-between cursor-pointer">
+                  <span class="text-[11px] text-indigo-400 font-bold" data-i18n="lbl_ctrl_grpc">gRPC Port (90%)</span>
+                  <input type="checkbox" id="chk-ctrl-grpc" checked class="w-4 h-4 accent-indigo-400 rounded cursor-pointer">
+                </label>
+                <input id="cfg-ctrl-grpc" value="6008" placeholder="6008" class="w-full rounded-lg p-2 text-xs font-mono">
+              </div>
               <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
                 <label class="flex items-center justify-between cursor-pointer">
                   <span class="text-[11px] text-emerald-400 font-bold" data-i18n="lbl_ctrl_wss">WSS Port (85%)</span>
@@ -287,7 +293,7 @@
         </div>
       </section>
 
-      <!-- TAB 3: TUNNELS -->
+      <!-- TAB 3: TUNNELS (2 ROWS OF 3 CARDS = 4 ACTIVE + 2 FUTURE SLOTS) -->
       <section id="view-tunnels" class="hidden space-y-4 sm:space-y-5">
         <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
           <div class="flex items-center justify-between">
@@ -299,6 +305,7 @@
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- CARD 1: WSS -->
             <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">WSS</span>
@@ -316,6 +323,7 @@
               </div>
             </div>
 
+            <!-- CARD 2: DIRECT TLS -->
             <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">Direct TLS</span>
@@ -333,6 +341,7 @@
               </div>
             </div>
 
+            <!-- CARD 3: PORT FORWARD -->
             <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-sm">Port Forward</span>
@@ -347,6 +356,56 @@
                 <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
                   <div class="h-full bg-amber-400 rounded-full" style="width: 20%"></div>
                 </div>
+              </div>
+            </div>
+
+            <!-- CARD 4: gRPC (HTTP/2 MULTIPLEXED) -->
+            <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm">gRPC (H2)</span>
+                <span id="badge-method-grpc" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
+              </div>
+              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="grpc_desc">HTTP/2 Multiplexed Stream over TLS 1.3</div>
+              <div class="pt-1 border-t border-slate-800/80">
+                <div class="flex justify-between text-[10px] font-mono mb-1">
+                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
+                  <span class="text-indigo-400 font-bold">90% (Ultra)</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                  <div class="h-full bg-indigo-400 rounded-full" style="width: 90%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CARD 5: RESERVED EMPTY SLOT #5 -->
+            <div class="p-3.5 rounded-xl border border-dashed border-slate-800/90 bg-[#080d14]/35 opacity-60 flex flex-col justify-between gap-2 select-none">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm text-slate-500" data-i18n="slot_soon_title">Future Transport</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 font-mono">SLOT #5</span>
+              </div>
+              <div class="text-[11px] text-slate-500 leading-snug" data-i18n="slot_soon_desc">Reserved slot for upcoming stealth transport engine</div>
+              <div class="pt-1 border-t border-slate-800/50">
+                <div class="flex justify-between text-[10px] font-mono mb-1">
+                  <span class="text-slate-500" data-i18n="stealth_lbl">Stealth</span>
+                  <span class="text-slate-500 font-bold">TBD</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-900/60 rounded-full overflow-hidden"></div>
+              </div>
+            </div>
+
+            <!-- CARD 6: RESERVED EMPTY SLOT #6 -->
+            <div class="p-3.5 rounded-xl border border-dashed border-slate-800/90 bg-[#080d14]/35 opacity-60 flex flex-col justify-between gap-2 select-none">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm text-slate-500" data-i18n="slot_soon_title">Future Transport</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 font-mono">SLOT #6</span>
+              </div>
+              <div class="text-[11px] text-slate-500 leading-snug" data-i18n="slot_soon_desc">Reserved slot for upcoming stealth transport engine</div>
+              <div class="pt-1 border-t border-slate-800/50">
+                <div class="flex justify-between text-[10px] font-mono mb-1">
+                  <span class="text-slate-500" data-i18n="stealth_lbl">Stealth</span>
+                  <span class="text-slate-500 font-bold">TBD</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-900/60 rounded-full overflow-hidden"></div>
               </div>
             </div>
           </div>
@@ -446,6 +505,17 @@
             <p class="text-xs text-slate-400 leading-relaxed" data-i18n="forward_note">Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.</p>
           </div>
 
+          <div id="row-grpc-opts" class="hidden space-y-2 bg-[#080d14]/90 p-3.5 rounded-xl border border-indigo-500/30">
+            <div class="flex items-center justify-between text-xs font-bold text-indigo-400">
+              <div class="flex items-center gap-1.5">
+                <span>🚀 gRPC HTTP/2 Multiplexed Stream Engine (`grpc.go`)</span>
+                <button type="button" onclick="showHelpModal('grpc')" class="help-btn">?</button>
+              </div>
+              <span class="text-[10px] font-mono text-emerald-400">ALPN: h2 | Window: 16MB | Stealth: 90%</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="grpc_note">Multiplexes all concurrent user connections over a single persistent HTTP/2 (ALPN h2) TLS 1.3 connection with 16MB flow-control windows and zero handshake delay.</p>
+          </div>
+
           <div id="row-cert-pin">
             <div class="flex items-center gap-1.5 mb-1">
               <label class="text-xs text-slate-400" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server)</label>
@@ -540,7 +610,6 @@
           <div id="svg-history-ping" class="w-full h-44 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
 
-        <!-- 30-DAY DAILY DOWNLOAD & UPLOAD BANDWIDTH HISTOGRAM -->
         <div class="card rounded-2xl p-5 space-y-3">
           <div class="flex flex-wrap justify-between items-center gap-2">
             <div>
@@ -558,7 +627,7 @@
 
     </div>
 
-    <!-- BOTTOM PUTTY LIVE CONSOLE (Locked to dir="ltr" and text-left) -->
+    <!-- BOTTOM PUTTY LIVE CONSOLE -->
     <section dir="ltr" class="w-full text-left pt-1">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
         <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
@@ -605,7 +674,7 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.6.3"></script>
-  <script src="/app.js?v=2.6.3"></script>
+  <script src="/i18n.js?v=2.7.0"></script>
+  <script src="/app.js?v=2.7.0"></script>
 </body>
 </html>

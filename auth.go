@@ -180,7 +180,7 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Sign In — Ghoghnoos-lite %s</title>
+<title>Sign In — Ghoghnoos Tunnel %s</title>
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0c131f;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:16px;}
   .card{background:#131e2f;border:1px solid #1e2e46;border-radius:20px;max-width:390px;width:100%%;padding:28px;box-shadow:0 20px 50px rgba(0,0,0,0.6);}
@@ -198,8 +198,8 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 </style></head><body>
 <div class="card">
   <div class="logo">🦅</div>
-  <h2>Ghoghnoos-lite Control Panel</h2>
-  <div class="sub">LiteTun 3-Engine Relay • %s</div>
+  <h2>Ghoghnoos Control Panel</h2>
+  <div class="sub">Ghoghnoos 3-Engine Relay • %s</div>
   %s
   <form method="POST" action="%s">
     <input type="hidden" name="captcha_sig" value="%s">
@@ -257,12 +257,11 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 
 func triggerLocalBinaryUpdate() {
 	time.Sleep(400 * time.Millisecond)
-	cmd := "mkdir -p /opt/ghoghnoos /opt/litetun && " +
+	cmd := "mkdir -p /opt/ghoghnoos && " +
 		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.new && " +
 		"chmod +x /opt/ghoghnoos/ghoghnoos-tunnel.new && " +
 		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.new /opt/ghoghnoos/ghoghnoos-tunnel && " +
-		"cp -f /opt/ghoghnoos/ghoghnoos-tunnel /opt/litetun/ghoghnoos_lite 2>/dev/null || true && " +
-		"(systemctl restart ghoghnoos 2>/dev/null || systemctl restart litetun 2>/dev/null)"
+		"systemctl restart ghoghnoos"
 	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
 		addLog(fmt.Sprintf("UPDATE-ERR: Failed to download latest binary -> %v", err))
 		return

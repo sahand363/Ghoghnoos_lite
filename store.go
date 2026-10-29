@@ -103,6 +103,7 @@ type Database struct {
 	CtrlL4Port     string       `json:"ctrl_l4_port"`
 	CtrlDirectPort string       `json:"ctrl_direct_port"`
 	CtrlWSSPort    string       `json:"ctrl_wss_port"`
+	CtrlGRPCPort   string       `json:"ctrl_grpc_port"`
 	CtrlMethods    string       `json:"ctrl_methods"`
 	Prefs          UIPrefs      `json:"prefs"`
 }
@@ -115,6 +116,7 @@ type ConfigReq struct {
 	CtrlL4      string `json:"ctrl_l4"`
 	CtrlDirect  string `json:"ctrl_direct"`
 	CtrlWSS     string `json:"ctrl_wss"`
+	CtrlGRPC    string `json:"ctrl_grpc"`
 	CtrlMethods string `json:"ctrl_methods"`
 }
 
@@ -251,7 +253,7 @@ func syncServerTunnelsPinLocked(srvID, newPin string) {
 	}
 }
 
-func getControlPorts() (l4, direct, wss string) {
+func getControlPorts() (l4, direct, wss, grpcPort string) {
 	l4 = strings.TrimSpace(os.Getenv("CTRL_L4_PORT"))
 	if l4 == "" {
 		l4 = strings.TrimSpace(db.CtrlL4Port)
@@ -273,7 +275,14 @@ func getControlPorts() (l4, direct, wss string) {
 	if wss == "" {
 		wss = "6007"
 	}
-	return l4, direct, wss
+	grpcPort = strings.TrimSpace(os.Getenv("CTRL_GRPC_PORT"))
+	if grpcPort == "" {
+		grpcPort = strings.TrimSpace(db.CtrlGRPCPort)
+	}
+	if grpcPort == "" {
+		grpcPort = "6008"
+	}
+	return l4, direct, wss, grpcPort
 }
 
 func getAllowedControlMethods() []string {
@@ -282,17 +291,17 @@ func getAllowedControlMethods() []string {
 		raw = strings.TrimSpace(db.CtrlMethods)
 	}
 	if raw == "" {
-		raw = "wss,direct"
+		raw = "grpc,wss,direct"
 	}
 	var list []string
 	for _, m := range strings.Split(strings.ToLower(raw), ",") {
 		m = strings.TrimSpace(m)
-		if m == "wss" || m == "direct" || m == "forward" || m == "grpc" {
+		if m == "grpc" || m == "wss" || m == "direct" || m == "forward" {
 			list = append(list, m)
 		}
 	}
 	if len(list) == 0 {
-		return []string{"wss", "direct"}
+		return []string{"grpc", "wss", "direct"}
 	}
 	return list
 }
@@ -305,8 +314,8 @@ func executeLocalConsoleCmd(cmd, port string) {
 		addLog("Commands: status | bbr | pin | clear | restart")
 	case "status":
 		ram, goCnt := getMemoryStats()
-		l4, dir, wss := getControlPorts()
-		addLog(fmt.Sprintf("STATUS: %s | Goroutines: %d | RAM: %d MB | Panel: :%s | Ctrl: :%s/:%s/:%s", appVersion, goCnt, ram, port, l4, dir, wss))
+		l4, dir, wss, grpcP := getControlPorts()
+		addLog(fmt.Sprintf("STATUS: %s | Goroutines: %d | RAM: %d MB | Panel: :%s | Ctrl: :%s/:%s/:%s/:%s", appVersion, goCnt, ram, port, l4, dir, wss, grpcP))
 	case "bbr":
 		cc, qd := checkBBRStatus()
 		addLog(fmt.Sprintf("BBR-CHECK: congestion_control=%s | default_qdisc=%s", cc, qd))
@@ -429,8 +438,11 @@ func loadDBFromDisk(port string) {
 	if db.CtrlWSSPort == "" {
 		db.CtrlWSSPort = "6007"
 	}
+	if db.CtrlGRPCPort == "" {
+		db.CtrlGRPCPort = "6008"
+	}
 	if db.CtrlMethods == "" {
-		db.CtrlMethods = "wss,direct"
+		db.CtrlMethods = "grpc,wss,direct"
 	}
 
 	hasLocal := false
@@ -511,6 +523,9 @@ func updateConfigFile(req ConfigReq) error {
 	}
 	if req.CtrlWSS != "" {
 		kv["CTRL_WSS_PORT"] = req.CtrlWSS
+	}
+	if req.CtrlGRPC != "" {
+		kv["CTRL_GRPC_PORT"] = req.CtrlGRPC
 	}
 	if req.CtrlMethods != "" {
 		kv["CTRL_METHODS"] = req.CtrlMethods

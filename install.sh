@@ -10,10 +10,6 @@ CLI_PATH="/usr/local/bin/ghoghnoos"
 
 mkdir -p "$INSTALL_DIR"
 
-if [[ ! -e "/opt/litetun" ]]; then
-  ln -s "$INSTALL_DIR" /opt/litetun 2>/dev/null || true
-fi
-
 write_systemd_unit() {
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -39,7 +35,7 @@ systemctl enable ghoghnoos >/dev/null 2>&1 || true
 cleanup_legacy() {
   systemctl stop litetun 2>/dev/null || true
   systemctl disable litetun 2>/dev/null || true
-  rm -f /etc/systemd/system/litetun.service /usr/local/bin/litetun
+  rm -f /etc/systemd/system/litetun.service /usr/local/bin/litetun /opt/litetun 2>/dev/null || true
 }
 
 # 1. Reverse Sentinel Enrollment Mode
@@ -207,7 +203,7 @@ EOF
   5)
     systemctl stop ghoghnoos 2>/dev/null || true
     systemctl disable ghoghnoos 2>/dev/null || true
-    rm -rf "$SERVICE_FILE" "$INSTALL_DIR" "$CLI_PATH" /opt/litetun
+    rm -rf "$SERVICE_FILE" "$INSTALL_DIR" "$CLI_PATH"
     cleanup_legacy
     systemctl daemon-reload
     echo -e "\033[1;31m[✓] Uninstalled completely.\033[0m"

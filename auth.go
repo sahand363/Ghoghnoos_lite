@@ -50,7 +50,7 @@ func startDailyUpdateChecker() {
 
 func checkGitHubReleaseOnce() {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodHead, "https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite", nil)
+	req, err := http.NewRequest(http.MethodHead, "https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel", nil)
 	if err != nil {
 		return
 	}
@@ -70,7 +70,7 @@ func checkGitHubReleaseOnce() {
 	}
 	exePath, err := os.Executable()
 	if err != nil {
-		exePath = "/opt/litetun/ghoghnoos_lite"
+		exePath = "/opt/ghoghnoos/ghoghnoos-tunnel"
 	}
 	info, err := os.Stat(exePath)
 	if err != nil {
@@ -257,10 +257,12 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 
 func triggerLocalBinaryUpdate() {
 	time.Sleep(400 * time.Millisecond)
-	cmd := "curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.new && " +
-		"chmod +x /opt/litetun/ghoghnoos_lite.new && " +
-		"mv -f /opt/litetun/ghoghnoos_lite.new /opt/litetun/ghoghnoos_lite && " +
-		"systemctl restart litetun"
+	cmd := "mkdir -p /opt/ghoghnoos /opt/litetun && " +
+		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.new && " +
+		"chmod +x /opt/ghoghnoos/ghoghnoos-tunnel.new && " +
+		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.new /opt/ghoghnoos/ghoghnoos-tunnel && " +
+		"cp -f /opt/ghoghnoos/ghoghnoos-tunnel /opt/litetun/ghoghnoos_lite 2>/dev/null || true && " +
+		"(systemctl restart ghoghnoos 2>/dev/null || systemctl restart litetun 2>/dev/null)"
 	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
 		addLog(fmt.Sprintf("UPDATE-ERR: Failed to download latest binary -> %v", err))
 		return

@@ -150,7 +150,9 @@ func registerRoutes(port, panelPath string) {
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 5 * time.Second}
-				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort)); err == nil {
+				req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort), nil)
+				req.Header.Set("X-Ghq-Token", db.EnrollToken)
+				if resp, err := client.Do(req); err == nil {
 					defer resp.Body.Close()
 					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_%s_%s.log\"", srv.Name, time.Now().Format("20060102_1504")))
@@ -309,7 +311,9 @@ func registerRoutes(port, panelPath string) {
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 1800 * time.Millisecond}
-				if resp, err := client.Get(fmt.Sprintf("http://%s:%s/api/state?tab=logs", srv.IP, srv.PanelPort)); err == nil {
+				req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state?tab=logs", srv.IP, srv.PanelPort), nil)
+				req.Header.Set("X-Ghq-Token", db.EnrollToken)
+				if resp, err := client.Do(req); err == nil {
 					defer resp.Body.Close()
 					var rem map[string]interface{}
 					if json.NewDecoder(resp.Body).Decode(&rem) == nil {
@@ -378,7 +382,10 @@ func registerRoutes(port, panelPath string) {
 			srv := findServerByID(targetSrvID)
 			mu.Unlock()
 			if srv != nil {
-				if resp, err := http.Post(fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), "application/json", nil); err == nil {
+				client := &http.Client{Timeout: 3 * time.Second}
+				req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), nil)
+				req.Header.Set("X-Ghq-Token", db.EnrollToken)
+				if resp, err := client.Do(req); err == nil {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("BBR-OK [%s]: Enabled Google BBR + FQ on %s!", srv.Name, srv.IP))
 					w.WriteHeader(http.StatusOK)
@@ -529,7 +536,10 @@ func registerRoutes(port, panelPath string) {
 			if srv != nil {
 				client := &http.Client{Timeout: 2500 * time.Millisecond}
 				body, _ := json.Marshal(map[string]string{"cmd": req.Cmd})
-				if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), "application/json", bytes.NewReader(body)); err == nil {
+				reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), bytes.NewReader(body))
+				reqMsg.Header.Set("Content-Type", "application/json")
+				reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
+				if resp, err := client.Do(reqMsg); err == nil {
 					resp.Body.Close()
 					w.WriteHeader(http.StatusOK)
 					return
@@ -610,7 +620,10 @@ func registerRoutes(port, panelPath string) {
 			} else {
 				client := &http.Client{Timeout: 3 * time.Second}
 				body, _ := json.Marshal(exitTunnel)
-				if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), "application/json", bytes.NewReader(body)); err == nil {
+				reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), bytes.NewReader(body))
+				reqMsg.Header.Set("Content-Type", "application/json")
+				reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
+				if resp, err := client.Do(reqMsg); err == nil {
 					resp.Body.Close()
 					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
 				} else {
@@ -637,7 +650,10 @@ func registerRoutes(port, panelPath string) {
 			go probeTunnelOnce(t)
 		} else {
 			body, _ := json.Marshal(t)
-			http.Post(fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), "application/json", bytes.NewReader(body))
+			reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), bytes.NewReader(body))
+			reqMsg.Header.Set("Content-Type", "application/json")
+			reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
+			_, _ = (&http.Client{Timeout: 3 * time.Second}).Do(reqMsg)
 		}
 		w.WriteHeader(http.StatusOK)
 	})

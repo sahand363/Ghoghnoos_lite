@@ -39,14 +39,20 @@ func verifyGRPCCertPin(rawCerts [][]byte, expectedPin string) error {
 	return nil
 }
 
+type grpcTunnelService interface{}
 type grpcTunnelServer struct{}
 
 var activeGRPCServers = make(map[string]*grpc.Server)
 
 func stopGRPCServerIfRunning(id string) {
-	if srv, ok := activeGRPCServers[id]; ok && srv != nil {
-		srv.Stop()
+	mu.Lock()
+	srv, ok := activeGRPCServers[id]
+	if ok {
 		delete(activeGRPCServers, id)
+	}
+	mu.Unlock()
+	if ok && srv != nil {
+		srv.Stop()
 	}
 }
 
@@ -73,7 +79,7 @@ func newConfiguredGRPCServer() *grpc.Server {
 	)
 	s.RegisterService(&grpc.ServiceDesc{
 		ServiceName: "GhoghnoosService",
-		HandlerType: (*grpcTunnelServer)(nil),
+		HandlerType: (*grpcTunnelService)(nil),
 		Streams: []grpc.StreamDesc{
 			{
 				StreamName:    "TunnelStream",
@@ -493,9 +499,7 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 }
 
 func startGRPCEngine(t Tunnel) {
-	mu.Lock()
 	stopTunnelIfRunning(t.ID)
-	mu.Unlock()
 
 	if t.Role == "server" {
 		startGRPCExitListener(t)

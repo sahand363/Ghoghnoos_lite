@@ -88,6 +88,15 @@ func checkGitHubReleaseOnce() {
 
 // Replaces browser Basic Auth popup with SameSite Cookie Session & CSRF protection
 func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
+	if tok := r.Header.Get("X-Ghq-Token"); tok != "" {
+		expected := os.Getenv("ENROLL_TOKEN")
+		if expected == "" {
+			expected = db.EnrollToken
+		}
+		if tok == expected {
+			return true
+		}
+	}
 	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
 		return true
 	}
@@ -236,7 +245,9 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 		mu.Unlock()
 		if srv != nil && srv.IP != "" {
 			client := &http.Client{Timeout: 4 * time.Second}
-			if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/update", srv.IP, srv.PanelPort), "application/json", nil); err == nil {
+			req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/update", srv.IP, srv.PanelPort), nil)
+			req.Header.Set("X-Ghq-Token", db.EnrollToken)
+			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
 				addLog(fmt.Sprintf("UPDATE-OK [%s]: Triggered remote binary update on %s!", srv.Name, srv.IP))
 				w.WriteHeader(http.StatusOK)

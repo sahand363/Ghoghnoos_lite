@@ -117,6 +117,14 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 		targetPort = vals[0]
 	}
 
+	// Handle 1-RTT Latency Probe from Panel Ping Button
+	if strings.HasPrefix(targetPort, "probe:") {
+		var inMsg wrapperspb.BytesValue
+		_ = stream.RecvMsg(&inMsg)
+		_ = stream.SendMsg(&wrapperspb.BytesValue{Value: []byte("OK")})
+		return nil
+	}
+
 	targetConn, err := net.DialTimeout("tcp", "127.0.0.1:"+targetPort, 4*time.Second)
 	if err != nil {
 		addLog(fmt.Sprintf("GRPC-EXIT-DIAL-ERR: Local port 127.0.0.1:%s unreachable: %v", targetPort, err))
@@ -124,23 +132,23 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 	}
 	defer targetConn.Close()
 
-	errCh := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Uplink: gRPC Stream -> Local X-UI Target Port
 	go func() {
+		defer wg.Done()
 		for {
 			var inMsg wrapperspb.BytesValue
 			if err := stream.RecvMsg(&inMsg); err != nil {
 				if tcpConn, ok := targetConn.(*net.TCPConn); ok {
 					_ = tcpConn.CloseWrite()
 				}
-				errCh <- err
 				return
 			}
 			if len(inMsg.Value) > 0 {
 				atomic.AddUint64(&appRxBytes, uint64(len(inMsg.Value)))
 				if _, err := targetConn.Write(inMsg.Value); err != nil {
-					errCh <- err
 					return
 				}
 			}
@@ -149,27 +157,27 @@ func handleGRPCTunnelStream(srv any, stream grpc.ServerStream) error {
 
 	// Downlink: Local X-UI Target Port -> gRPC Stream
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := targetConn.Read(buf)
 			if n > 0 {
 				atomic.AddUint64(&appTxBytes, uint64(n))
-				outMsg := &wrapperspb.BytesValue{Value: buf[:n]}
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				outMsg := &wrapperspb.BytesValue{Value: chunk}
 				if sendErr := stream.SendMsg(outMsg); sendErr != nil {
-					errCh <- sendErr
+					targetConn.Close()
 					return
 				}
 			}
 			if err != nil {
-				errCh <- err
 				return
 			}
 		}
 	}()
 
-	// Wait for both directions or context cancellation
-	<-errCh
-	<-errCh
+	wg.Wait()
 	return nil
 }
 
@@ -282,7 +290,15 @@ func startGRPCEntryListener(t Tunnel) {
 func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string) {
 	defer userConn.Close()
 
-	grpcConn, err := getOrCreateGRPCConn(t.RemoteAddr, sni, t.CertPin)
+	// Always pick up latest CertPin for the target server
+	certPin := t.CertPin
+	mu.Lock()
+	if dstSrv := findServerByID(t.TargetServer); dstSrv != nil && dstSrv.CertPin != "" {
+		certPin = dstSrv.CertPin
+	}
+	mu.Unlock()
+
+	grpcConn, err := getOrCreateGRPCConn(t.RemoteAddr, sni, certPin)
 	if err != nil {
 		addLog(fmt.Sprintf("GRPC-DIAL-ERR [%s]: Failed to connect to Exit %s: %v", t.Name, t.RemoteAddr, err))
 		return
@@ -305,10 +321,12 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 	}
 
 	limiter := getTunnelLimiter(t.ID)
-	errCh := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Uplink: User TCP Connection -> gRPC Stream
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := userConn.Read(buf)
@@ -317,15 +335,15 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 					limiter.WaitBytes(n)
 				}
 				atomic.AddUint64(&appTxBytes, uint64(n))
-				outMsg := &wrapperspb.BytesValue{Value: buf[:n]}
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				outMsg := &wrapperspb.BytesValue{Value: chunk}
 				if sendErr := stream.SendMsg(outMsg); sendErr != nil {
-					errCh <- sendErr
 					return
 				}
 			}
 			if err != nil {
 				_ = stream.CloseSend()
-				errCh <- err
 				return
 			}
 		}
@@ -333,13 +351,13 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 
 	// Downlink: gRPC Stream -> User TCP Connection
 	go func() {
+		defer wg.Done()
 		for {
 			var inMsg wrapperspb.BytesValue
 			if err := stream.RecvMsg(&inMsg); err != nil {
 				if tcpConn, ok := userConn.(*net.TCPConn); ok {
 					_ = tcpConn.CloseWrite()
 				}
-				errCh <- err
 				return
 			}
 			if len(inMsg.Value) > 0 {
@@ -348,15 +366,13 @@ func handleGRPCClientInbound(t Tunnel, userConn net.Conn, targetPort, sni string
 				}
 				atomic.AddUint64(&appRxBytes, uint64(len(inMsg.Value)))
 				if _, err := userConn.Write(inMsg.Value); err != nil {
-					errCh <- err
 					return
 				}
 			}
 		}
 	}()
 
-	<-errCh
-	<-errCh
+	wg.Wait()
 }
 
 func startGRPCEngine(t Tunnel) {

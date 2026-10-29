@@ -202,7 +202,7 @@ func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/sentinel-info", func(w http.ResponseWriter, r *http.Request) {
 		ramMB, _ := getMemoryStats()
 		cc, qd := checkBBRStatus()
-		l4, dir, wss := getControlPorts()
+		l4, dir, wss, grpcP := getControlPorts()
 		mu.Lock()
 		tuns := append([]Tunnel{}, db.Tunnels...)
 		recentLogs := append([]string{}, logs...)
@@ -227,7 +227,7 @@ func registerRoutes(port, panelPath string) {
 			rows = `<div style="color:#64748b;">No active tunnels configured on this node yet.</div>`
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos Tunnel %s — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, appVersion, localIP, port, l4, dir, wss, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Node Info</title><style>body{background:#0b111a;color:#e2e8f0;font-family:monospace;padding:20px;max-width:900px;margin:auto;}.box{background:#111a27;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:16px;}h2{color:#38bdf8;margin-top:0;}</style></head><body><div class="box"><h2>🦅 Ghoghnoos Tunnel %s — Sentinel Node Status</h2><p><b>Server IP:</b> %s | <b>Panel:</b> :%s | <b>Control Ports:</b> :%s / :%s / :%s / :%s | <b>RAM:</b> %d MB | <b>BBR:</b> %s (%s)</p><p style="word-break:break-all;"><b>SHA-256 Pin:</b> <code style="color:#10b981;">%s</code></p></div><div class="box"><h3>Active Tunnel Listeners</h3>%s</div><div class="box"><h3>Recent Node Logs</h3><pre style="background:#05080d;padding:14px;border-radius:10px;color:#10b981;overflow-x:auto;">%s</pre></div></body></html>`, appVersion, localIP, port, l4, dir, wss, grpcP, ramMB, cc, qd, localPinHex, rows, strings.Join(recentLogs, "\n"))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -271,7 +271,7 @@ func registerRoutes(port, panelPath string) {
 		activeTab := r.URL.Query().Get("tab")
 		rangeStr := r.URL.Query().Get("range")
 		ramMB, goroutines := getMemoryStats()
-		l4Port, dirPort, wssPort := getControlPorts()
+		l4Port, dirPort, wssPort, grpcPort := getControlPorts()
 
 		mu.Lock()
 		serversCopy := make([]ServerNode, len(db.Servers))
@@ -364,7 +364,7 @@ func registerRoutes(port, panelPath string) {
 			"ping_summary": pingSummary, "prefs": prefsCopy, "logs": activeLogs, "panel_port": activePort,
 			"panel_path": activePath, "panel_user": panelUser, "cert_pin": activePin, "enroll_token": enrollTok,
 			"master_ip": localIP, "dial_port": port, "ctrl_l4_port": l4Port, "ctrl_direct_port": dirPort,
-			"ctrl_wss_port": wssPort, "ctrl_methods": strings.Join(getAllowedControlMethods(), ","),
+			"ctrl_wss_port": wssPort, "ctrl_grpc_port": grpcPort, "ctrl_methods": strings.Join(getAllowedControlMethods(), ","),
 		})
 	})
 
@@ -552,9 +552,9 @@ func registerRoutes(port, panelPath string) {
 		}
 		if r.Method == http.MethodDelete {
 			id := r.URL.Query().Get("id")
-			mu.Lock()
 			stopTunnelIfRunning(id)
 			updateTunnelLimiter(id, "0")
+			mu.Lock()
 			var updated []Tunnel
 			for _, item := range db.Tunnels {
 				if item.ID != id {
@@ -686,6 +686,9 @@ func registerRoutes(port, panelPath string) {
 		}
 		if req.CtrlWSS != "" {
 			db.CtrlWSSPort = req.CtrlWSS
+		}
+		if req.CtrlGRPC != "" {
+			db.CtrlGRPCPort = req.CtrlGRPC
 		}
 		if req.CtrlMethods != "" {
 			db.CtrlMethods = req.CtrlMethods

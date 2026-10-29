@@ -33,11 +33,11 @@ var appJS []byte
 const (
 	appVersion = "v2.6.0"
 	wsGUID     = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	dbPath     = "/opt/litetun/panel_db.json"
-	logPath    = "/opt/litetun/panel.log"
-	confPath   = "/opt/litetun/config.env"
-	certFile   = "/opt/litetun/cert.pem"
-	keyFile    = "/opt/litetun/key.pem"
+	dbPath     = "/opt/ghoghnoos/panel_db.json"
+	logPath    = "/opt/ghoghnoos/panel.log"
+	confPath   = "/opt/ghoghnoos/config.env"
+	certFile   = "/opt/ghoghnoos/cert.pem"
+	keyFile    = "/opt/ghoghnoos/key.pem"
 )
 
 var (
@@ -90,7 +90,7 @@ func loadEnvFile() {
 }
 
 func initSelfSignedCert() {
-	_ = os.MkdirAll("/opt/litetun", 0755)
+	_ = os.MkdirAll("/opt/ghoghnoos", 0755)
 	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && len(cert.Certificate) > 0 {
 		sum := sha256.Sum256(cert.Certificate[0])
 		localPinHex = hex.EncodeToString(sum[:])
@@ -166,9 +166,9 @@ func main() {
 	go startDailyUpdateChecker()
 	registerRoutes(port, panelPath)
 
-	fmt.Printf("Ghoghnoos-lite %s running on port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")
-	if _, err := os.Stat("/opt/litetun/server.crt"); err == nil {
-		http.ListenAndServeTLS(":"+port, "/opt/litetun/server.crt", "/opt/litetun/server.key", nil)
+	fmt.Printf("Ghoghnoos Tunnel %s running on port %s (Path: /%s/ | Auth: %v)\n", appVersion, port, panelPath, panelUser != "")
+	if _, err := os.Stat("/opt/ghoghnoos/server.crt"); err == nil {
+		http.ListenAndServeTLS(":"+port, "/opt/ghoghnoos/server.crt", "/opt/ghoghnoos/server.key", nil)
 	} else {
 		http.ListenAndServe(":"+port, nil)
 	}

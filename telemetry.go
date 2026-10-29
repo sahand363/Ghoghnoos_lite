@@ -1,3 +1,4 @@
+```go
 package main
 
 import (
@@ -275,20 +276,21 @@ func deploySentinelSSH(s ServerNode) {
 	defer sshClient.Close()
 
 	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary...", s.Name))
-	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/litetun; "+
-		"if [ ! -f /opt/litetun/config.env ]; then echo -e 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin' > /opt/litetun/config.env; fi; "+
-		"systemctl stop litetun 2>/dev/null || true; "+
-		"curl -Ls https://github.com/sahand363/ghoghnoos_light/releases/latest/download/ghoghnoos_lite -o /opt/litetun/ghoghnoos_lite.tmp && "+
-		"mv -f /opt/litetun/ghoghnoos_lite.tmp /opt/litetun/ghoghnoos_lite && chmod +x /opt/litetun/ghoghnoos_lite", detectedPort)
+	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos /opt/litetun; "+
+		"if [ ! -L /opt/litetun ]; then ln -sfn /opt/ghoghnoos /opt/litetun 2>/dev/null || true; fi; "+
+		"if [ ! -f /opt/ghoghnoos/config.env ]; then printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\n' > /opt/ghoghnoos/config.env; fi; "+
+		"systemctl stop ghoghnoos litetun 2>/dev/null || true; "+
+		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.tmp && "+
+		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel", detectedPort)
 	if _, err := runSSHStep(sshClient, step1); err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Binary download failed -> %v", s.Name, err))
 		return
 	}
 
 	addLog(fmt.Sprintf("[75%%] SSH [%s]: Starting Sentinel service...", s.Name))
-	step2 := "curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos_light/main/install.sh | tr -d '\\r' > /usr/local/bin/litetun && " +
-		"chmod +x /usr/local/bin/litetun && /usr/local/bin/litetun --sentinel && systemctl restart litetun && " +
-		"grep '^PANEL_PORT=' /opt/litetun/config.env | cut -d= -f2"
+	step2 := "curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | tr -d '\\r' > /usr/local/bin/ghoghnoos && " +
+		"chmod +x /usr/local/bin/ghoghnoos && /usr/local/bin/ghoghnoos --sentinel && systemctl restart ghoghnoos && " +
+		"grep '^PANEL_PORT=' /opt/ghoghnoos/config.env | cut -d= -f2"
 	out, err := runSSHStep(sshClient, step2)
 	if err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Service start failed -> %v", s.Name, err))
@@ -346,7 +348,9 @@ func uninstallSentinelRemote(s ServerNode) {
 		}
 		if sc, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshCfg); err == nil {
 			defer sc.Close()
-			purgeCmd := "systemctl stop litetun 2>/dev/null; systemctl disable litetun 2>/dev/null; rm -f /etc/systemd/system/litetun.service; systemctl daemon-reload; rm -rf /opt/litetun /usr/local/bin/litetun"
+			purgeCmd := "systemctl stop ghoghnoos litetun 2>/dev/null; systemctl disable ghoghnoos litetun 2>/dev/null; " +
+				"rm -f /etc/systemd/system/ghoghnoos.service /etc/systemd/system/litetun.service; systemctl daemon-reload; " +
+				"rm -rf /opt/ghoghnoos /opt/litetun /usr/local/bin/ghoghnoos /usr/local/bin/litetun"
 			_, _ = runSSHStep(sc, purgeCmd)
 			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel completely removed from %s via SSH!", s.Name, s.IP))
 			return

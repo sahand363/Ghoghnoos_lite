@@ -43,13 +43,16 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 		if name == "" {
 			name = fmt.Sprintf("Server-%d", len(db.Servers)+1)
 		}
+		tok := db.EnrollToken
+		if len(db.ValidTokens) > 0 {
+			tok = db.ValidTokens[len(db.ValidTokens)-1]
+		}
 		newNode := ServerNode{
 			ID:        fmt.Sprintf("srv-%d", time.Now().Unix()%10000),
 			Name:      name,
 			IP:        req.IP,
-			SSHPort:   "22",
-			SSHUser:   "root",
 			PanelPort: "6001",
+			AuthToken: tok,
 			Status:    "Probing...",
 			Probing:   true,
 		}
@@ -91,6 +94,26 @@ func handleServerProbeRoute(w http.ResponseWriter, r *http.Request, panelPath st
 	w.WriteHeader(http.StatusOK)
 }
 
+func getCandidateProbeTokensLocked(srv *ServerNode) []string {
+	var list []string
+	seen := make(map[string]bool)
+	add := func(t string) {
+		t = strings.TrimSpace(t)
+		if t != "" && !seen[t] {
+			seen[t] = true
+			list = append(list, t)
+		}
+	}
+	if srv != nil && srv.AuthToken != "" {
+		add(srv.AuthToken)
+	}
+	for i := len(db.ValidTokens) - 1; i >= 0; i-- {
+		add(db.ValidTokens[i])
+	}
+	add(db.EnrollToken)
+	return list
+}
+
 func startMasterForwardProber(srvID string) {
 	mu.Lock()
 	if oldCh, ok := activeProbeCancels[srvID]; ok {
@@ -120,7 +143,7 @@ func startMasterForwardProber(srvID string) {
 			}
 			ip := srv.IP
 			sName := srv.Name
-			tok := db.EnrollToken
+			candidateTokens := getCandidateProbeTokensLocked(srv)
 			cMethods := db.CtrlMethods
 			var queuedCmds []string
 			if q, ok := pendingRemoteCmds[srvID]; ok && len(q) > 0 {
@@ -151,15 +174,27 @@ func startMasterForwardProber(srvID string) {
 			targetSpec := fmt.Sprintf("%s:%s:%s:%s:%s", ip, l4, dir, wss, grpcP)
 			cmdPayload := strings.Join(queuedCmds, "||")
 
+			dialWithTokens := func(m string) (EnrollReply, int64, string, error) {
+				var lastErr error
+				for _, tk := range candidateTokens {
+					rep, ms, err := tryDialControl(targetSpec, tk, cmdPayload, m, true, exitsForSrv)
+					if err == nil && rep.OK {
+						return rep, ms, tk, nil
+					}
+					lastErr = err
+				}
+				return EnrollReply{}, 0, "", lastErr
+			}
+
 			if activeMethod != "" && len(order) > 0 && activeMethod != order[0] && time.Since(lastUpgrade) >= 12*time.Hour {
 				lastUpgrade = time.Now()
 				for _, cand := range order {
 					if cand == activeMethod {
 						break
 					}
-					if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true, exitsForSrv); err == nil && rep.OK {
+					if rep, _, matchedTok, err := dialWithTokens(cand); err == nil && rep.OK {
 						activeMethod = cand
-						applyForwardProbeSuccess(srvID, cand, rep)
+						applyForwardProbeSuccess(srvID, cand, matchedTok, rep)
 						addLog(fmt.Sprintf("RENDEZVOUS-UPGRADE [%s]: Upgraded Forward Link to FWD-%s!", sName, strings.ToUpper(cand)))
 						break
 					}
@@ -168,19 +203,19 @@ func startMasterForwardProber(srvID string) {
 
 			connected := false
 			if activeMethod != "" {
-				if rep, _, err := tryDialControl(targetSpec, tok, cmdPayload, activeMethod, true, exitsForSrv); err == nil && rep.OK {
+				if rep, _, matchedTok, err := dialWithTokens(activeMethod); err == nil && rep.OK {
 					connected = true
-					applyForwardProbeSuccess(srvID, activeMethod, rep)
+					applyForwardProbeSuccess(srvID, activeMethod, matchedTok, rep)
 				}
 			}
 
 			if !connected {
 				addLog(fmt.Sprintf("RENDEZVOUS-HUNT [%s]: Probing %s via [%s]...", sName, ip, strings.ToUpper(strings.Join(order, " ➔ "))))
 				for _, cand := range order {
-					if rep, ms, err := tryDialControl(targetSpec, tok, cmdPayload, cand, true, exitsForSrv); err == nil && rep.OK {
+					if rep, ms, matchedTok, err := dialWithTokens(cand); err == nil && rep.OK {
 						activeMethod = cand
 						connected = true
-						applyForwardProbeSuccess(srvID, cand, rep)
+						applyForwardProbeSuccess(srvID, cand, matchedTok, rep)
 						addLog(fmt.Sprintf("RENDEZVOUS-OK [%s]: Connected to %s via FWD-%s (%d ms)!", sName, ip, strings.ToUpper(cand), ms))
 						break
 					}
@@ -202,7 +237,7 @@ func startMasterForwardProber(srvID string) {
 	}()
 }
 
-func applyForwardProbeSuccess(srvID, method string, rep EnrollReply) {
+func applyForwardProbeSuccess(srvID, method, matchedTok string, rep EnrollReply) {
 	mu.Lock()
 	srv := findServerByID(srvID)
 	if srv == nil {
@@ -214,6 +249,9 @@ func applyForwardProbeSuccess(srvID, method string, rep EnrollReply) {
 	}
 	if rep.Version != "" {
 		srv.Version = rep.Version
+	}
+	if matchedTok != "" {
+		srv.AuthToken = matchedTok
 	}
 	if rep.MasterPin != "" {
 		srv.CertPin = rep.MasterPin

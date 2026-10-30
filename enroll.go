@@ -89,6 +89,46 @@ func applyIncomingExitTunnels(exits []Tunnel) {
 	mu.Unlock()
 }
 
+func recordValidTokenLocked(tok string) {
+	tok = strings.TrimSpace(tok)
+	if tok == "" {
+		return
+	}
+	for _, existing := range db.ValidTokens {
+		if existing == tok {
+			return
+		}
+	}
+	db.ValidTokens = append(db.ValidTokens, tok)
+	if len(db.ValidTokens) > 30 {
+		db.ValidTokens = db.ValidTokens[len(db.ValidTokens)-30:]
+	}
+}
+
+func isValidEnrollTokenLocked(tok string) bool {
+	tok = strings.TrimSpace(tok)
+	if tok == "" {
+		return false
+	}
+	if envTok := strings.TrimSpace(os.Getenv("ENROLL_TOKEN")); envTok != "" && tok == envTok {
+		return true
+	}
+	if db.EnrollToken != "" && tok == db.EnrollToken {
+		return true
+	}
+	for _, valid := range db.ValidTokens {
+		if tok == valid {
+			return true
+		}
+	}
+	for _, s := range db.Servers {
+		if s.AuthToken != "" && tok == s.AuthToken {
+			return true
+		}
+	}
+	return false
+}
+
 func ensureEnrollToken() string {
 	mu.Lock()
 	defer mu.Unlock()
@@ -99,17 +139,22 @@ func ensureEnrollToken() string {
 		b := make([]byte, 12)
 		_, _ = rand.Read(b)
 		db.EnrollToken = "ghq_" + hex.EncodeToString(b)
-		saveDBLocked()
 	}
+	recordValidTokenLocked(db.EnrollToken)
+	saveDBLocked()
 	return db.EnrollToken
 }
 
 func regenerateEnrollToken() string {
 	mu.Lock()
 	defer mu.Unlock()
+	if db.EnrollToken != "" {
+		recordValidTokenLocked(db.EnrollToken)
+	}
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	db.EnrollToken = "ghq_" + hex.EncodeToString(b)
+	recordValidTokenLocked(db.EnrollToken)
 	saveDBLocked()
 	return db.EnrollToken
 }
@@ -242,12 +287,8 @@ func handleControlConn(conn net.Conn, mode string) {
 }
 
 func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
-	expectedTok := strings.TrimSpace(os.Getenv("ENROLL_TOKEN"))
 	mu.Lock()
-	if expectedTok == "" {
-		expectedTok = db.EnrollToken
-	}
-	if expectedTok != "" && hb.Token != "" && hb.Token != expectedTok {
+	if !isValidEnrollTokenLocked(hb.Token) {
 		mu.Unlock()
 		return EnrollReply{OK: false}
 	}
@@ -295,9 +336,16 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 			name = fmt.Sprintf("Server-%d", len(db.Servers)+1)
 		}
 		newNode := ServerNode{
-			ID: fmt.Sprintf("srv-%d", time.Now().Unix()%10000), Name: name, IP: hb.IP,
-			SSHPort: "22", SSHUser: "root", PanelPort: hb.PanelPort, CertPin: hb.CertPin,
-			Version: hb.Version, Status: "Online", ViaMethod: strings.ToUpper(hb.ViaMethod), LastSeen: time.Now().Unix(),
+			ID:        fmt.Sprintf("srv-%d", time.Now().Unix()%10000),
+			Name:      name,
+			IP:        hb.IP,
+			PanelPort: hb.PanelPort,
+			CertPin:   hb.CertPin,
+			AuthToken: hb.Token,
+			Version:   hb.Version,
+			Status:    "Online",
+			ViaMethod: strings.ToUpper(hb.ViaMethod),
+			LastSeen:  time.Now().Unix(),
 		}
 		db.Servers = append(db.Servers, newNode)
 		targetSrv = &db.Servers[len(db.Servers)-1]
@@ -311,6 +359,9 @@ func processIncomingEnroll(hb EnrollHeartbeat) EnrollReply {
 		}
 		if hb.Version != "" {
 			targetSrv.Version = hb.Version
+		}
+		if hb.Token != "" {
+			targetSrv.AuthToken = hb.Token
 		}
 		if hb.CertPin != "" {
 			targetSrv.CertPin = hb.CertPin

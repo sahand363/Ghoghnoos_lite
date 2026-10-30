@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,8 +10,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func checkBBRStatus() (cc, qdisc string) {
@@ -197,200 +193,34 @@ func startTelemetryMonitor() {
 	}
 }
 
-func runSSHStep(client *ssh.Client, cmd string) (string, error) {
-	sess, err := client.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer sess.Close()
-	out, err := sess.CombinedOutput(cmd)
-	return strings.TrimSpace(string(out)), err
-}
-
-func deploySentinelSSH(s ServerNode) {
-	detectedPort := s.PanelPort
-	if detectedPort == "" {
-		detectedPort = "6001"
-	}
-
-	enrollTok := ensureEnrollToken()
-	l4, dir, wss, grpcP := getControlPorts()
-	cMethods := strings.Join(getAllowedControlMethods(), ",")
-	masterSpec := fmt.Sprintf("%s:%s:%s:%s:%s", detectLocalIP(), l4, dir, wss, grpcP)
-
-	addLog(fmt.Sprintf("[10%%] [%s]: Checking Sentinel connection on %s:%s...", s.Name, s.IP, detectedPort))
-	httpClient := &http.Client{Timeout: 3 * time.Second}
-
-	// 1. Check if Sentinel is already online and responding over SSH/HTTP first
-	reqTest, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
-	reqTest.Header.Set("X-Ghq-Token", enrollTok)
-	if resp, err := httpClient.Do(reqTest); err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			var st map[string]interface{}
-			if json.NewDecoder(resp.Body).Decode(&st) == nil {
-				remotePin, _ := st["cert_pin"].(string)
-				remoteVer, _ := st["version"].(string)
-				if remotePin != "" {
-					mu.Lock()
-					if srv := findServerByID(s.ID); srv != nil {
-						srv.PanelPort = detectedPort
-						srv.CertPin = remotePin
-						if remoteVer != "" {
-							srv.Version = remoteVer
-						}
-						srv.Status = "Online"
-						srv.ViaMethod = "SSH"
-						syncServerTunnelsPinLocked(srv.ID, remotePin)
-						saveDBLocked()
-					}
-					mu.Unlock()
-					addLog(fmt.Sprintf("[100%%] VERIFIED [%s]: Sentinel already online & verified at %s:%s!", s.Name, s.IP, detectedPort))
-					return
-				}
-			}
-		}
-	}
-
-	if s.SSHPass == "" {
-		addLog(fmt.Sprintf("ERR [%s]: Sentinel offline and no SSH password stored.", s.Name))
-		return
-	}
-
-	addLog(fmt.Sprintf("[25%%] SSH [%s]: Authenticating %s@%s:%s ...", s.Name, s.SSHUser, s.IP, s.SSHPort))
-	sshConfig := &ssh.ClientConfig{
-		User: s.SSHUser,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(s.SSHPass),
-			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-				ans := make([]string, len(questions))
-				for i := range ans {
-					ans[i] = s.SSHPass
-				}
-				return ans, nil
-			}),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         12 * time.Second,
-	}
-
-	sshClient, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshConfig)
-	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Connection failed -> %v", s.Name, err))
-		mu.Lock()
-		if srv := findServerByID(s.ID); srv != nil {
-			srv.Status = "SSH Error"
-			saveDBLocked()
-		}
-		mu.Unlock()
-		return
-	}
-	defer sshClient.Close()
-
-	nodeNameClean := strings.ReplaceAll(strings.TrimSpace(s.Name), " ", "-")
-	if nodeNameClean == "" {
-		nodeNameClean = "Sentinel"
-	}
-
-	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary & locking to SSH mode...", s.Name))
-	// LISTEN_ONLY=1 keeps the node permanently on SSH mode so it never auto-switches to gRPC/WSS unless SSH drops
-	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos; "+
-		"printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\nMASTER_ADDR=%s\\nENROLL_TOKEN=%s\\nNODE_NAME=%s\\nACTIVE_METHOD=ssh\\nCTRL_L4_PORT=%s\\nCTRL_DIRECT_PORT=%s\\nCTRL_WSS_PORT=%s\\nCTRL_GRPC_PORT=%s\\nCTRL_METHODS=%s\\nLISTEN_ONLY=1\\n' > /opt/ghoghnoos/config.env; "+
-		"systemctl stop ghoghnoos 2>/dev/null || true; "+
-		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.tmp && "+
-		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel",
-		detectedPort, masterSpec, enrollTok, nodeNameClean, l4, dir, wss, grpcP, cMethods)
-	if _, err := runSSHStep(sshClient, step1); err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Binary download failed -> %v", s.Name, err))
-		return
-	}
-
-	addLog(fmt.Sprintf("[75%%] SSH [%s]: Starting Sentinel service & reading Certificate Pin...", s.Name))
-	step2 := fmt.Sprintf("curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | tr -d '\\r' > /usr/local/bin/ghoghnoos && "+
-		"chmod +x /usr/local/bin/ghoghnoos && /usr/local/bin/ghoghnoos --sentinel && systemctl restart ghoghnoos && "+
-		"for i in 1 2 3 4 5; do sleep 1; out=$(curl -s http://127.0.0.1:%s/api/state); if [ -n \"$out\" ]; then echo \"$out\"; break; fi; done", detectedPort)
-	out, err := runSSHStep(sshClient, step2)
-	if err != nil {
-		addLog(fmt.Sprintf("SSH-ERR [%s]: Service start failed -> %v", s.Name, err))
-		return
-	}
-
-	addLog(fmt.Sprintf("[90%%] [%s]: Syncing TLS Certificate Fingerprint...", s.Name))
-	remotePin := ""
-	remoteVer := appVersion
-
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
-			var st map[string]interface{}
-			if json.Unmarshal([]byte(line), &st) == nil {
-				if rp, ok := st["cert_pin"].(string); ok && rp != "" {
-					remotePin = rp
-				}
-				if rv, ok := st["version"].(string); ok && rv != "" {
-					remoteVer = rv
-				}
-			}
-		}
-	}
-
-	if remotePin == "" {
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
-		req.Header.Set("X-Ghq-Token", enrollTok)
-		if resp, err := httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
-			var st map[string]interface{}
-			if json.NewDecoder(resp.Body).Decode(&st) == nil {
-				remotePin, _ = st["cert_pin"].(string)
-				if rv, ok := st["version"].(string); ok && rv != "" {
-					remoteVer = rv
-				}
-			}
-		}
-	}
-
-	mu.Lock()
-	if srv := findServerByID(s.ID); srv != nil {
-		srv.PanelPort = detectedPort
-		if remotePin != "" {
-			srv.CertPin = remotePin
-			syncServerTunnelsPinLocked(srv.ID, remotePin)
-		}
-		srv.Version = remoteVer
-		srv.Status = "Online"
-		srv.ViaMethod = "SSH"
-		saveDBLocked()
-	}
-	mu.Unlock()
-	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel (%s) verified & online via SSH on :%s!", s.Name, remoteVer, detectedPort))
-}
-
 func uninstallSentinelRemote(s ServerNode) {
 	pPort := s.PanelPort
 	if pPort == "" {
 		pPort = "6001"
 	}
+	mu.Lock()
+	tok := getServerAuthToken(&s)
+	mu.Unlock()
+
 	addLog(fmt.Sprintf("UNINSTALL [%s]: Sending remote uninstall signal to %s...", s.Name, s.IP))
 	client := &http.Client{Timeout: 3 * time.Second}
 	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/uninstall", s.IP, pPort), nil)
-	req.Header.Set("X-Ghq-Token", db.EnrollToken)
+	req.Header.Set("X-Ghq-Token", tok)
 	if resp, err := client.Do(req); err == nil {
 		resp.Body.Close()
-	}
-	if s.SSHPass != "" {
-		sshCfg := &ssh.ClientConfig{
-			User:            s.SSHUser,
-			Auth:            []ssh.AuthMethod{ssh.Password(s.SSHPass)},
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Timeout:         8 * time.Second,
-		}
-		if sc, err := ssh.Dial("tcp", net.JoinHostPort(s.IP, s.SSHPort), sshCfg); err == nil {
-			defer sc.Close()
-			purgeCmd := "systemctl stop ghoghnoos 2>/dev/null; systemctl disable ghoghnoos 2>/dev/null; rm -f /etc/systemd/system/ghoghnoos.service; systemctl daemon-reload; rm -rf /opt/ghoghnoos /usr/local/bin/ghoghnoos"
-			_, _ = runSSHStep(sc, purgeCmd)
-			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel completely removed from %s via SSH!", s.Name, s.IP))
+		if resp.StatusCode == http.StatusOK {
+			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel self-destruct triggered on %s!", s.Name, s.IP))
 			return
 		}
 	}
-	addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel self-destruct triggered on %s!", s.Name, s.IP))
+
+	l4, dir, wss, grpcP := getControlPorts()
+	targetSpec := fmt.Sprintf("%s:%s:%s:%s:%s", s.IP, l4, dir, wss, grpcP)
+	for _, cand := range getAllowedControlMethods() {
+		if rep, _, err := tryDialControl(targetSpec, tok, "uninstall", cand, true, nil); err == nil && rep.OK {
+			addLog(fmt.Sprintf("UNINSTALL-OK [%s]: Sentinel self-destruct triggered via %s!", s.Name, strings.ToUpper(cand)))
+			return
+		}
+	}
+	addLog(fmt.Sprintf("UNINSTALL-WARN [%s]: Removed from panel (remote host unreachable).", s.Name))
 }

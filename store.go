@@ -22,11 +22,9 @@ type ServerNode struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	IP        string `json:"ip"`
-	SSHPort   string `json:"ssh_port"`
-	SSHUser   string `json:"ssh_user"`
-	SSHPass   string `json:"ssh_pass"`
 	PanelPort string `json:"panel_port"`
 	CertPin   string `json:"cert_pin"`
+	AuthToken string `json:"auth_token,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Status    string `json:"status"`
 	ViaMethod string `json:"via_method,omitempty"`
@@ -100,6 +98,7 @@ type Database struct {
 	LastRawTx      uint64       `json:"last_raw_tx"`
 	AppBaseBytes   uint64       `json:"app_base_bytes"`
 	EnrollToken    string       `json:"enroll_token"`
+	ValidTokens    []string     `json:"valid_tokens,omitempty"`
 	CtrlL4Port     string       `json:"ctrl_l4_port"`
 	CtrlDirectPort string       `json:"ctrl_direct_port"`
 	CtrlWSSPort    string       `json:"ctrl_wss_port"`
@@ -330,6 +329,12 @@ func executeLocalConsoleCmd(cmd, port string) {
 		go func() { time.Sleep(500 * time.Millisecond); os.Exit(0) }()
 	case "self-update":
 		go triggerLocalBinaryUpdate()
+	case "uninstall":
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			_ = exec.Command("bash", "-c", "systemctl disable ghoghnoos 2>/dev/null; rm -f /etc/systemd/system/ghoghnoos.service; systemctl daemon-reload; rm -rf /opt/ghoghnoos /usr/local/bin/ghoghnoos; systemctl stop ghoghnoos").Run()
+			os.Exit(0)
+		}()
 	default:
 		if strings.HasPrefix(strings.ToLower(cmd), "set-methods:") {
 			mStr := strings.TrimPrefix(strings.ToLower(cmd), "set-methods:")
@@ -402,7 +407,7 @@ func saveDBLocked() {
 	dbCopy := db
 	dbCopy.Servers = make([]ServerNode, len(db.Servers))
 	for i, s := range db.Servers {
-		s.SSHPass = encryptSecret(s.SSHPass)
+		s.AuthToken = encryptSecret(s.AuthToken)
 		dbCopy.Servers[i] = s
 	}
 	data, _ := json.MarshalIndent(dbCopy, "", "  ")
@@ -415,7 +420,7 @@ func loadDBFromDisk(port string) {
 		_ = json.Unmarshal(data, &db)
 	}
 	for i := range db.Servers {
-		db.Servers[i].SSHPass = decryptSecret(db.Servers[i].SSHPass)
+		db.Servers[i].AuthToken = decryptSecret(db.Servers[i].AuthToken)
 	}
 	if db.Prefs.Theme == "" {
 		db.Prefs.Theme = "cyan"
@@ -460,8 +465,8 @@ func loadDBFromDisk(port string) {
 	}
 	if !hasLocal {
 		master := ServerNode{
-			ID: "local", Name: "Master", IP: localIP, SSHPort: "22",
-			SSHUser: "root", PanelPort: port, CertPin: localPinHex, Version: appVersion, Status: "Online", IsLocal: true,
+			ID: "local", Name: "Master", IP: localIP,
+			PanelPort: port, CertPin: localPinHex, Version: appVersion, Status: "Online", IsLocal: true,
 		}
 		db.Servers = append([]ServerNode{master}, db.Servers...)
 	}
@@ -495,6 +500,16 @@ func findServerByID(id string) *ServerNode {
 		}
 	}
 	return nil
+}
+
+func getServerAuthToken(srv *ServerNode) string {
+	if srv != nil && srv.AuthToken != "" {
+		return srv.AuthToken
+	}
+	if len(db.ValidTokens) > 0 {
+		return db.ValidTokens[len(db.ValidTokens)-1]
+	}
+	return db.EnrollToken
 }
 
 func updateConfigFile(req ConfigReq) error {

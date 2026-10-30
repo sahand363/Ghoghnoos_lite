@@ -154,14 +154,10 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 		} else if !uValid || !pValid {
 			errMsg = "❌ Invalid username or password."
 		} else {
-			cookiePath := "/"
-			if panelPath != "" {
-				cookiePath = "/" + panelPath + "/"
-			}
 			http.SetCookie(w, &http.Cookie{
 				Name:     "ghq_session",
 				Value:    makeSessionToken(panelUser, panelPass),
-				Path:     cookiePath,
+				Path:     "/",
 				HttpOnly: true,
 				SameSite: http.SameSiteLaxMode,
 				MaxAge:   86400 * 30,
@@ -230,11 +226,7 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 }
 
 func handleLogoutRoute(w http.ResponseWriter, r *http.Request, panelPath string) {
-	cookiePath := "/"
-	if panelPath != "" {
-		cookiePath = "/" + panelPath + "/"
-	}
-	http.SetCookie(w, &http.Cookie{Name: "ghq_session", Value: "", Path: cookiePath, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "ghq_session", Value: "", Path: "/", MaxAge: -1})
 	loginURL := "/login"
 	if panelPath != "" {
 		loginURL = "/" + panelPath + "/login"

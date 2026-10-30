@@ -220,11 +220,13 @@ func deploySentinelSSH(s ServerNode) {
 
 	addLog(fmt.Sprintf("[10%%] [%s]: Checking Sentinel connection on %s:%s...", s.Name, s.IP, detectedPort))
 	httpClient := &http.Client{Timeout: 3 * time.Second}
-	if s.SSHPass == "" {
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
-		req.Header.Set("X-Ghq-Token", enrollTok)
-		if resp, err := httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
+
+	// 1. Check if Sentinel is already online and responding over SSH/HTTP first
+	reqTest, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
+	reqTest.Header.Set("X-Ghq-Token", enrollTok)
+	if resp, err := httpClient.Do(reqTest); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
 			var st map[string]interface{}
 			if json.NewDecoder(resp.Body).Decode(&st) == nil {
 				remotePin, _ := st["cert_pin"].(string)
@@ -238,18 +240,19 @@ func deploySentinelSSH(s ServerNode) {
 							srv.Version = remoteVer
 						}
 						srv.Status = "Online"
-						if srv.ViaMethod == "" {
-							srv.ViaMethod = "SSH"
-						}
+						srv.ViaMethod = "SSH"
 						syncServerTunnelsPinLocked(srv.ID, remotePin)
 						saveDBLocked()
 					}
 					mu.Unlock()
-					addLog(fmt.Sprintf("[100%%] VERIFIED [%s]: Linked to active Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
+					addLog(fmt.Sprintf("[100%%] VERIFIED [%s]: Sentinel already online & verified at %s:%s!", s.Name, s.IP, detectedPort))
 					return
 				}
 			}
 		}
+	}
+
+	if s.SSHPass == "" {
 		addLog(fmt.Sprintf("ERR [%s]: Sentinel offline and no SSH password stored.", s.Name))
 		return
 	}
@@ -289,9 +292,10 @@ func deploySentinelSSH(s ServerNode) {
 		nodeNameClean = "Sentinel"
 	}
 
-	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary & syncing token...", s.Name))
+	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary & locking to SSH mode...", s.Name))
+	// LISTEN_ONLY=1 keeps the node permanently on SSH mode so it never auto-switches to gRPC/WSS unless SSH drops
 	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos; "+
-		"printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\nMASTER_ADDR=%s\\nENROLL_TOKEN=%s\\nNODE_NAME=%s\\nACTIVE_METHOD=grpc\\nCTRL_L4_PORT=%s\\nCTRL_DIRECT_PORT=%s\\nCTRL_WSS_PORT=%s\\nCTRL_GRPC_PORT=%s\\nCTRL_METHODS=%s\\nLISTEN_ONLY=0\\n' > /opt/ghoghnoos/config.env; "+
+		"printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\nMASTER_ADDR=%s\\nENROLL_TOKEN=%s\\nNODE_NAME=%s\\nACTIVE_METHOD=ssh\\nCTRL_L4_PORT=%s\\nCTRL_DIRECT_PORT=%s\\nCTRL_WSS_PORT=%s\\nCTRL_GRPC_PORT=%s\\nCTRL_METHODS=%s\\nLISTEN_ONLY=1\\n' > /opt/ghoghnoos/config.env; "+
 		"systemctl stop ghoghnoos 2>/dev/null || true; "+
 		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.tmp && "+
 		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel",
@@ -315,7 +319,6 @@ func deploySentinelSSH(s ServerNode) {
 	remotePin := ""
 	remoteVer := appVersion
 
-	// Parse JSON state returned directly from localhost inside the SSH session
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
@@ -331,7 +334,6 @@ func deploySentinelSSH(s ServerNode) {
 		}
 	}
 
-	// Fallback check over direct HTTP with X-Ghq-Token
 	if remotePin == "" {
 		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
 		req.Header.Set("X-Ghq-Token", enrollTok)
@@ -360,7 +362,7 @@ func deploySentinelSSH(s ServerNode) {
 		saveDBLocked()
 	}
 	mu.Unlock()
-	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel (%s) verified & online on :%s!", s.Name, remoteVer, detectedPort))
+	addLog(fmt.Sprintf("[100%%] DEPLOY-OK [%s]: Sentinel (%s) verified & online via SSH on :%s!", s.Name, remoteVer, detectedPort))
 }
 
 func uninstallSentinelRemote(s ServerNode) {

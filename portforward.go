@@ -10,9 +10,7 @@ import (
 )
 
 func startPortForwardEngine(t Tunnel) {
-	mu.Lock()
 	stopTunnelIfRunning(t.ID)
-	mu.Unlock()
 
 	inboundPorts := parsePortList(t.InboundPorts)
 	if len(inboundPorts) == 0 {

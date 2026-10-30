@@ -5,15 +5,15 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"strings"
 	"time"
-	"encoding/base64"
-	"encoding/json"
 )
 
 type tcpSegmentConn struct {
@@ -101,9 +101,7 @@ func buildTunnelTLSConfig(t Tunnel) *tls.Config {
 }
 
 func startDirectTLSEngine(t Tunnel) {
-	mu.Lock()
 	stopTunnelIfRunning(t.ID)
-	mu.Unlock()
 
 	inboundPorts := parsePortList(t.InboundPorts)
 	if len(inboundPorts) == 0 {
@@ -218,7 +216,7 @@ func handleDirectTLSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 		return
 	}
 
-if strings.HasPrefix(firstLine, "ENROLL|") {
+	if strings.HasPrefix(firstLine, "ENROLL|") {
 		rawB64 := strings.TrimSpace(strings.TrimPrefix(firstLine, "ENROLL|"))
 		if decoded, err := base64.StdEncoding.DecodeString(rawB64); err == nil {
 			var hb EnrollHeartbeat
@@ -230,7 +228,7 @@ if strings.HasPrefix(firstLine, "ENROLL|") {
 		}
 		return
 	}
-	
+
 	if strings.HasPrefix(firstLine, "LTUN|") {
 		targetPort := strings.TrimSpace(strings.TrimPrefix(firstLine, "LTUN|"))
 		if strings.HasPrefix(targetPort, "probe:") {

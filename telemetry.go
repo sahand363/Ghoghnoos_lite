@@ -213,31 +213,41 @@ func deploySentinelSSH(s ServerNode) {
 		detectedPort = "6001"
 	}
 
+	enrollTok := ensureEnrollToken()
+	l4, dir, wss, grpcP := getControlPorts()
+	cMethods := strings.Join(getAllowedControlMethods(), ",")
+	masterSpec := fmt.Sprintf("%s:%s:%s:%s:%s", detectLocalIP(), l4, dir, wss, grpcP)
+
 	addLog(fmt.Sprintf("[10%%] [%s]: Checking Sentinel connection on %s:%s...", s.Name, s.IP, detectedPort))
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	if s.SSHPass == "" {
-		if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
+		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
+		req.Header.Set("X-Ghq-Token", enrollTok)
+		if resp, err := httpClient.Do(req); err == nil {
 			defer resp.Body.Close()
 			var st map[string]interface{}
 			if json.NewDecoder(resp.Body).Decode(&st) == nil {
 				remotePin, _ := st["cert_pin"].(string)
 				remoteVer, _ := st["version"].(string)
-				mu.Lock()
-				if srv := findServerByID(s.ID); srv != nil {
-					srv.PanelPort = detectedPort
-					srv.CertPin = remotePin
-					if remoteVer != "" {
-						srv.Version = remoteVer
+				if remotePin != "" {
+					mu.Lock()
+					if srv := findServerByID(s.ID); srv != nil {
+						srv.PanelPort = detectedPort
+						srv.CertPin = remotePin
+						if remoteVer != "" {
+							srv.Version = remoteVer
+						}
+						srv.Status = "Online"
+						if srv.ViaMethod == "" {
+							srv.ViaMethod = "SSH"
+						}
+						syncServerTunnelsPinLocked(srv.ID, remotePin)
+						saveDBLocked()
 					}
-					srv.Status = "Online"
-					if srv.ViaMethod == "" {
-						srv.ViaMethod = "SSH"
-					}
-					saveDBLocked()
+					mu.Unlock()
+					addLog(fmt.Sprintf("[100%%] VERIFIED [%s]: Linked to active Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
+					return
 				}
-				mu.Unlock()
-				addLog(fmt.Sprintf("[100%%] VERIFIED [%s]: Linked to active Sentinel at %s:%s!", s.Name, s.IP, detectedPort))
-				return
 			}
 		}
 		addLog(fmt.Sprintf("ERR [%s]: Sentinel offline and no SSH password stored.", s.Name))
@@ -274,50 +284,76 @@ func deploySentinelSSH(s ServerNode) {
 	}
 	defer sshClient.Close()
 
-	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary...", s.Name))
+	nodeNameClean := strings.ReplaceAll(strings.TrimSpace(s.Name), " ", "-")
+	if nodeNameClean == "" {
+		nodeNameClean = "Sentinel"
+	}
+
+	addLog(fmt.Sprintf("[50%%] SSH [%s]: Installing Sentinel binary & syncing token...", s.Name))
 	step1 := fmt.Sprintf("export DEBIAN_FRONTEND=noninteractive; mkdir -p /opt/ghoghnoos; "+
-		"if [ ! -f /opt/ghoghnoos/config.env ]; then printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\n' > /opt/ghoghnoos/config.env; fi; "+
+		"printf 'PANEL_PORT=%s\\nPANEL_PATH=sentinel\\nPANEL_USER=admin\\nPANEL_PASS=admin\\nMASTER_ADDR=%s\\nENROLL_TOKEN=%s\\nNODE_NAME=%s\\nACTIVE_METHOD=grpc\\nCTRL_L4_PORT=%s\\nCTRL_DIRECT_PORT=%s\\nCTRL_WSS_PORT=%s\\nCTRL_GRPC_PORT=%s\\nCTRL_METHODS=%s\\nLISTEN_ONLY=0\\n' > /opt/ghoghnoos/config.env; "+
 		"systemctl stop ghoghnoos 2>/dev/null || true; "+
 		"curl -Ls https://github.com/sahand363/ghoghnoos-tunnel/releases/latest/download/ghoghnoos-tunnel -o /opt/ghoghnoos/ghoghnoos-tunnel.tmp && "+
-		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel", detectedPort)
+		"mv -f /opt/ghoghnoos/ghoghnoos-tunnel.tmp /opt/ghoghnoos/ghoghnoos-tunnel && chmod +x /opt/ghoghnoos/ghoghnoos-tunnel",
+		detectedPort, masterSpec, enrollTok, nodeNameClean, l4, dir, wss, grpcP, cMethods)
 	if _, err := runSSHStep(sshClient, step1); err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Binary download failed -> %v", s.Name, err))
 		return
 	}
 
-	addLog(fmt.Sprintf("[75%%] SSH [%s]: Starting Sentinel service...", s.Name))
-	step2 := "curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | tr -d '\\r' > /usr/local/bin/ghoghnoos && " +
-		"chmod +x /usr/local/bin/ghoghnoos && /usr/local/bin/ghoghnoos --sentinel && systemctl restart ghoghnoos && " +
-		"grep '^PANEL_PORT=' /opt/ghoghnoos/config.env | cut -d= -f2"
+	addLog(fmt.Sprintf("[75%%] SSH [%s]: Starting Sentinel service & reading Certificate Pin...", s.Name))
+	step2 := fmt.Sprintf("curl -Ls https://raw.githubusercontent.com/sahand363/ghoghnoos-tunnel/main/install.sh | tr -d '\\r' > /usr/local/bin/ghoghnoos && "+
+		"chmod +x /usr/local/bin/ghoghnoos && /usr/local/bin/ghoghnoos --sentinel && systemctl restart ghoghnoos && "+
+		"for i in 1 2 3 4 5; do sleep 1; out=$(curl -s http://127.0.0.1:%s/api/state); if [ -n \"$out\" ]; then echo \"$out\"; break; fi; done", detectedPort)
 	out, err := runSSHStep(sshClient, step2)
 	if err != nil {
 		addLog(fmt.Sprintf("SSH-ERR [%s]: Service start failed -> %v", s.Name, err))
 		return
 	}
-	lines := strings.Split(out, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] != "" {
-		detectedPort = strings.TrimSpace(lines[len(lines)-1])
-	}
 
 	addLog(fmt.Sprintf("[90%%] [%s]: Syncing TLS Certificate Fingerprint...", s.Name))
-	time.Sleep(2 * time.Second)
-
 	remotePin := ""
 	remoteVer := appVersion
-	if resp, err := httpClient.Get(fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort)); err == nil {
-		defer resp.Body.Close()
-		var st map[string]interface{}
-		if json.NewDecoder(resp.Body).Decode(&st) == nil {
-			remotePin, _ = st["cert_pin"].(string)
-			if rv, ok := st["version"].(string); ok && rv != "" {
-				remoteVer = rv
+
+	// Parse JSON state returned directly from localhost inside the SSH session
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+			var st map[string]interface{}
+			if json.Unmarshal([]byte(line), &st) == nil {
+				if rp, ok := st["cert_pin"].(string); ok && rp != "" {
+					remotePin = rp
+				}
+				if rv, ok := st["version"].(string); ok && rv != "" {
+					remoteVer = rv
+				}
 			}
 		}
 	}
+
+	// Fallback check over direct HTTP with X-Ghq-Token
+	if remotePin == "" {
+		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state", s.IP, detectedPort), nil)
+		req.Header.Set("X-Ghq-Token", enrollTok)
+		if resp, err := httpClient.Do(req); err == nil {
+			defer resp.Body.Close()
+			var st map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&st) == nil {
+				remotePin, _ = st["cert_pin"].(string)
+				if rv, ok := st["version"].(string); ok && rv != "" {
+					remoteVer = rv
+				}
+			}
+		}
+	}
+
 	mu.Lock()
 	if srv := findServerByID(s.ID); srv != nil {
 		srv.PanelPort = detectedPort
-		srv.CertPin = remotePin
+		if remotePin != "" {
+			srv.CertPin = remotePin
+			syncServerTunnelsPinLocked(srv.ID, remotePin)
+		}
 		srv.Version = remoteVer
 		srv.Status = "Online"
 		srv.ViaMethod = "SSH"
@@ -334,7 +370,9 @@ func uninstallSentinelRemote(s ServerNode) {
 	}
 	addLog(fmt.Sprintf("UNINSTALL [%s]: Sending remote uninstall signal to %s...", s.Name, s.IP))
 	client := &http.Client{Timeout: 3 * time.Second}
-	if resp, err := client.Post(fmt.Sprintf("http://%s:%s/api/uninstall", s.IP, pPort), "application/json", nil); err == nil {
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/uninstall", s.IP, pPort), nil)
+	req.Header.Set("X-Ghq-Token", db.EnrollToken)
+	if resp, err := client.Do(req); err == nil {
 		resp.Body.Close()
 	}
 	if s.SSHPass != "" {

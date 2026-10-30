@@ -39,7 +39,6 @@ func makeCaptchaToken(ansStr string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Checks GitHub once every 24 hours to see if a newer release binary is available
 func startDailyUpdateChecker() {
 	time.Sleep(15 * time.Second)
 	for {
@@ -86,8 +85,9 @@ func checkGitHubReleaseOnce() {
 	mu.Unlock()
 }
 
-// Replaces browser Basic Auth popup with SameSite Cookie Session & CSRF protection
 func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+
 	if tok := r.Header.Get("X-Ghq-Token"); tok != "" {
 		expected := os.Getenv("ENROLL_TOKEN")
 		if expected == "" {
@@ -100,7 +100,6 @@ func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) 
 	if panelPath == "sentinel" && strings.HasPrefix(r.URL.Path, "/api/") {
 		return true
 	}
-	// CSRF Origin protection for state-changing requests
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		if orig := r.Header.Get("Origin"); orig != "" && !strings.Contains(orig, r.Host) {
 			http.Error(w, "403 CSRF Origin Mismatch", http.StatusForbidden)
@@ -136,6 +135,7 @@ func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) 
 }
 
 func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	errMsg := ""
 	if r.Method == http.MethodPost {
 		_ = r.ParseForm()
@@ -154,10 +154,14 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 		} else if !uValid || !pValid {
 			errMsg = "❌ Invalid username or password."
 		} else {
+			cookiePath := "/"
+			if panelPath != "" {
+				cookiePath = "/" + panelPath + "/"
+			}
 			http.SetCookie(w, &http.Cookie{
 				Name:     "ghq_session",
 				Value:    makeSessionToken(panelUser, panelPass),
-				Path:     "/",
+				Path:     cookiePath,
 				HttpOnly: true,
 				SameSite: http.SameSiteLaxMode,
 				MaxAge:   86400 * 30,
@@ -208,7 +212,7 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 <div class="card">
   <div class="logo">🦅</div>
   <h2>Ghoghnoos Control Panel</h2>
-  <div class="sub">Ghoghnoos 3-Engine Relay • %s</div>
+  <div class="sub">Ghoghnoos 4-Engine Relay • %s</div>
   %s
   <form method="POST" action="%s">
     <input type="hidden" name="captcha_sig" value="%s">
@@ -226,7 +230,11 @@ func handleLoginRoute(w http.ResponseWriter, r *http.Request, panelPath string) 
 }
 
 func handleLogoutRoute(w http.ResponseWriter, r *http.Request, panelPath string) {
-	http.SetCookie(w, &http.Cookie{Name: "ghq_session", Value: "", Path: "/", MaxAge: -1})
+	cookiePath := "/"
+	if panelPath != "" {
+		cookiePath = "/" + panelPath + "/"
+	}
+	http.SetCookie(w, &http.Cookie{Name: "ghq_session", Value: "", Path: cookiePath, MaxAge: -1})
 	loginURL := "/login"
 	if panelPath != "" {
 		loginURL = "/" + panelPath + "/login"
@@ -242,11 +250,12 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 	if targetSrvID != "" && targetSrvID != "local" {
 		mu.Lock()
 		srv := findServerByID(targetSrvID)
+		tok := db.EnrollToken
 		mu.Unlock()
 		if srv != nil && srv.IP != "" {
 			client := &http.Client{Timeout: 4 * time.Second}
 			req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/update", srv.IP, srv.PanelPort), nil)
-			req.Header.Set("X-Ghq-Token", db.EnrollToken)
+			req.Header.Set("X-Ghq-Token", tok)
 			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
 				addLog(fmt.Sprintf("UPDATE-OK [%s]: Triggered remote binary update on %s!", srv.Name, srv.IP))

@@ -101,6 +101,65 @@ func buildPingSummary(all []PingPoint, targetSrvID, rangeStr string) map[string]
 	}
 }
 
+func pushExitTunnelToRemote(dstSrv ServerNode, exitTunnel Tunnel, tunName string) string {
+	mu.Lock()
+	tok := db.EnrollToken
+	var allExits []Tunnel
+	hasThis := false
+	for _, t := range db.Tunnels {
+		if t.TargetServer == dstSrv.ID && t.Role != "server" {
+			ex := Tunnel{
+				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
+				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
+				Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
+			}
+			if ex.ID == exitTunnel.ID {
+				ex = exitTunnel
+				hasThis = true
+			}
+			allExits = append(allExits, ex)
+		}
+	}
+	if !hasThis {
+		allExits = append(allExits, exitTunnel)
+	}
+	mu.Unlock()
+
+	pPort := dstSrv.PanelPort
+	if pPort == "" {
+		pPort = "6001"
+	}
+
+	// 1. Try direct HTTP API with X-Ghq-Token and verify HTTP 200 OK
+	client := &http.Client{Timeout: 3 * time.Second}
+	body, _ := json.Marshal(exitTunnel)
+	if reqMsg, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, pPort), bytes.NewReader(body)); err == nil {
+		reqMsg.Header.Set("Content-Type", "application/json")
+		reqMsg.Header.Set("X-Ghq-Token", tok)
+		if resp, err := client.Do(reqMsg); err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", tunName, strings.ToUpper(exitTunnel.Method), exitTunnel.TunnelPort, exitTunnel.InboundPorts, dstSrv.Name))
+				return dstSrv.CertPin
+			}
+		}
+	}
+
+	// 2. Fallback: Immediately push Exit listener over active Control Ports (:6008/:6007/:6006/:6005)
+	l4, dir, wss, grpcP := getControlPorts()
+	targetSpec := fmt.Sprintf("%s:%s:%s:%s:%s", dstSrv.IP, l4, dir, wss, grpcP)
+	for _, cand := range getAllowedControlMethods() {
+		if rep, _, err := tryDialControl(targetSpec, tok, "", cand, true, allExits); err == nil && rep.OK {
+			applyForwardProbeSuccess(dstSrv.ID, cand, rep)
+			addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s (via %s)", tunName, strings.ToUpper(exitTunnel.Method), exitTunnel.TunnelPort, exitTunnel.InboundPorts, dstSrv.Name, strings.ToUpper(cand)))
+			return rep.MasterPin
+		}
+	}
+
+	addLog(fmt.Sprintf("EXIT-SYNC [%s]: Queued Exit listener for %s via Control Link", tunName, dstSrv.Name))
+	return dstSrv.CertPin
+}
+
 func registerRoutes(port, panelPath string) {
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		handleLoginRoute(w, r, panelPath)
@@ -147,17 +206,20 @@ func registerRoutes(port, panelPath string) {
 		if targetSrvID != "" && targetSrvID != "local" {
 			mu.Lock()
 			srv := findServerByID(targetSrvID)
+			tok := db.EnrollToken
 			mu.Unlock()
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 5 * time.Second}
 				req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/logs/download", srv.IP, srv.PanelPort), nil)
-				req.Header.Set("X-Ghq-Token", db.EnrollToken)
+				req.Header.Set("X-Ghq-Token", tok)
 				if resp, err := client.Do(req); err == nil {
 					defer resp.Body.Close()
-					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_%s_%s.log\"", srv.Name, time.Now().Format("20060102_1504")))
-					io.Copy(w, resp.Body)
-					return
+					if resp.StatusCode == http.StatusOK {
+						w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+						w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"ghoghnoos_%s_%s.log\"", srv.Name, time.Now().Format("20060102_1504")))
+						io.Copy(w, resp.Body)
+						return
+					}
 				}
 			}
 		}
@@ -312,8 +374,8 @@ func registerRoutes(port, panelPath string) {
 			if srv != nil && srv.IP != "" {
 				client := &http.Client{Timeout: 1800 * time.Millisecond}
 				req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/api/state?tab=logs", srv.IP, srv.PanelPort), nil)
-				req.Header.Set("X-Ghq-Token", db.EnrollToken)
-				if resp, err := client.Do(req); err == nil {
+				req.Header.Set("X-Ghq-Token", enrollTok)
+				if resp, err := client.Do(req); err == nil && resp.StatusCode == http.StatusOK {
 					defer resp.Body.Close()
 					var rem map[string]interface{}
 					if json.NewDecoder(resp.Body).Decode(&rem) == nil {
@@ -336,26 +398,38 @@ func registerRoutes(port, panelPath string) {
 						if rpath, ok := rem["panel_path"].(string); ok {
 							activePath = rpath
 						}
-						if rpin, ok := rem["cert_pin"].(string); ok {
+						if rpin, ok := rem["cert_pin"].(string); ok && rpin != "" {
 							activePin = rpin
+							mu.Lock()
+							if sPtr := findServerByID(targetSrvID); sPtr != nil && sPtr.CertPin != rpin {
+								sPtr.CertPin = rpin
+								syncServerTunnelsPinLocked(targetSrvID, rpin)
+								saveDBLocked()
+							}
+							mu.Unlock()
 						}
 						if rtime, ok := rem["server_time"].(string); ok && rtime != "" {
 							srvTime = rtime
 						}
 					}
-				} else if hasCached {
-					if len(cachedHB.Logs) > 0 {
-						activeLogs = cachedHB.Logs
+				} else {
+					if resp != nil {
+						resp.Body.Close()
 					}
-					metricsCopy = cachedHB.Metrics
-					if cachedHB.PanelPort != "" {
-						activePort = cachedHB.PanelPort
-					}
-					if cachedHB.CertPin != "" {
-						activePin = cachedHB.CertPin
-					}
-					if cachedHB.ServerTime != "" {
-						srvTime = cachedHB.ServerTime
+					if hasCached {
+						if len(cachedHB.Logs) > 0 {
+							activeLogs = cachedHB.Logs
+						}
+						metricsCopy = cachedHB.Metrics
+						if cachedHB.PanelPort != "" {
+							activePort = cachedHB.PanelPort
+						}
+						if cachedHB.CertPin != "" {
+							activePin = cachedHB.CertPin
+						}
+						if cachedHB.ServerTime != "" {
+							srvTime = cachedHB.ServerTime
+						}
 					}
 				}
 			}
@@ -380,16 +454,19 @@ func registerRoutes(port, panelPath string) {
 		if targetSrvID != "" && targetSrvID != "local" {
 			mu.Lock()
 			srv := findServerByID(targetSrvID)
+			tok := db.EnrollToken
 			mu.Unlock()
 			if srv != nil {
 				client := &http.Client{Timeout: 3 * time.Second}
 				req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/bbr", srv.IP, srv.PanelPort), nil)
-				req.Header.Set("X-Ghq-Token", db.EnrollToken)
+				req.Header.Set("X-Ghq-Token", tok)
 				if resp, err := client.Do(req); err == nil {
 					resp.Body.Close()
-					addLog(fmt.Sprintf("BBR-OK [%s]: Enabled Google BBR + FQ on %s!", srv.Name, srv.IP))
-					w.WriteHeader(http.StatusOK)
-					return
+					if resp.StatusCode == http.StatusOK {
+						addLog(fmt.Sprintf("BBR-OK [%s]: Enabled Google BBR + FQ on %s!", srv.Name, srv.IP))
+						w.WriteHeader(http.StatusOK)
+						return
+					}
 				}
 			}
 		}
@@ -532,17 +609,20 @@ func registerRoutes(port, panelPath string) {
 		if req.ServerID != "" && req.ServerID != "local" {
 			mu.Lock()
 			srv := findServerByID(req.ServerID)
+			tok := db.EnrollToken
 			mu.Unlock()
 			if srv != nil {
 				client := &http.Client{Timeout: 2500 * time.Millisecond}
 				body, _ := json.Marshal(map[string]string{"cmd": req.Cmd})
 				reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/cmd", srv.IP, srv.PanelPort), bytes.NewReader(body))
 				reqMsg.Header.Set("Content-Type", "application/json")
-				reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
+				reqMsg.Header.Set("X-Ghq-Token", tok)
 				if resp, err := client.Do(reqMsg); err == nil {
 					resp.Body.Close()
-					w.WriteHeader(http.StatusOK)
-					return
+					if resp.StatusCode == http.StatusOK {
+						w.WriteHeader(http.StatusOK)
+						return
+					}
 				}
 				mu.Lock()
 				pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], req.Cmd)
@@ -601,37 +681,24 @@ func registerRoutes(port, panelPath string) {
 		if t.ID == "" {
 			t.ID = fmt.Sprintf("%s-%d", t.Method, time.Now().Unix()%10000)
 		}
+
 		mu.Lock()
-		srcSrv, dstSrv := findServerByID(t.SourceServer), findServerByID(t.TargetServer)
-		mu.Unlock()
-		if srcSrv != nil && dstSrv != nil && t.Role != "server" {
+		var srcCopy, dstCopy *ServerNode
+		if s := findServerByID(t.SourceServer); s != nil {
+			c := *s
+			srcCopy = &c
+		}
+		if d := findServerByID(t.TargetServer); d != nil {
+			c := *d
+			dstCopy = &c
+		}
+		if srcCopy != nil && dstCopy != nil && t.Role != "server" {
 			t.Role = "client"
-			t.RemoteAddr = fmt.Sprintf("%s:%s", dstSrv.IP, t.TunnelPort)
-			if t.CertPin == "" && dstSrv.CertPin != "" {
-				t.CertPin = dstSrv.CertPin
-			}
-			exitTunnel := Tunnel{
-				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
-				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
-				Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
-			}
-			if dstSrv.IsLocal {
-				dispatchTunnelEngine(exitTunnel)
-			} else {
-				client := &http.Client{Timeout: 3 * time.Second}
-				body, _ := json.Marshal(exitTunnel)
-				reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", dstSrv.IP, dstSrv.PanelPort), bytes.NewReader(body))
-				reqMsg.Header.Set("Content-Type", "application/json")
-				reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
-				if resp, err := client.Do(reqMsg); err == nil {
-					resp.Body.Close()
-					addLog(fmt.Sprintf("EXIT-OK [%s]: %s :%s -> 127.0.0.1:[%s] on %s", t.Name, strings.ToUpper(t.Method), t.TunnelPort, t.InboundPorts, dstSrv.Name))
-				} else {
-					addLog(fmt.Sprintf("EXIT-SYNC [%s]: Queued Exit listener for %s via Control Link", t.Name, dstSrv.Name))
-				}
+			t.RemoteAddr = fmt.Sprintf("%s:%s", dstCopy.IP, t.TunnelPort)
+			if t.CertPin == "" && dstCopy.CertPin != "" {
+				t.CertPin = dstCopy.CertPin
 			}
 		}
-		mu.Lock()
 		replaced := false
 		for i := range db.Tunnels {
 			if db.Tunnels[i].ID == t.ID {
@@ -643,16 +710,45 @@ func registerRoutes(port, panelPath string) {
 		if !replaced {
 			db.Tunnels = append(db.Tunnels, t)
 		}
+		tok := db.EnrollToken
 		saveDBLocked()
 		mu.Unlock()
-		if srcSrv == nil || srcSrv.IsLocal {
+
+		if srcCopy != nil && dstCopy != nil && t.Role != "server" {
+			exitTunnel := Tunnel{
+				ID: t.ID + "-exit", Name: t.Name + " (Exit)", Role: "server", Method: t.Method,
+				TunnelPort: t.TunnelPort, InboundPorts: t.InboundPorts, SNI: t.SNI,
+				Fingerprint: t.Fingerprint, FragSize: t.FragSize, SpeedLimit: t.SpeedLimit, WSPath: t.WSPath, Status: "Online",
+			}
+			if dstCopy.IsLocal {
+				dispatchTunnelEngine(exitTunnel)
+			} else {
+				if syncedPin := pushExitTunnelToRemote(*dstCopy, exitTunnel, t.Name); syncedPin != "" && t.CertPin == "" {
+					t.CertPin = syncedPin
+					mu.Lock()
+					for i := range db.Tunnels {
+						if db.Tunnels[i].ID == t.ID {
+							db.Tunnels[i].CertPin = syncedPin
+							break
+						}
+					}
+					saveDBLocked()
+					mu.Unlock()
+				}
+			}
+		}
+
+		if srcCopy == nil || srcCopy.IsLocal {
 			dispatchTunnelEngine(t)
-			go probeTunnelOnce(t)
+			go func(tun Tunnel) {
+				time.Sleep(350 * time.Millisecond)
+				probeTunnelOnce(tun)
+			}(t)
 		} else {
 			body, _ := json.Marshal(t)
-			reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", srcSrv.IP, srcSrv.PanelPort), bytes.NewReader(body))
+			reqMsg, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/api/tunnel", srcCopy.IP, srcCopy.PanelPort), bytes.NewReader(body))
 			reqMsg.Header.Set("Content-Type", "application/json")
-			reqMsg.Header.Set("X-Ghq-Token", db.EnrollToken)
+			reqMsg.Header.Set("X-Ghq-Token", tok)
 			_, _ = (&http.Client{Timeout: 3 * time.Second}).Do(reqMsg)
 		}
 		w.WriteHeader(http.StatusOK)

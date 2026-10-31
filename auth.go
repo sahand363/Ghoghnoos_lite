@@ -88,12 +88,11 @@ func checkGitHubReleaseOnce() {
 func checkSessionAuth(w http.ResponseWriter, r *http.Request, panelPath string) bool {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 
-	if tok := r.Header.Get("X-Ghq-Token"); tok != "" {
-		expected := os.Getenv("ENROLL_TOKEN")
-		if expected == "" {
-			expected = db.EnrollToken
-		}
-		if tok == expected {
+	if tok := strings.TrimSpace(r.Header.Get("X-Ghq-Token")); tok != "" {
+		mu.Lock()
+		valid := isValidEnrollTokenLocked(tok)
+		mu.Unlock()
+		if valid {
 			return true
 		}
 	}
@@ -242,7 +241,7 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 	if targetSrvID != "" && targetSrvID != "local" {
 		mu.Lock()
 		srv := findServerByID(targetSrvID)
-		tok := db.EnrollToken
+		tok := getServerAuthToken(srv)
 		mu.Unlock()
 		if srv != nil && srv.IP != "" {
 			client := &http.Client{Timeout: 4 * time.Second}
@@ -250,9 +249,11 @@ func handleSelfUpdateRoute(w http.ResponseWriter, r *http.Request, panelPath str
 			req.Header.Set("X-Ghq-Token", tok)
 			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
-				addLog(fmt.Sprintf("UPDATE-OK [%s]: Triggered remote binary update on %s!", srv.Name, srv.IP))
-				w.WriteHeader(http.StatusOK)
-				return
+				if resp.StatusCode == http.StatusOK {
+					addLog(fmt.Sprintf("UPDATE-OK [%s]: Triggered remote binary update on %s!", srv.Name, srv.IP))
+					w.WriteHeader(http.StatusOK)
+					return
+				}
 			}
 			mu.Lock()
 			pendingRemoteCmds[srv.ID] = append(pendingRemoteCmds[srv.ID], "self-update")

@@ -38,7 +38,7 @@ cleanup_legacy() {
   rm -f /etc/systemd/system/litetun.service /usr/local/bin/litetun /opt/litetun 2>/dev/null || true
 }
 
-# 1. Reverse Sentinel Enrollment Mode
+# 1. Reverse / Rendezvous Sentinel Enrollment Mode
 if [[ "$1" == "--enroll" ]]; then
   cleanup_legacy
   MASTER_TARGET="$2"
@@ -60,27 +60,7 @@ if [[ "$1" == "--enroll" ]]; then
   exit 0
 fi
 
-# 2. Automated SSH Sentinel Mode
-if [[ "$1" == "--sentinel" ]]; then
-  cleanup_legacy
-  if [[ ! -f "$CONF_FILE" ]]; then
-    cat > "$CONF_FILE" <<EOF
-PANEL_PORT=6001
-PANEL_PATH=sentinel
-PANEL_USER=admin
-PANEL_PASS=admin
-CTRL_L4_PORT=6005
-CTRL_DIRECT_PORT=6006
-CTRL_WSS_PORT=6007
-CTRL_GRPC_PORT=6008
-CTRL_METHODS=grpc,wss,direct
-EOF
-  fi
-  write_systemd_unit
-  exit 0
-fi
-
-# 3. First-Time Fresh Install
+# 2. First-Time Fresh Install
 if [[ ! -f "$BIN_PATH" ]] || [[ ! -f "$CONF_FILE" ]]; then
   cleanup_legacy
   echo -e "\033[1;36m====================================================\033[0m"
@@ -142,7 +122,7 @@ EOF
   exit 0
 fi
 
-# 4. Interactive CLI Management Menu (`ghoghnoos`)
+# 3. Interactive CLI Management Menu (`ghoghnoos`)
 source "$CONF_FILE" 2>/dev/null || true
 SERVER_IP=$(hostname -I | awk '{print $1}')
 

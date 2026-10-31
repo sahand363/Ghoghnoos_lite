@@ -9,618 +9,528 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0c131f;
-      --card: #131e2f;
-      --border: #1e2e46;
+      --bg: #090d16;
+      --card: #111827;
+      --border: #1e293b;
       --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.14);
+      --accent-glow: rgba(56, 189, 248, 0.12);
     }
-    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; transition: background 0.2s ease; }
+    body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; -webkit-tap-highlight-color: transparent; }
     .card { background-color: var(--card); border: 1px solid var(--border); }
-    .accent-border { border: 1px solid var(--accent); background: var(--accent-glow); }
-    .tab-btn { color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
-    .tab-btn.active-tab { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
-    input, select { background-color: #080d14; border: 1px solid var(--border); color: #f1f5f9; color-scheme: dark; }
-    select option { background-color: #0b111a; color: #f1f5f9; padding: 8px; }
+    .accent-border { border: 1px solid var(--accent) !important; background: var(--accent-glow) !important; }
+    .tab-btn { color: #64748b; transition: all 0.18s ease; white-space: nowrap; }
+    .tab-btn.active-tab { color: var(--accent); background: var(--accent-glow); border: 1px solid rgba(255,255,255,0.06); }
+    input, select { background-color: #090d16; border: 1px solid var(--border); color: #f1f5f9; color-scheme: dark; transition: border-color 0.15s; }
+    select option { background-color: #090d16; color: #f1f5f9; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
-    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080d; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.85); }
+    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080e; border: 1px solid #1e293b; }
     [data-i18n] { unicode-bidi: plaintext; }
-    .help-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 9999px; background: #1e293b; color: #38bdf8; font-size: 10px; font-weight: bold; border: 1px solid #334155; }
-    .help-btn:hover { background: #38bdf8; color: #000; }
+    .help-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 9999px; background: #1e293b; color: #94a3b8; font-size: 10px; font-weight: bold; transition: all 0.15s; shrink: 0; }
+    .help-btn:hover { background: var(--accent); color: #000; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header dir="ltr" class="w-full bg-[#080d14]/95 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
-    <div class="max-w-5xl w-full mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
-        <div>
+  <!-- SLEEK MOBILE-FIRST HEADER -->
+  <header dir="ltr" class="w-full bg-[#090d16]/90 backdrop-blur-md border-b border-slate-800/80 sticky top-0 z-50">
+    <div class="max-w-4xl w-full mx-auto px-3 py-2 flex items-center justify-between gap-2">
+      <!-- Brand -->
+      <div class="flex items-center gap-2 shrink-0">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-base" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
+        <div class="leading-tight">
           <div class="flex items-center gap-1.5">
-            <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos Tunnel</span>
-            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.7.0</span>
+            <span class="font-bold text-xs sm:text-sm tracking-tight text-slate-100">Ghoghnoos</span>
+            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-900 text-sky-400 border border-slate-800">v2.7.0</span>
           </div>
-          <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">4-Engine Stealth Relay</span>
+          <span id="top-server-clock" class="text-[10px] font-mono text-slate-500 block">--:--:--</span>
         </div>
       </div>
 
-      <nav class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full order-3 md:order-2 w-full md:w-auto justify-around md:justify-start border-t md:border-t-0 border-slate-800/80 pt-1.5 md:pt-0">
-        <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+      <!-- Center 3-Tab Pill Bar (Desktop) -->
+      <nav class="hidden sm:flex items-center gap-1 bg-[#111827] p-1 rounded-xl border border-slate-800/90">
+        <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
           <span>🖥️</span><span data-i18n="servers">Servers</span>
         </button>
-        <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-          <span>⚙️</span><span data-i18n="config">Config</span>
-        </button>
-        <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+        <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
           <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
         </button>
-        <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3.5 py-1.5 rounded-t-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-          <span>📋</span><span data-i18n="logs">Log</span>
+        <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+          <span>📊</span><span data-i18n="logs">Log</span>
         </button>
       </nav>
 
-      <div class="flex items-center gap-1.5 sm:gap-2 order-2 md:order-3">
-        <div class="hidden sm:flex items-center gap-1 bg-[#0b111a] border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] font-mono text-emerald-400">
-          <span>🕒</span>
-          <span id="top-server-clock">--:--:--</span>
-        </div>
-
-        <div class="flex items-center gap-1 bg-[#0b111a] border border-slate-700 rounded-xl px-2 py-1">
-          <span class="text-xs text-slate-400">🖥️</span>
-          <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-[#0b111a] border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-[140px] truncate">
+      <!-- Right Action Controls (Server Select, Update, Lang, Nut Config Icon, Logout) -->
+      <div class="flex items-center gap-1.5">
+        <div class="flex items-center bg-[#111827] border border-slate-800 rounded-lg px-2 py-1">
+          <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-transparent border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[85px] sm:max-w-[120px] truncate">
             <option value="local">Master</option>
           </select>
         </div>
 
-        <button id="btn-self-update" onclick="triggerSelfUpdate()" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/80 text-xs font-bold hover:bg-emerald-900 transition flex items-center gap-1" title="Update selected server to latest GitHub release">
-          <span>⬆️</span><span class="hidden sm:inline">Update</span>
-        </button>
+        <button id="btn-self-update" onclick="triggerSelfUpdate()" class="px-2 py-1 rounded-lg bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 text-xs font-bold hover:bg-emerald-900 transition" title="Update Selected Server">⬆️</button>
 
-        <div class="hidden lg:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-full border border-slate-800">
-          <button onclick="applyTheme('cyan', true)" class="w-3 h-3 rounded-full bg-sky-400 hover:scale-125 transition"></button>
-          <button onclick="applyTheme('emerald', true)" class="w-3 h-3 rounded-full bg-emerald-400 hover:scale-125 transition"></button>
-          <button onclick="applyTheme('amber', true)" class="w-3 h-3 rounded-full bg-amber-400 hover:scale-125 transition"></button>
-          <button onclick="applyTheme('indigo', true)" class="w-3 h-3 rounded-full bg-indigo-400 hover:scale-125 transition"></button>
-          <button onclick="applyTheme('rose', true)" class="w-3 h-3 rounded-full bg-rose-400 hover:scale-125 transition"></button>
-        </div>
+        <button onclick="toggleLang()" id="lang-btn" class="px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition">FA</button>
 
-        <button onclick="toggleLang()" id="lang-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">FA</button>
-        <a href="logout" class="px-2 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-rose-400 hover:bg-rose-950 transition" title="Sign Out">🚪</a>
+        <!-- NUT / GEAR ICON BESIDE LANGUAGE CHANGE -->
+        <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs hover:text-white transition" title="Settings & Control Ports">⚙️</button>
+
+        <a href="logout" class="px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs text-rose-400 hover:bg-rose-950/60 transition" title="Sign Out">🚪</a>
       </div>
+    </div>
+
+    <!-- Mobile Segmented 3-Tab Bar -->
+    <div class="sm:hidden grid grid-cols-3 gap-1 px-3 pb-2">
+      <button onclick="setTab('servers', true)" id="mob-tab-servers" class="tab-btn active-tab py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+        <span>🖥️</span><span data-i18n="servers">Servers</span>
+      </button>
+      <button onclick="setTab('tunnels', true)" id="mob-tab-tunnels" class="tab-btn py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+        <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
+      </button>
+      <button onclick="setTab('logs', true)" id="mob-tab-logs" class="tab-btn py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+        <span>📊</span><span data-i18n="logs">Log</span>
+      </button>
     </div>
   </header>
 
   <!-- MAIN WORKSPACE -->
-  <main class="flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 space-y-5">
+  <main class="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 space-y-4">
 
-    <div class="w-full">
-
-      <!-- TAB 1: SERVERS (REVERSE ENROLLMENT & BIDIRECTIONAL RENDEZVOUS ONLY) -->
-      <section id="view-servers" class="space-y-4 sm:space-y-5">
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enroll remote Sentinel nodes via Reverse Dial-In or Bidirectional Rendezvous (Token auto-rotates on copy).</p>
-            </div>
-            <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 font-mono">🔑 Reverse / Rendezvous</span>
-          </div>
-
-          <div id="box-deploy-enroll" class="space-y-4">
-            <div class="bg-[#080d14] p-3.5 rounded-xl border border-sky-500/30 space-y-2">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-1.5 text-xs font-bold text-sky-400">
-                  <span data-i18n="enroll_title">🔑 Step 1: Run Sentinel One-Liner (Interactive Mode & Port Selection)</span>
-                  <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
-                </div>
-                <span class="text-[10px] font-mono text-emerald-400">gRPC (90%) ➔ WSS (85%) ➔ Direct (75%) ➔ L4 (20%)</span>
-              </div>
-              <p class="text-xs text-slate-400 leading-relaxed" data-i18n="enroll_sub">Run this command on your remote VPS. It lets you choose between [1] Connect & Listen (Default) or [2] Listen Only (Passive Mode) and customize control ports.</p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_node_lbl">New Sentinel Name (Auto-Numbered)</label>
-                <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-semibold">
-              </div>
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="enroll_addr_lbl">Master Control Target (IP:L4:Direct:WSS:gRPC)</label>
-                <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" class="w-full rounded-lg p-2.5 text-xs font-mono">
-              </div>
-            </div>
-
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="text-xs text-emerald-400 font-semibold" data-i18n="enroll_cmd_lbl">Paste this One-Liner on your Remote Server Terminal:</label>
-                <button type="button" onclick="rotateEnrollToken()" class="text-[11px] text-amber-400 hover:underline font-mono" data-i18n="btn_rotate_tok">🔄 Rotate Token</button>
-              </div>
-              <div class="bg-[#05080d] border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400 break-all select-all text-left" dir="ltr" id="enroll-cmd-box">Loading token...</div>
-            </div>
-
-            <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy Reverse Enrollment One-Liner (Auto-Rotates Token)</button>
-
-            <!-- STEP 2: MASTER FORWARD RENDEZVOUS PROBER -->
-            <div class="bg-[#080d14] p-3.5 rounded-xl border border-emerald-500/30 space-y-3 pt-3">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                  <span data-i18n="rv_title">▶ Step 2 (Optional): Master Forward Rendezvous Prober</span>
-                  <button type="button" onclick="showHelpModal('rendezvous')" class="help-btn">?</button>
-                </div>
-                <span class="text-[10px] font-mono text-sky-400">120–150s Mutual Hunt</span>
-              </div>
-              <p class="text-xs text-slate-400 leading-relaxed" data-i18n="rv_sub">If reverse dial-in is blocked (or Sentinel was installed in Listen-Only mode), enter the remote server's IP below and press Play (▶). Master will probe enabled methods until connected!</p>
-              <div class="flex flex-col sm:flex-row gap-2">
-                <input id="rv-target-ip" placeholder="Remote Sentinel IP (e.g. 203.0.113.10)" class="flex-1 rounded-xl p-2.5 text-xs font-mono">
-                <button type="button" onclick="startRendezvousFromBox()" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition flex items-center justify-center gap-1.5 shrink-0">
-                  <span>▶</span><span data-i18n="btn_start_rv">Start Forward Probe</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="server-cards-list"></div>
-      </section>
-
-      <!-- TAB 2: CONFIG -->
-      <section id="view-config" class="hidden space-y-4 sm:space-y-5">
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-5">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-sm sm:text-base" data-i18n="network_settings">Server Port & Control Ports Configuration</h3>
-            <span id="cfg-target-badge" class="text-xs px-2.5 py-1 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div class="flex items-center gap-1.5 mb-1">
-                <label class="text-xs text-slate-400" data-i18n="lbl_panel_port">Web Panel Port</label>
-                <button type="button" onclick="showHelpModal('port')" class="help-btn">?</button>
-              </div>
-              <input id="cfg-port" placeholder="6001" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-            <div>
-              <div class="flex items-center gap-1.5 mb-1">
-                <label class="text-xs text-slate-400" data-i18n="lbl_panel_path">Secret URL Path</label>
-                <button type="button" onclick="showHelpModal('path')" class="help-btn">?</button>
-              </div>
-              <input id="cfg-path" class="w-full rounded-lg p-2.5 text-sm font-mono">
-            </div>
-          </div>
-
-          <div class="bg-[#080d14] p-3.5 rounded-xl border border-slate-800 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs font-bold text-sky-400" data-i18n="ctrl_ports_title">🔗 Dedicated Control & Rendezvous Ports (Check to Enable Method)</span>
-                <button type="button" onclick="showHelpModal('ctrlports')" class="help-btn">?</button>
-              </div>
-              <span class="text-[10px] font-mono text-slate-400">Default: 6005 / 6006 / 6007 / 6008</span>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-indigo-400 font-bold" data-i18n="lbl_ctrl_grpc">gRPC Port (90%)</span>
-                  <input type="checkbox" id="chk-ctrl-grpc" checked class="w-4 h-4 accent-indigo-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-grpc" value="6008" placeholder="6008" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-emerald-400 font-bold" data-i18n="lbl_ctrl_wss">WSS Port (85%)</span>
-                  <input type="checkbox" id="chk-ctrl-wss" checked class="w-4 h-4 accent-emerald-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-wss" value="6007" placeholder="6007" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-sky-400 font-bold" data-i18n="lbl_ctrl_direct">Direct-TLS (75%)</span>
-                  <input type="checkbox" id="chk-ctrl-direct" checked class="w-4 h-4 accent-sky-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-direct" value="6006" placeholder="6006" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-              <div class="bg-[#0b111a] p-2.5 rounded-xl border border-slate-800/80 space-y-2">
-                <label class="flex items-center justify-between cursor-pointer">
-                  <span class="text-[11px] text-amber-400 font-bold" data-i18n="lbl_ctrl_l4">L4 Raw Port (20%)</span>
-                  <input type="checkbox" id="chk-ctrl-l4" class="w-4 h-4 accent-amber-400 rounded cursor-pointer">
-                </label>
-                <input id="cfg-ctrl-l4" value="6005" placeholder="6005" class="w-full rounded-lg p-2 text-xs font-mono">
-              </div>
-            </div>
-            <p class="text-[11px] text-slate-400">Uncheck any method above (such as L4 Raw) to disable it from both Reverse Dial-In and Forward Rendezvous Probing.</p>
-          </div>
-
-          <button onclick="saveConfig()" class="w-full sm:w-auto text-black font-bold px-6 py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart Selected Server</button>
-        </div>
-
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <div class="flex items-center gap-2">
-                <h3 class="font-bold text-sm sm:text-base" data-i18n="bbr_title">TCP BBR & FQ Kernel Acceleration</h3>
-                <button type="button" onclick="showHelpModal('bbr')" class="help-btn">?</button>
-              </div>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="bbr_sub">Boosts tunnel throughput and eliminates packet-loss throttling on the selected server.</p>
-            </div>
-            <span id="bbr-status-badge" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300">Checking...</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3 text-xs font-mono" dir="ltr">
-            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
-              <span class="text-slate-400 block">TCP Congestion Control:</span>
-              <b id="bbr-cc-val" class="text-sm text-sky-400 mt-1 block">--</b>
-            </div>
-            <div class="bg-[#080d14] p-3 rounded-xl border border-slate-800">
-              <div class="flex items-center gap-1.5">
-                <span class="text-slate-400 block">Default Packet Scheduler (qdisc):</span>
-                <button type="button" onclick="showHelpModal('fq')" class="help-btn">?</button>
-              </div>
-              <b id="bbr-qdisc-val" class="text-sm text-indigo-400 mt-1 block">--</b>
-            </div>
-          </div>
-
-          <button onclick="enableBBR()" id="btn-enable-bbr" class="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold text-black transition" style="background: var(--accent);" data-i18n="btn_bbr">⚡ Enable Google BBR + FQ on Selected Server</button>
-        </div>
-      </section>
-
-      <!-- TAB 3: TUNNELS (2 ROWS OF 3 CARDS = 4 ACTIVE + 2 FUTURE SLOTS) -->
-      <section id="view-tunnels" class="hidden space-y-4 sm:space-y-5">
-        <div class="card rounded-2xl p-4 sm:p-5 space-y-3">
+    <!-- VIEW 1: SERVERS (ULTRA-MINIMAL) -->
+    <section id="view-servers" class="space-y-3">
+      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-3.5">
+        <!-- Step 1: Enrollment -->
+        <div class="space-y-2.5">
           <div class="flex items-center justify-between">
-            <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="step1_method">1. Select Tunnel Transport Method</h3>
-            <button type="button" onclick="showHelpModal('stealth')" class="text-[11px] text-sky-400 hover:underline flex items-center gap-1">
-              <span>🛡️ Stealth Score Info</span>
-              <span class="help-btn">?</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-bold text-slate-200" data-i18n="enroll_title">1. Enroll Agent Server</span>
+              <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
+            </div>
+            <button type="button" onclick="rotateEnrollToken()" class="text-[11px] text-amber-400/90 hover:text-amber-300 font-mono flex items-center gap-1">
+              <span>🔄</span><span data-i18n="btn_rotate_tok">Rotate</span>
             </button>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <!-- CARD 1: WSS -->
-            <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm">WSS</span>
-                <span id="badge-method-wss" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">SELECTED</span>
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <div class="flex items-center gap-1 mb-1">
+                <label class="text-[11px] text-slate-400" data-i18n="enroll_node_lbl">Agent Name</label>
+                <button type="button" onclick="showHelpModal('node_name')" class="help-btn">?</button>
               </div>
-              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="wss_desc">HTTP/1.1 WebSocket Upgrade over TLS 1.3</div>
-              <div class="pt-1 border-t border-slate-800/80">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-emerald-400 font-bold">85% (High)</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                  <div class="h-full bg-emerald-400 rounded-full" style="width: 85%"></div>
-                </div>
-              </div>
+              <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full rounded-xl px-2.5 py-2 text-xs font-semibold">
             </div>
+            <div>
+              <div class="flex items-center gap-1 mb-1">
+                <label class="text-[11px] text-slate-400" data-i18n="enroll_addr_lbl">Master Ports</label>
+                <button type="button" onclick="showHelpModal('master_addr')" class="help-btn">?</button>
+              </div>
+              <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" class="w-full rounded-xl px-2.5 py-2 text-xs font-mono">
+            </div>
+          </div>
 
-            <!-- CARD 2: DIRECT TLS -->
-            <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm">Direct TLS</span>
-                <span id="badge-method-direct" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
-              </div>
-              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="direct_desc">Zero-HTTP Raw TLS 1.3 Stream Relay</div>
-              <div class="pt-1 border-t border-slate-800/80">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-sky-400 font-bold">75% (Good)</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                  <div class="h-full bg-sky-400 rounded-full" style="width: 75%"></div>
-                </div>
-              </div>
-            </div>
+          <div class="bg-[#090d16] border border-slate-800/90 rounded-xl p-2.5 font-mono text-[11px] text-emerald-400 truncate select-all text-left" dir="ltr" id="enroll-cmd-box">Loading...</div>
 
-            <!-- CARD 3: PORT FORWARD -->
-            <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm">Port Forward</span>
-                <span id="badge-method-forward" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
-              </div>
-              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="forward_desc">Raw L4 TCP Relay (Native socat stream)</div>
-              <div class="pt-1 border-t border-slate-800/80">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-amber-400 font-bold">20% (Raw L4)</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                  <div class="h-full bg-amber-400 rounded-full" style="width: 20%"></div>
-                </div>
-              </div>
-            </div>
+          <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition active:scale-[0.99]" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy One-Liner (Auto-Rotates Token)</button>
+        </div>
 
-            <!-- CARD 4: gRPC (HTTP/2 MULTIPLEXED) -->
-            <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm">gRPC (H2)</span>
-                <span id="badge-method-grpc" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">READY</span>
-              </div>
-              <div class="text-[11px] text-slate-400 leading-snug" data-i18n="grpc_desc">HTTP/2 Multiplexed Stream over TLS 1.3</div>
-              <div class="pt-1 border-t border-slate-800/80">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-400" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-indigo-400 font-bold">90% (Ultra)</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                  <div class="h-full bg-indigo-400 rounded-full" style="width: 90%"></div>
-                </div>
-              </div>
-            </div>
+        <!-- Step 2: Compact Single-Row Forward Rendezvous Prober -->
+        <div class="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-2">
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-xs font-bold text-emerald-400" data-i18n="rv_title">2. Forward Rendezvous Probe</span>
+            <button type="button" onclick="showHelpModal('rendezvous')" class="help-btn">?</button>
+          </div>
+          <div class="flex items-center gap-2 flex-1">
+            <input id="rv-target-ip" placeholder="Agent IP (e.g. 203.0.113.10)" class="flex-1 rounded-xl px-2.5 py-2 text-xs font-mono">
+            <button type="button" onclick="startRendezvousFromBox()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition flex items-center gap-1 shrink-0">
+              <span>▶</span><span data-i18n="btn_start_rv">Probe</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
-            <!-- CARD 5: RESERVED EMPTY SLOT #5 -->
-            <div class="p-3.5 rounded-xl border border-dashed border-slate-800/90 bg-[#080d14]/35 opacity-60 flex flex-col justify-between gap-2 select-none">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm text-slate-500" data-i18n="slot_soon_title">Future Transport</span>
-                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 font-mono">SLOT #5</span>
-              </div>
-              <div class="text-[11px] text-slate-500 leading-snug" data-i18n="slot_soon_desc">Reserved slot for upcoming stealth transport engine</div>
-              <div class="pt-1 border-t border-slate-800/50">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-500" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-slate-500 font-bold">TBD</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900/60 rounded-full overflow-hidden"></div>
-              </div>
-            </div>
+      <!-- Server Nodes Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="server-cards-list"></div>
+    </section>
 
-            <!-- CARD 6: RESERVED EMPTY SLOT #6 -->
-            <div class="p-3.5 rounded-xl border border-dashed border-slate-800/90 bg-[#080d14]/35 opacity-60 flex flex-col justify-between gap-2 select-none">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-sm text-slate-500" data-i18n="slot_soon_title">Future Transport</span>
-                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 font-mono">SLOT #6</span>
-              </div>
-              <div class="text-[11px] text-slate-500 leading-snug" data-i18n="slot_soon_desc">Reserved slot for upcoming stealth transport engine</div>
-              <div class="pt-1 border-t border-slate-800/50">
-                <div class="flex justify-between text-[10px] font-mono mb-1">
-                  <span class="text-slate-500" data-i18n="stealth_lbl">Stealth</span>
-                  <span class="text-slate-500 font-bold">TBD</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-900/60 rounded-full overflow-hidden"></div>
-              </div>
+    <!-- VIEW 2: CONFIG (OPENED VIA NUT ICON ⚙️ BESIDE LANGUAGE BUTTON) -->
+    <section id="view-config" class="hidden space-y-3">
+      <div class="card rounded-2xl p-4 space-y-4">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+          <div class="flex items-center gap-2">
+            <span>⚙️</span>
+            <h3 class="font-bold text-xs sm:text-sm" data-i18n="network_settings">Panel & Control Ports</h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <!-- Theme Dots inside Settings -->
+            <div class="flex items-center gap-1.5 bg-[#090d16] px-2.5 py-1 rounded-full border border-slate-800">
+              <button onclick="applyTheme('cyan', true)" class="w-2.5 h-2.5 rounded-full bg-sky-400"></button>
+              <button onclick="applyTheme('emerald', true)" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></button>
+              <button onclick="applyTheme('amber', true)" class="w-2.5 h-2.5 rounded-full bg-amber-400"></button>
+              <button onclick="applyTheme('indigo', true)" class="w-2.5 h-2.5 rounded-full bg-indigo-400"></button>
+              <button onclick="applyTheme('rose', true)" class="w-2.5 h-2.5 rounded-full bg-rose-400"></button>
             </div>
+            <span id="cfg-target-badge" class="text-[11px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
           </div>
         </div>
 
-        <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h3 class="font-bold text-sm sm:text-base" data-i18n="new_tunnel">2. Bridge Tunnel Between Servers</h3>
-            <button onclick="resetForm()" class="text-xs text-slate-400 hover:text-white" data-i18n="reset">Clear Form</button>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="flex items-center gap-1 mb-1">
+              <label class="text-[11px] text-slate-400" data-i18n="lbl_panel_port">Panel Port</label>
+              <button type="button" onclick="showHelpModal('port')" class="help-btn">?</button>
+            </div>
+            <input id="cfg-port" placeholder="6001" class="w-full rounded-xl p-2 text-xs font-mono">
           </div>
-
-          <input type="hidden" id="tun-id">
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080d14] p-3 rounded-xl border border-slate-800">
-            <div>
-              <label class="text-xs font-bold block mb-1" style="color: var(--accent)" data-i18n="src_srv">Entry Server (Relay)</label>
-              <select id="tun-src-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
+          <div>
+            <div class="flex items-center gap-1 mb-1">
+              <label class="text-[11px] text-slate-400" data-i18n="lbl_panel_path">Secret Path</label>
+              <button type="button" onclick="showHelpModal('path')" class="help-btn">?</button>
             </div>
-            <div>
-              <label class="text-xs font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Exit Server (Target Node)</label>
-              <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-lg p-2.5 text-xs bg-[#0b111a]"></select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
-              <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-lg p-2.5 text-xs font-semibold">
-            </div>
-            <div>
-              <label class="text-xs text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port</label>
-              <input id="tunnel-port" value="10201" placeholder="10201" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div>
-              <label class="text-xs text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">Forwarding Inbound Port(s)</label>
-              <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="text-xs text-amber-400 font-semibold" data-i18n="spd_limit_lbl">Speed (MB/s)</label>
-                <span id="spd-badge" class="text-[10px] font-mono text-slate-400">Unlimited</span>
-              </div>
-              <div class="flex items-center bg-[#080d14] border border-slate-800 rounded-lg overflow-hidden">
-                <button type="button" onclick="stepSpeed(-0.5)" class="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-300">-</button>
-                <input id="tun-speed" type="number" step="0.5" min="0" value="0" oninput="updateSpeedBadge()" class="w-full border-0 text-center p-2 text-xs font-mono focus:outline-none">
-                <button type="button" onclick="stepSpeed(0.5)" class="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-sky-400">+</button>
-              </div>
-            </div>
-          </div>
-
-          <div id="row-tls-sni-wrap" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div id="row-sni-box">
-              <div class="flex items-center gap-1.5 mb-1">
-                <label class="text-xs text-slate-300 font-semibold" data-i18n="sni_lbl">TLS SNI Hostname (ServerName)</label>
-                <button type="button" onclick="showHelpModal('sni')" class="help-btn">?</button>
-              </div>
-              <input id="tun-sni" value="www.speedtest.net" placeholder="e.g. www.speedtest.net or custom domain" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-            <div id="row-ws-path">
-              <label class="text-xs text-slate-400 block mb-1" data-i18n="wspath_lbl">WebSocket Path (WSS Mode)</label>
-              <input id="tun-path" value="/ws" class="w-full rounded-lg p-2.5 text-xs font-mono">
-            </div>
-          </div>
-
-          <div id="row-direct-opts" class="hidden space-y-3 bg-[#080d14]/90 p-3.5 rounded-xl border border-sky-500/30">
-            <div class="text-xs font-bold text-sky-400 flex items-center justify-between">
-              <span>⚡ Direct TLS 1.3 Stream Relay (`direct.go`)</span>
-              <span class="text-[10px] font-mono text-emerald-400">Zero HTTP Overhead | Stealth: 75%</span>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs text-sky-300 font-semibold block mb-1" data-i18n="fp_lbl">TLS Cipher Suite Profile</label>
-                <select id="tun-fp" class="w-full rounded-lg p-2.5 text-xs font-mono bg-[#0b111a]">
-                  <option value="chrome">Chrome Modern (AES-GCM / X25519)</option>
-                  <option value="firefox">Firefox (ChaCha20-Poly1305)</option>
-                  <option value="safari">Safari iOS</option>
-                </select>
-              </div>
-              <div>
-                <div class="flex items-center gap-1.5 mb-1">
-                  <label class="text-xs text-emerald-300 font-semibold" data-i18n="seg_lbl">TCP ClientHello Segment Size</label>
-                  <button type="button" onclick="showHelpModal('seg')" class="help-btn">?</button>
-                </div>
-                <input id="tun-frag" value="0" placeholder="0 = Off, or 64" class="w-full rounded-lg p-2.5 text-xs font-mono">
-              </div>
-            </div>
-          </div>
-
-          <div id="row-forward-opts" class="hidden space-y-2 bg-[#080d14]/90 p-3.5 rounded-xl border border-emerald-500/30">
-            <div class="flex items-center justify-between text-xs font-bold text-emerald-400">
-              <div class="flex items-center gap-1.5">
-                <span>🔄 Raw L4 TCP Stream Forwarder (`portforward.go`)</span>
-                <button type="button" onclick="showHelpModal('forward')" class="help-btn">?</button>
-              </div>
-              <span class="text-[10px] font-mono text-amber-400">Stealth: 20% (Raw L4)</span>
-            </div>
-            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="forward_note">Direct byte relay from Entry port straight to Exit port without outer TLS wrapping. Fastest speed when your inbound proxy already uses REALITY or TLS.</p>
-          </div>
-
-          <div id="row-grpc-opts" class="hidden space-y-2 bg-[#080d14]/90 p-3.5 rounded-xl border border-indigo-500/30">
-            <div class="flex items-center justify-between text-xs font-bold text-indigo-400">
-              <div class="flex items-center gap-1.5">
-                <span>🚀 gRPC HTTP/2 Multiplexed Stream Engine (`grpc.go`)</span>
-                <button type="button" onclick="showHelpModal('grpc')" class="help-btn">?</button>
-              </div>
-              <span class="text-[10px] font-mono text-emerald-400">ALPN: h2 | Window: 16MB | Stealth: 90%</span>
-            </div>
-            <p class="text-xs text-slate-400 leading-relaxed" data-i18n="grpc_note">Multiplexes all concurrent user connections over a single persistent HTTP/2 (ALPN h2) TLS 1.3 connection with 16MB flow-control windows and zero handshake delay.</p>
-          </div>
-
-          <div id="row-cert-pin">
-            <div class="flex items-center gap-1.5 mb-1">
-              <label class="text-xs text-slate-400" data-i18n="cert_pin_lbl">Pinned SHA-256 Certificate (Auto-filled from Exit Server)</label>
-              <button type="button" onclick="showHelpModal('pin')" class="help-btn">?</button>
-            </div>
-            <input id="tun-pin" placeholder="Auto-synced from Exit Sentinel, or paste custom SHA-256 Pin" class="w-full rounded-lg p-2.5 text-xs font-mono">
-          </div>
-
-          <button onclick="saveTunnel()" id="btn-save-tunnel" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="create">⚡ Establish Tunnel Between Selected Servers</button>
-        </div>
-
-        <div class="space-y-3">
-          <h3 class="font-bold text-xs sm:text-sm text-slate-300" data-i18n="active_tunnels">Active Tunnels (End-to-End Latency Ping & Edit)</h3>
-          <div id="tunnel-list" class="grid grid-cols-1 md:grid-cols-2 gap-3.5"></div>
-        </div>
-      </section>
-
-      <!-- TAB 4: LOG -->
-      <section id="view-logs" class="hidden space-y-4" dir="ltr">
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">CPU USAGE</div>
-            <div id="kpi-cpu" class="text-xl sm:text-2xl font-bold text-sky-400 font-mono mt-1">0.0%</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">RAM USAGE</div>
-            <div id="kpi-ram" class="text-sm sm:text-base font-bold text-indigo-400 font-mono mt-2">--% (--/-- MB)</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">LIVE THROUGHPUT (8 MBPS = 1 MB/S)</div>
-            <div id="kpi-tp" class="text-xs sm:text-sm font-bold text-emerald-400 font-mono mt-2">↓ 0.00 Mbps | ↑ 0.00 Mbps</div>
-          </div>
-          <div class="card rounded-2xl p-4">
-            <div class="text-[11px] text-slate-400 font-semibold uppercase">REACHABLE / CHECKED</div>
-            <div id="kpi-reach" class="text-xl sm:text-2xl font-bold text-slate-100 font-mono mt-1">20 / 20</div>
+            <input id="cfg-path" class="w-full rounded-xl p-2 text-xs font-mono">
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="card rounded-2xl p-4 border-l-2 border-l-sky-400">
-            <div class="text-xs font-bold text-sky-400">⚡ APP CUMULATIVE BANDWIDTH</div>
-            <div id="bw-app" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
-          </div>
-          <div class="card rounded-2xl p-4 border-l-2 border-l-indigo-400">
-            <div class="text-xs font-bold text-indigo-400">🖥️ WHOLE SERVER BANDWIDTH</div>
-            <div id="bw-srv" class="text-xs text-slate-200 font-mono mt-1.5">24h: 0 GB | 7d: 0 GB | 30d: 0 GB</div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-slate-300">📈 RECENT PING</span>
-              <span id="recent-ping-val" class="text-xs font-bold font-mono text-sky-400">-- ms</span>
-            </div>
-            <div id="svg-recent-ping" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
-            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-120s</span><span>-60s</span><span class="text-sky-400">Now</span></div>
-          </div>
-
-          <div class="card rounded-2xl p-4 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-slate-300">📊 150-SECOND THROUGHPUT</span>
-              <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">0.00 Mbps | 0.00 MB/s</span>
-            </div>
-            <div id="svg-recent-tp" class="w-full h-36 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
-            <div class="flex justify-between text-[10px] text-slate-500 font-mono"><span>-150s</span><span>-75s</span><span class="text-indigo-400">Now</span></div>
-          </div>
-        </div>
-
-        <div class="card rounded-2xl p-5 space-y-3">
-          <div class="flex flex-wrap justify-between items-center gap-2">
-            <div>
-              <span class="text-xs sm:text-sm font-bold text-sky-400 block">🕒 24-HOUR & 7-DAY SERVER PING + OFFLINE DOWNTIME HISTORY</span>
-              <span class="text-[11px] text-slate-400">Red vertical zones mark exact periods when the server was OFFLINE / unreachable</span>
-            </div>
+        <div class="bg-[#090d16] p-3 rounded-xl border border-slate-800/90 space-y-2.5">
+          <div class="flex items-center justify-between">
             <div class="flex items-center gap-1.5">
-              <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black">Last 24 Hours</button>
-              <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400">Last 7 Days</button>
+              <span class="text-xs font-bold text-slate-300" data-i18n="ctrl_ports_title">Control & Rendezvous Ports</span>
+              <button type="button" onclick="showHelpModal('ctrlports')" class="help-btn">?</button>
+            </div>
+            <span class="text-[10px] font-mono text-slate-500">6005–6008</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-[11px] text-indigo-400 font-bold" data-i18n="lbl_ctrl_grpc">gRPC (90%)</span>
+                <input type="checkbox" id="chk-ctrl-grpc" checked class="w-3.5 h-3.5 accent-indigo-400 rounded">
+              </label>
+              <input id="cfg-ctrl-grpc" value="6008" class="w-full rounded-lg p-1.5 text-xs font-mono">
+            </div>
+            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-[11px] text-emerald-400 font-bold" data-i18n="lbl_ctrl_wss">WSS (85%)</span>
+                <input type="checkbox" id="chk-ctrl-wss" checked class="w-3.5 h-3.5 accent-emerald-400 rounded">
+              </label>
+              <input id="cfg-ctrl-wss" value="6007" class="w-full rounded-lg p-1.5 text-xs font-mono">
+            </div>
+            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-[11px] text-sky-400 font-bold" data-i18n="lbl_ctrl_direct">Direct (75%)</span>
+                <input type="checkbox" id="chk-ctrl-direct" checked class="w-3.5 h-3.5 accent-sky-400 rounded">
+              </label>
+              <input id="cfg-ctrl-direct" value="6006" class="w-full rounded-lg p-1.5 text-xs font-mono">
+            </div>
+            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-[11px] text-amber-400 font-bold" data-i18n="lbl_ctrl_l4">L4 Raw (20%)</span>
+                <input type="checkbox" id="chk-ctrl-l4" class="w-3.5 h-3.5 accent-amber-400 rounded">
+              </label>
+              <input id="cfg-ctrl-l4" value="6005" class="w-full rounded-lg p-1.5 text-xs font-mono">
             </div>
           </div>
-
-          <div class="flex flex-wrap gap-2 text-xs font-mono">
-            <span id="pill-uptime" class="px-3 py-1 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">● Online Uptime: 100.0%</span>
-            <span id="pill-down" class="px-3 py-1 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/80">● Total Offline Time: 0m (0 checks)</span>
-            <span id="pill-avg" class="px-3 py-1 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/80">⚡ Avg Ping: -- ms</span>
-          </div>
-
-          <div id="pill-outage-windows" class="px-3 py-1.5 rounded-xl bg-[#080d14] border border-slate-800 text-[11px] font-mono text-amber-400">
-            🕒 Outage Windows: None — 100% Continuous Uptime
-          </div>
-
-          <div id="svg-history-ping" class="w-full h-44 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
 
-        <div class="card rounded-2xl p-5 space-y-3">
-          <div class="flex flex-wrap justify-between items-center gap-2">
-            <div>
-              <span class="text-xs sm:text-sm font-bold text-emerald-400 block">📊 30-DAY DAILY INTERNET USAGE (DOWNLOAD & UPLOAD PER DAY)</span>
-              <span class="text-[11px] text-slate-400">Each day shows two side-by-side columns: Left (Emerald) = Download | Right (Indigo) = Upload</span>
+        <button onclick="saveConfig()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart</button>
+      </div>
+
+      <div class="card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <div>
+            <div class="flex items-center gap-1.5">
+              <h3 class="font-bold text-xs sm:text-sm" data-i18n="bbr_title">Google BBR + FQ Acceleration</h3>
+              <button type="button" onclick="showHelpModal('bbr')" class="help-btn">?</button>
             </div>
-            <div class="flex items-center gap-2 text-xs font-mono">
-              <span id="pill-month-rx" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80">↓ 30d Rx: 0.00 GB</span>
-              <span id="pill-month-tx" class="px-2.5 py-1 rounded-lg bg-indigo-950/90 text-indigo-400 border border-indigo-800/80">↑ 30d Tx: 0.00 GB</span>
+            <div class="text-[11px] font-mono text-slate-400 mt-0.5">
+              CC: <b id="bbr-cc-val" class="text-sky-400">--</b> | Qdisc: <b id="bbr-qdisc-val" class="text-indigo-400">--</b>
             </div>
           </div>
-          <div id="svg-daily-bw" class="w-full h-48 bg-[#080d14]/60 rounded-xl overflow-hidden border border-slate-800/70"></div>
         </div>
-      </section>
+        <div class="flex items-center gap-2">
+          <span id="bbr-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-slate-800 text-slate-300">...</span>
+          <button onclick="enableBBR()" id="btn-enable-bbr" class="px-4 py-2 rounded-xl text-xs font-bold text-black transition" style="background: var(--accent);" data-i18n="btn_bbr">⚡ Enable BBR + FQ</button>
+        </div>
+      </div>
+    </section>
 
-    </div>
+    <!-- VIEW 3: TUNNELS (COMPACT, EYE-FRIENDLY, SINGLE AGENT DROPDOWN) -->
+    <section id="view-tunnels" class="hidden space-y-3">
+      <!-- Compact 2x3 / 3x2 Transport Selector -->
+      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-xs text-slate-300" data-i18n="step1_method">1. Transport Engine</span>
+          <button type="button" onclick="showHelpModal('stealth')" class="help-btn">?</button>
+        </div>
 
-    <!-- BOTTOM PUTTY LIVE CONSOLE -->
-    <section dir="ltr" class="w-full text-left pt-1">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <!-- WSS -->
+          <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-2.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-1.5 transition">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs">WSS</span>
+              <span class="text-[10px] font-mono text-emerald-400 font-bold">85%</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-400 rounded-full" style="width: 85%"></div>
+            </div>
+          </div>
+
+          <!-- Direct TLS -->
+          <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs">Direct TLS</span>
+              <span class="text-[10px] font-mono text-sky-400 font-bold">75%</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+              <div class="h-full bg-sky-400 rounded-full" style="width: 75%"></div>
+            </div>
+          </div>
+
+          <!-- Port Forward -->
+          <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs">Port Forward</span>
+              <span class="text-[10px] font-mono text-amber-400 font-bold">20%</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+              <div class="h-full bg-amber-400 rounded-full" style="width: 20%"></div>
+            </div>
+          </div>
+
+          <!-- gRPC (H2) -->
+          <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs">gRPC (H2)</span>
+              <span class="text-[10px] font-mono text-indigo-400 font-bold">90%</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+              <div class="h-full bg-indigo-400 rounded-full" style="width: 90%"></div>
+            </div>
+          </div>
+
+          <!-- Slot 5 -->
+          <div class="p-2.5 rounded-xl border border-dashed border-slate-800/70 bg-[#090d16]/30 opacity-45 flex flex-col justify-between gap-1.5 select-none">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs text-slate-500" data-i18n="slot_soon_title">Reserved</span>
+              <span class="text-[10px] font-mono text-slate-600">#5</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900/50 rounded-full"></div>
+          </div>
+
+          <!-- Slot 6 -->
+          <div class="p-2.5 rounded-xl border border-dashed border-slate-800/70 bg-[#090d16]/30 opacity-45 flex flex-col justify-between gap-1.5 select-none">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs text-slate-500" data-i18n="slot_soon_title">Reserved</span>
+              <span class="text-[10px] font-mono text-slate-600">#6</span>
+            </div>
+            <div class="w-full h-1 bg-slate-900/50 rounded-full"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Minimal Bridge Form (Master -> Selected Agent Server) -->
+      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-3">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <h3 class="font-bold text-xs sm:text-sm text-slate-200" data-i18n="new_tunnel">2. Bridge Master to Agent</h3>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#090d16] text-slate-400 border border-slate-800">Master ➔ Agent</span>
+          </div>
+          <button onclick="resetForm()" class="text-[11px] text-slate-400 hover:text-white" data-i18n="reset">Reset</button>
+        </div>
+
+        <input type="hidden" id="tun-id">
+
+        <!-- Primary Inputs Row -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="col-span-2 sm:col-span-1">
+            <label class="text-[11px] font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Target Agent Server</label>
+            <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-xl p-2 text-xs font-semibold"></select>
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
+            <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-xl p-2 text-xs font-semibold">
+          </div>
+          <div>
+            <label class="text-[11px] text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port</label>
+            <input id="tunnel-port" value="10201" placeholder="10201" class="w-full rounded-xl p-2 text-xs font-mono">
+          </div>
+          <div class="col-span-2 sm:col-span-1">
+            <label class="text-[11px] text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">Inbound Port(s)</label>
+            <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-xl p-2 text-xs font-mono">
+          </div>
+        </div>
+
+        <!-- Secondary Options Row -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[11px] text-amber-400 font-semibold" data-i18n="spd_limit_lbl">Speed Limit</label>
+              <span id="spd-badge" class="text-[10px] font-mono text-slate-400">Unlimited</span>
+            </div>
+            <div class="flex items-center bg-[#090d16] border border-slate-800 rounded-xl overflow-hidden">
+              <button type="button" onclick="stepSpeed(-0.5)" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-300">-</button>
+              <input id="tun-speed" type="number" step="0.5" min="0" value="0" oninput="updateSpeedBadge()" class="w-full border-0 text-center p-1.5 text-xs font-mono focus:outline-none">
+              <button type="button" onclick="stepSpeed(0.5)" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-sky-400">+</button>
+            </div>
+          </div>
+
+          <div id="row-tls-sni-wrap">
+            <div class="flex items-center gap-1 mb-1">
+              <label class="text-[11px] text-slate-300" data-i18n="sni_lbl">TLS SNI Hostname</label>
+              <button type="button" onclick="showHelpModal('sni')" class="help-btn">?</button>
+            </div>
+            <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-xl p-2 text-xs font-mono">
+          </div>
+
+          <div id="row-ws-path">
+            <label class="text-[11px] text-slate-400 block mb-1" data-i18n="wspath_lbl">WS Path</label>
+            <input id="tun-path" value="/ws" class="w-full rounded-xl p-2 text-xs font-mono">
+          </div>
+        </div>
+
+        <!-- Direct TLS Extra Options (Compact) -->
+        <div id="row-direct-opts" class="hidden grid grid-cols-2 gap-2.5 pt-1">
+          <div>
+            <label class="text-[11px] text-sky-300 block mb-1" data-i18n="fp_lbl">TLS Profile</label>
+            <select id="tun-fp" class="w-full rounded-xl p-2 text-xs font-mono">
+              <option value="chrome">Chrome Modern</option>
+              <option value="firefox">Firefox</option>
+              <option value="safari">Safari iOS</option>
+            </select>
+          </div>
+          <div>
+            <div class="flex items-center gap-1 mb-1">
+              <label class="text-[11px] text-emerald-300" data-i18n="seg_lbl">ClientHello Frag</label>
+              <button type="button" onclick="showHelpModal('seg')" class="help-btn">?</button>
+            </div>
+            <input id="tun-frag" value="0" placeholder="0 = Off" class="w-full rounded-xl p-2 text-xs font-mono">
+          </div>
+        </div>
+
+        <!-- Cert Pin (Compact) -->
+        <div id="row-cert-pin">
+          <div class="flex items-center gap-1 mb-1">
+            <label class="text-[11px] text-slate-400" data-i18n="cert_pin_lbl">Exit SHA-256 Pin</label>
+            <button type="button" onclick="showHelpModal('pin')" class="help-btn">?</button>
+          </div>
+          <input id="tun-pin" placeholder="Auto-synced from Target Agent" class="w-full rounded-xl p-2 text-xs font-mono">
+        </div>
+
+        <button onclick="saveTunnel()" id="btn-save-tunnel" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition active:scale-[0.99]" style="background: var(--accent);" data-i18n="create">⚡ Establish Tunnel</button>
+      </div>
+
+      <!-- Active Tunnels List -->
+      <div class="space-y-2">
+        <h3 class="font-bold text-xs text-slate-400 px-1" data-i18n="active_tunnels">Active Tunnels</h3>
+        <div id="tunnel-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: LOG & TELEMETRY -->
+    <section id="view-logs" class="hidden space-y-3" dir="ltr">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div class="card rounded-2xl p-3">
+          <div class="text-[10px] text-slate-400 font-semibold">CPU</div>
+          <div id="kpi-cpu" class="text-lg font-bold text-sky-400 font-mono mt-0.5">0.0%</div>
+        </div>
+        <div class="card rounded-2xl p-3">
+          <div class="text-[10px] text-slate-400 font-semibold">RAM</div>
+          <div id="kpi-ram" class="text-xs font-bold text-indigo-400 font-mono mt-1.5">--%</div>
+        </div>
+        <div class="card rounded-2xl p-3">
+          <div class="text-[10px] text-slate-400 font-semibold">LIVE SPEED</div>
+          <div id="kpi-tp" class="text-xs font-bold text-emerald-400 font-mono mt-1.5">↓ 0.0 | ↑ 0.0 Mbps</div>
+        </div>
+        <div class="card rounded-2xl p-3">
+          <div class="text-[10px] text-slate-400 font-semibold">REACHABLE</div>
+          <div id="kpi-reach" class="text-lg font-bold text-slate-100 font-mono mt-0.5">20 / 20</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="card rounded-2xl p-3 border-l-2 border-l-sky-400">
+          <div class="text-[11px] font-bold text-sky-400">⚡ TUNNEL TRAFFIC</div>
+          <div id="bw-app" class="text-xs text-slate-200 font-mono mt-1">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
+        </div>
+        <div class="card rounded-2xl p-3 border-l-2 border-l-indigo-400">
+          <div class="text-[11px] font-bold text-indigo-400">🖥️ SERVER TRAFFIC</div>
+          <div id="bw-srv" class="text-xs text-slate-200 font-mono mt-1">24h: 0 GB | 7d: 0 GB | 30d: 0 GB</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="card rounded-2xl p-3.5 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-slate-300">📈 PING</span>
+            <span id="recent-ping-val" class="text-xs font-bold font-mono text-sky-400">-- ms</span>
+          </div>
+          <div id="svg-recent-ping" class="w-full h-32 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
+        </div>
+
+        <div class="card rounded-2xl p-3.5 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-slate-300">📊 THROUGHPUT</span>
+            <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">0.00 Mbps</span>
+          </div>
+          <div id="svg-recent-tp" class="w-full h-32 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
+        </div>
+      </div>
+
+      <div class="card rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <span class="text-xs font-bold text-sky-400">🕒 UPTIME & PING HISTORY</span>
+          <div class="flex items-center gap-1">
+            <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-sky-500 text-black">24h</button>
+            <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-slate-400">7d</button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 text-[11px] font-mono">
+          <span id="pill-uptime" class="px-2.5 py-0.5 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/70">● 100.0%</span>
+          <span id="pill-down" class="px-2.5 py-0.5 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/70">● Down: 0m</span>
+          <span id="pill-avg" class="px-2.5 py-0.5 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/70">⚡ Avg: -- ms</span>
+        </div>
+
+        <div id="pill-outage-windows" class="px-2.5 py-1 rounded-xl bg-[#090d16] border border-slate-800 text-[11px] font-mono text-amber-400 truncate">
+          🕒 Outages: None
+        </div>
+
+        <div id="svg-history-ping" class="w-full h-36 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
+      </div>
+
+      <div class="card rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <span class="text-xs font-bold text-emerald-400">📊 30-DAY USAGE</span>
+          <div class="flex items-center gap-1.5 text-[11px] font-mono">
+            <span id="pill-month-rx" class="px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-400">↓ 0.00 GB</span>
+            <span id="pill-month-tx" class="px-2 py-0.5 rounded bg-indigo-950/90 text-indigo-400">↑ 0.00 GB</span>
+          </div>
+        </div>
+        <div id="svg-daily-bw" class="w-full h-40 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
+      </div>
+    </section>
+
+    <!-- COMPACT TERMINAL CONSOLE -->
+    <section dir="ltr" class="w-full text-left">
       <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
-        <div class="bg-[#111926] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between">
-          <div class="flex items-center gap-2 truncate">
-            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
-            <span id="putty-title" class="text-xs font-bold text-slate-300 ml-1 truncate">root@Master — Ghoghnoos Tunnel</span>
+        <div class="bg-[#0d131f] border-b border-slate-800/80 px-3 py-2 flex items-center justify-between">
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+            <span id="putty-title" class="text-[11px] font-bold text-slate-300 truncate">root@Master</span>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/80 hover:scale-105 transition" title="Toggle between 10s Live and 5m Eco polling">⚡ 10s Live</button>
-            <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:text-white transition" title="Download complete 24h operational log">📥 24h Log</button>
-            <button onclick="fetchState()" class="text-[11px] text-slate-400 hover:text-white" title="Manual instant refresh">🔄</button>
-            <button onclick="sendCmd('clear')" class="text-[11px] text-slate-400 hover:text-white">clear</button>
-            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/70">⚡ 10s</button>
+            <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 hover:text-white">📥 Log</button>
+            <button onclick="fetchState()" class="text-xs text-slate-400 hover:text-white px-1">🔄</button>
+            <button onclick="sendCmd('clear')" class="text-[10px] text-slate-400 hover:text-white px-1">clear</button>
+            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
           </div>
         </div>
 
-        <div id="putty-body" class="flex flex-col h-[220px] sm:h-[250px]">
-          <div id="putty-box" class="flex-1 p-3.5 overflow-y-auto text-xs text-emerald-400 space-y-1 leading-relaxed select-text text-left"></div>
-
-          <div class="bg-[#080d14] border-t border-slate-800 px-3 py-2 flex items-center gap-2">
-            <span class="text-xs font-bold shrink-0" style="color: var(--accent)">root@ghoghnoos:~#</span>
+        <div id="putty-body" class="flex flex-col h-[170px] sm:h-[200px]">
+          <div id="putty-box" class="flex-1 p-3 overflow-y-auto text-[11px] text-emerald-400 space-y-0.5 leading-relaxed select-text text-left"></div>
+          <div class="bg-[#090d16] border-t border-slate-800/80 px-3 py-1.5 flex items-center gap-2">
+            <span class="text-[11px] font-bold shrink-0" style="color: var(--accent)">#</span>
             <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none text-left">
-            <button onclick="runConsoleInput()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 font-semibold">Run</button>
+            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 font-semibold">Run</button>
           </div>
         </div>
       </div>
@@ -628,21 +538,21 @@
 
   </main>
 
-  <!-- BILINGUAL HELP EXPLANATION MODAL -->
-  <div id="help-modal" onclick="if(event.target.id==='help-modal') closeHelpModal()" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div id="help-modal-card" class="card max-w-md w-full rounded-2xl p-5 border border-slate-700 space-y-3">
+  <!-- HELP MODAL -->
+  <div id="help-modal" onclick="if(event.target.id==='help-modal') closeHelpModal()" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div id="help-modal-card" class="card max-w-sm w-full rounded-2xl p-4 border border-slate-700 space-y-2.5 shadow-2xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-        <h4 id="help-modal-title" class="text-sm font-bold text-sky-400">Option Explanation</h4>
-        <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-lg">×</button>
+        <h4 id="help-modal-title" class="text-xs sm:text-sm font-bold text-sky-400">Info</h4>
+        <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-base leading-none">✕</button>
       </div>
       <p id="help-modal-body" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></p>
-      <div class="pt-2 text-right">
-        <button id="help-modal-btn" onclick="closeHelpModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700">Understood</button>
+      <div class="pt-1 text-right">
+        <button id="help-modal-btn" onclick="closeHelpModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700">Got it</button>
       </div>
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.7.0"></script>
-  <script src="/app.js?v=2.7.0"></script>
+  <script src="/i18n.js?v=2.7.1"></script>
+  <script src="/app.js?v=2.7.1"></script>
 </body>
 </html>

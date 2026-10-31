@@ -147,8 +147,12 @@ func startTelemetryMonitor() {
 
 	prevIdle, prevTotal := readCPUSample()
 	prevRx, prevTx := readNetDevBytes()
+	tickCount := 0
+	var accumTp float64
+
 	for {
 		time.Sleep(2 * time.Second)
+		tickCount++
 		idle, total := readCPUSample()
 		var cpuPct float64
 		if total > prevTotal {
@@ -185,9 +189,19 @@ func startTelemetryMonitor() {
 		sysMetrics.SrvTotalGB = float64(int((float64(rx+tx)/(1024*1024*1024))*100)) / 100.0
 		sysMetrics.BBRStatus = cc
 		sysMetrics.Qdisc = qd
-		sysMetrics.TpHistory = append(sysMetrics.TpHistory, sysMetrics.LiveRxMbps+sysMetrics.LiveTxMbps)
-		if len(sysMetrics.TpHistory) > 75 {
-			sysMetrics.TpHistory = sysMetrics.TpHistory[len(sysMetrics.TpHistory)-75:]
+
+		curTp := sysMetrics.LiveRxMbps + sysMetrics.LiveTxMbps
+		accumTp += curTp
+		// Record 10-second average points up to 180 points (30 minutes of history)
+		if len(sysMetrics.TpHistory) < 15 {
+			sysMetrics.TpHistory = append(sysMetrics.TpHistory, curTp)
+		} else if tickCount%5 == 0 {
+			avgTp := float64(int((accumTp/5.0)*100)) / 100.0
+			accumTp = 0
+			sysMetrics.TpHistory = append(sysMetrics.TpHistory, avgTp)
+			if len(sysMetrics.TpHistory) > 180 {
+				sysMetrics.TpHistory = sysMetrics.TpHistory[len(sysMetrics.TpHistory)-180:]
+			}
 		}
 		mu.Unlock()
 	}

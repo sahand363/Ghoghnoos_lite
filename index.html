@@ -1,536 +1,515 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr" class="overflow-y-scroll">
+<html lang="fa" dir="rtl" class="overflow-y-scroll">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Ghoghnoos Tunnel</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: dark;
-      --bg: #090d16;
-      --card: #111827;
-      --border: #1e293b;
+      --bg: #060911;
+      --card: #0b101b;
+      --border: #182235;
       --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.12);
+      --accent-glow: rgba(56, 189, 248, 0.14);
+      --btn-primary: #2589f5;
     }
     body { font-family: 'Vazirmatn', sans-serif; background-color: var(--bg); color: #e2e8f0; -webkit-tap-highlight-color: transparent; }
-    .card { background-color: var(--card); border: 1px solid var(--border); }
-    .accent-border { border: 1px solid var(--accent) !important; background: var(--accent-glow) !important; }
-    .tab-btn { color: #64748b; transition: all 0.18s ease; white-space: nowrap; }
-    .tab-btn.active-tab { color: var(--accent); background: var(--accent-glow); border: 1px solid rgba(255,255,255,0.06); }
-    input, select { background-color: #090d16; border: 1px solid var(--border); color: #f1f5f9; color-scheme: dark; transition: border-color 0.15s; }
-    select option { background-color: #090d16; color: #f1f5f9; }
+    .card { background-color: var(--card); border: 1px solid var(--border); border-radius: 0.875rem; }
+    .accent-border { border: 1px solid var(--accent) !important; background: #10192b !important; box-shadow: 0 0 14px var(--accent-glow); }
+    .nav-pill-wrap { background-color: #0b101b; border: 1px solid #182235; border-radius: 0.85rem; padding: 0.25rem; }
+    .tab-btn { color: #64748b; border: 1px solid transparent; border-radius: 0.65rem; transition: all 0.18s ease; white-space: nowrap; }
+    .tab-btn:hover { color: #cbd5e1; }
+    .tab-btn.active-tab { color: #f8fafc; background: #10192b; border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+    input, select { background-color: #070b12; border: 1px solid #182235; color: #f1f5f9; border-radius: 0.6rem; color-scheme: dark; transition: border-color 0.15s; }
+    select option { background-color: #0b101b; color: #f1f5f9; }
     input:focus, select:focus { border-color: var(--accent); outline: none; }
-    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080e; border: 1px solid #1e293b; }
-    [data-i18n] { unicode-bidi: plaintext; }
-    .help-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 9999px; background: #1e293b; color: #94a3b8; font-size: 10px; font-weight: bold; transition: all 0.15s; shrink: 0; }
-    .help-btn:hover { background: var(--accent); color: #000; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .btn-blue { background-color: var(--btn-primary); color: #ffffff; font-weight: 600; border-radius: 0.6rem; transition: all 0.15s; }
+    .btn-blue:hover { filter: brightness(1.1); }
+    .icon-action-btn { background-color: #0f1726; border: 1px solid #1c283d; color: #94a3b8; border-radius: 0.55rem; transition: all 0.15s; display: inline-flex; align-items: center; justify-content: center; }
+    .icon-action-btn:hover { background-color: #162238; color: #f8fafc; border-color: #2b3d5c; }
+    .micro-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: #8b9bb4; text-transform: uppercase; }
+    .putty-win { font-family: 'JetBrains Mono', monospace; background-color: #05080f; border: 1px solid #182235; border-radius: 0.875rem; }
+    .help-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 9999px; background: #152033; color: #64748b; font-size: 10px; font-weight: bold; border: 1px solid #22324d; transition: all 0.15s; flex-shrink: 0; }
+    .help-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+    .range-pill-wrap { background-color: #0b101b; border: 1px solid #182235; border-radius: 0.6rem; padding: 2px; display: inline-flex; gap: 2px; }
+    .range-pill { padding: 4px 10px; border-radius: 0.45rem; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #64748b; transition: all 0.15s; }
+    .range-pill.active { background-color: #162236; color: #f8fafc; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- SLEEK MOBILE-FIRST HEADER -->
-  <header dir="ltr" class="w-full bg-[#090d16]/90 backdrop-blur-md border-b border-slate-800/80 sticky top-0 z-50">
-    <div class="max-w-4xl w-full mx-auto px-3 py-2 flex items-center justify-between gap-2">
-      <!-- Brand -->
-      <div class="flex items-center gap-2 shrink-0">
-        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-base" style="background: var(--accent-glow); color: var(--accent);">🦅</div>
-        <div class="leading-tight">
-          <div class="flex items-center gap-1.5">
-            <span class="font-bold text-xs sm:text-sm tracking-tight text-slate-100">Ghoghnoos</span>
-            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-900 text-sky-400 border border-slate-800">v2.7.0</span>
-          </div>
-          <span id="top-server-clock" class="text-[10px] font-mono text-slate-500 block">--:--:--</span>
-        </div>
-      </div>
+  <!-- TOP NAVIGATION BAR (RTL BY DEFAULT, SEGMENTED PILL STYLE) -->
+  <header class="w-full bg-[#060911]/95 backdrop-blur-md border-b border-[#141d2e] sticky top-0 z-50">
+    <div class="max-w-4xl w-full mx-auto px-3 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5">
 
-      <!-- Center 3-Tab Pill Bar (Desktop) -->
-      <nav class="hidden sm:flex items-center gap-1 bg-[#111827] p-1 rounded-xl border border-slate-800/90">
-        <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-          <span>🖥️</span><span data-i18n="servers">Servers</span>
+      <!-- Segmented Navigation Pill (Starts Right-to-Left in RTL) -->
+      <nav class="nav-pill-wrap flex items-center gap-1 order-1">
+        <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1.5 text-xs font-semibold flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 text-sky-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="17" r="1" fill="currentColor"/></svg>
+          <span data-i18n="servers">سرورها</span>
         </button>
-        <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-          <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
+        <button onclick="setTab('tunnels', true)" id="tab-tunnels" class="tab-btn px-3.5 py-1.5 text-xs font-semibold flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/></svg>
+          <span data-i18n="tunnels">تانل‌ها</span>
         </button>
-        <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-          <span>📊</span><span data-i18n="logs">Log</span>
+        <button onclick="setTab('logs', true)" id="tab-logs" class="tab-btn px-3.5 py-1.5 text-xs font-semibold flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          <span data-i18n="logs">آنالیتیکس</span>
         </button>
       </nav>
 
-      <!-- Right Action Controls (Server Select, Update, Lang, Nut Config Icon, Logout) -->
-      <div class="flex items-center gap-1.5">
-        <div class="flex items-center bg-[#111827] border border-slate-800 rounded-lg px-2 py-1">
-          <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-transparent border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[85px] sm:max-w-[120px] truncate">
+      <!-- Action Controls (Server Selector, Update, Lang, Nut Config Icon, Logout) -->
+      <div class="flex items-center gap-1.5 order-2" dir="ltr">
+        <div class="flex items-center bg-[#0b101b] border border-[#182235] rounded-lg px-2.5 py-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5"></span>
+          <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-transparent border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[95px] sm:max-w-[130px] truncate p-0">
             <option value="local">Master</option>
           </select>
         </div>
 
-        <button id="btn-self-update" onclick="triggerSelfUpdate()" class="px-2 py-1 rounded-lg bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 text-xs font-bold hover:bg-emerald-900 transition" title="Update Selected Server">⬆️</button>
+        <button id="btn-self-update" onclick="triggerSelfUpdate()" class="icon-action-btn px-2.5 py-1.5 text-xs font-mono text-emerald-400" title="Update Selected Server">⬆️</button>
 
-        <button onclick="toggleLang()" id="lang-btn" class="px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition">FA</button>
+        <button onclick="toggleLang()" id="lang-btn" class="icon-action-btn px-2.5 py-1.5 text-xs font-bold font-mono text-slate-300">EN</button>
 
-        <!-- NUT / GEAR ICON BESIDE LANGUAGE CHANGE -->
-        <button onclick="setTab('config', true)" id="tab-config" class="tab-btn px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs hover:text-white transition" title="Settings & Control Ports">⚙️</button>
+        <!-- NUT / GEAR ICON BESIDE LANGUAGE BUTTON -->
+        <button onclick="setTab('config', true)" id="tab-config" class="tab-btn icon-action-btn px-2.5 py-1.5 text-xs" title="Settings">⚙️</button>
 
-        <a href="logout" class="px-2 py-1 rounded-lg bg-[#111827] border border-slate-800 text-xs text-rose-400 hover:bg-rose-950/60 transition" title="Sign Out">🚪</a>
+        <a href="logout" class="icon-action-btn px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300" title="Sign Out">🚪</a>
       </div>
-    </div>
 
-    <!-- Mobile Segmented 3-Tab Bar -->
-    <div class="sm:hidden grid grid-cols-3 gap-1 px-3 pb-2">
-      <button onclick="setTab('servers', true)" id="mob-tab-servers" class="tab-btn active-tab py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
-        <span>🖥️</span><span data-i18n="servers">Servers</span>
-      </button>
-      <button onclick="setTab('tunnels', true)" id="mob-tab-tunnels" class="tab-btn py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
-        <span>🚇</span><span data-i18n="tunnels">Tunnels</span>
-      </button>
-      <button onclick="setTab('logs', true)" id="mob-tab-logs" class="tab-btn py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
-        <span>📊</span><span data-i18n="logs">Log</span>
-      </button>
     </div>
   </header>
 
   <!-- MAIN WORKSPACE -->
-  <main class="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 space-y-4">
+  <main class="flex-1 max-w-4xl w-full mx-auto px-3 sm:px-5 py-4 space-y-5">
 
-    <!-- VIEW 1: SERVERS (ULTRA-MINIMAL) -->
-    <section id="view-servers" class="space-y-3">
-      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-3.5">
-        <!-- Step 1: Enrollment -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs font-bold text-slate-200" data-i18n="enroll_title">1. Enroll Agent Server</span>
-              <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
+    <!-- TAB 1: SERVERS -->
+    <section id="view-servers" class="space-y-5">
+      <!-- Top Enrollment & Probe Card -->
+      <div class="card p-4 sm:p-5 space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+          <div class="sm:col-span-4">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label" data-i18n="enroll_node_lbl">نام سرور دیده‌بان</label>
+              <button type="button" onclick="showHelpModal('node_name')" class="help-btn">?</button>
             </div>
-            <button type="button" onclick="rotateEnrollToken()" class="text-[11px] text-amber-400/90 hover:text-amber-300 font-mono flex items-center gap-1">
-              <span>🔄</span><span data-i18n="btn_rotate_tok">Rotate</span>
+            <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full px-3 py-2 text-xs font-semibold">
+          </div>
+
+          <div class="sm:col-span-5">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label" data-i18n="enroll_addr_lbl">آدرس و پورت‌های مستر</label>
+              <button type="button" onclick="showHelpModal('master_addr')" class="help-btn">?</button>
+            </div>
+            <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
+          </div>
+
+          <div class="sm:col-span-3">
+            <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="btn-blue w-full py-2 px-3 text-xs flex items-center justify-center gap-1.5 h-[36px]">
+              <span data-i18n="btn_copy_enroll">+ کپی دستور تک‌خطی</span>
             </button>
           </div>
-
-          <div class="grid grid-cols-2 gap-2.5">
-            <div>
-              <div class="flex items-center gap-1 mb-1">
-                <label class="text-[11px] text-slate-400" data-i18n="enroll_node_lbl">Agent Name</label>
-                <button type="button" onclick="showHelpModal('node_name')" class="help-btn">?</button>
-              </div>
-              <input id="enroll-node-name" value="Server-2" oninput="userEditedEnrollName=true; updateEnrollCommandUI()" class="w-full rounded-xl px-2.5 py-2 text-xs font-semibold">
-            </div>
-            <div>
-              <div class="flex items-center gap-1 mb-1">
-                <label class="text-[11px] text-slate-400" data-i18n="enroll_addr_lbl">Master Ports</label>
-                <button type="button" onclick="showHelpModal('master_addr')" class="help-btn">?</button>
-              </div>
-              <input id="enroll-master-addr" oninput="updateEnrollCommandUI()" class="w-full rounded-xl px-2.5 py-2 text-xs font-mono">
-            </div>
-          </div>
-
-          <div class="bg-[#090d16] border border-slate-800/90 rounded-xl p-2.5 font-mono text-[11px] text-emerald-400 truncate select-all text-left" dir="ltr" id="enroll-cmd-box">Loading...</div>
-
-          <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition active:scale-[0.99]" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy One-Liner (Auto-Rotates Token)</button>
         </div>
 
-        <!-- Step 2: Compact Single-Row Forward Rendezvous Prober -->
-        <div class="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-2">
+        <!-- Compact One-Liner Preview Row -->
+        <div class="flex items-center gap-2 bg-[#070b12] border border-[#141d2e] rounded-lg px-3 py-2" dir="ltr">
+          <span class="text-[11px] font-mono text-emerald-400 truncate flex-1 select-all" id="enroll-cmd-box">Loading...</span>
+          <button type="button" onclick="rotateEnrollToken()" class="text-[11px] font-mono text-slate-400 hover:text-sky-400 shrink-0 flex items-center gap-1">
+            <span>↻</span><span data-i18n="btn_rotate_tok">تغییر توکن</span>
+          </button>
+          <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
+        </div>
+
+        <!-- Step 2: Compact Forward Probe Row -->
+        <div class="pt-3 border-t border-[#141d2e] flex flex-col sm:flex-row sm:items-center gap-2.5">
           <div class="flex items-center gap-1.5 shrink-0">
-            <span class="text-xs font-bold text-emerald-400" data-i18n="rv_title">2. Forward Rendezvous Probe</span>
+            <span class="micro-label text-emerald-400" data-i18n="rv_title">۲. کاوشگر مستقیم مستر (Listen-Only)</span>
             <button type="button" onclick="showHelpModal('rendezvous')" class="help-btn">?</button>
           </div>
           <div class="flex items-center gap-2 flex-1">
-            <input id="rv-target-ip" placeholder="Agent IP (e.g. 203.0.113.10)" class="flex-1 rounded-xl px-2.5 py-2 text-xs font-mono">
-            <button type="button" onclick="startRendezvousFromBox()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition flex items-center gap-1 shrink-0">
-              <span>▶</span><span data-i18n="btn_start_rv">Probe</span>
+            <input id="rv-target-ip" dir="ltr" placeholder="198.51.100.12" class="flex-1 px-3 py-1.5 text-xs font-mono text-left">
+            <button type="button" onclick="startRendezvousFromBox()" class="icon-action-btn px-3.5 py-1.5 text-xs font-semibold text-emerald-400 border-emerald-900/60 hover:bg-emerald-950/50 shrink-0 flex items-center gap-1.5">
+              <span>▶</span><span data-i18n="btn_start_rv">شروع کاوش</span>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Server Nodes Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="server-cards-list"></div>
+      <!-- Divider & Registered Agents Header -->
+      <div class="border-t border-[#141d2e] pt-4 space-y-3">
+        <div class="flex items-center justify-between px-0.5">
+          <div class="flex items-center gap-2">
+            <span class="micro-label" data-i18n="reg_agents_lbl">سرورهای ثبت‌شده</span>
+            <span id="agents-count-badge" class="bg-[#131d31] border border-[#1f2e4a] text-slate-300 text-[11px] font-mono font-bold px-2 py-0.5 rounded-md">1</span>
+          </div>
+          <span id="app-version-badge" class="text-[11px] font-mono text-slate-500">v2.7.0</span>
+        </div>
+
+        <!-- Horizontal Server Rows (Matching Screenshot 1) -->
+        <div class="space-y-2.5" id="server-cards-list"></div>
+      </div>
     </section>
 
-    <!-- VIEW 2: CONFIG (OPENED VIA NUT ICON ⚙️ BESIDE LANGUAGE BUTTON) -->
-    <section id="view-config" class="hidden space-y-3">
-      <div class="card rounded-2xl p-4 space-y-4">
-        <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+    <!-- TAB 2: CONFIG (OPENED VIA NUT ICON ⚙️) -->
+    <section id="view-config" class="hidden space-y-4">
+      <div class="card p-4 sm:p-5 space-y-4">
+        <div class="flex justify-between items-center border-b border-[#141d2e] pb-3">
           <div class="flex items-center gap-2">
             <span>⚙️</span>
-            <h3 class="font-bold text-xs sm:text-sm" data-i18n="network_settings">Panel & Control Ports</h3>
+            <h3 class="font-bold text-xs sm:text-sm" data-i18n="network_settings">تنظیمات پنل و پورت‌های کنترل</h3>
           </div>
           <div class="flex items-center gap-2">
-            <!-- Theme Dots inside Settings -->
-            <div class="flex items-center gap-1.5 bg-[#090d16] px-2.5 py-1 rounded-full border border-slate-800">
+            <div class="flex items-center gap-1.5 bg-[#070b12] px-2.5 py-1 rounded-full border border-[#182235]">
               <button onclick="applyTheme('cyan', true)" class="w-2.5 h-2.5 rounded-full bg-sky-400"></button>
               <button onclick="applyTheme('emerald', true)" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></button>
               <button onclick="applyTheme('amber', true)" class="w-2.5 h-2.5 rounded-full bg-amber-400"></button>
               <button onclick="applyTheme('indigo', true)" class="w-2.5 h-2.5 rounded-full bg-indigo-400"></button>
               <button onclick="applyTheme('rose', true)" class="w-2.5 h-2.5 rounded-full bg-rose-400"></button>
             </div>
-            <span id="cfg-target-badge" class="text-[11px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>
+            <span id="cfg-target-badge" class="text-[11px] px-2 py-0.5 rounded font-mono font-bold bg-[#131d31] text-sky-400 border border-[#1f2e4a]">Master</span>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <div class="flex items-center gap-1 mb-1">
-              <label class="text-[11px] text-slate-400" data-i18n="lbl_panel_port">Panel Port</label>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label" data-i18n="lbl_panel_port">پورت پنل</label>
               <button type="button" onclick="showHelpModal('port')" class="help-btn">?</button>
             </div>
-            <input id="cfg-port" placeholder="6001" class="w-full rounded-xl p-2 text-xs font-mono">
+            <input id="cfg-port" dir="ltr" placeholder="6001" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
           <div>
-            <div class="flex items-center gap-1 mb-1">
-              <label class="text-[11px] text-slate-400" data-i18n="lbl_panel_path">Secret Path</label>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label" data-i18n="lbl_panel_path">مسیر مخفی</label>
               <button type="button" onclick="showHelpModal('path')" class="help-btn">?</button>
             </div>
-            <input id="cfg-path" class="w-full rounded-xl p-2 text-xs font-mono">
+            <input id="cfg-path" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
         </div>
 
-        <div class="bg-[#090d16] p-3 rounded-xl border border-slate-800/90 space-y-2.5">
+        <div class="bg-[#070b12] p-3.5 rounded-xl border border-[#182235] space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1.5">
-              <span class="text-xs font-bold text-slate-300" data-i18n="ctrl_ports_title">Control & Rendezvous Ports</span>
+              <span class="micro-label text-slate-300" data-i18n="ctrl_ports_title">پورت‌های کنترل و کاوش (تیک = فعال)</span>
               <button type="button" onclick="showHelpModal('ctrlports')" class="help-btn">?</button>
             </div>
             <span class="text-[10px] font-mono text-slate-500">6005–6008</span>
           </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" dir="ltr">
+            <div class="bg-[#0b101b] p-2.5 rounded-xl border border-[#182235] space-y-1.5">
               <label class="flex items-center justify-between cursor-pointer">
                 <span class="text-[11px] text-indigo-400 font-bold" data-i18n="lbl_ctrl_grpc">gRPC (90%)</span>
                 <input type="checkbox" id="chk-ctrl-grpc" checked class="w-3.5 h-3.5 accent-indigo-400 rounded">
               </label>
-              <input id="cfg-ctrl-grpc" value="6008" class="w-full rounded-lg p-1.5 text-xs font-mono">
+              <input id="cfg-ctrl-grpc" value="6008" class="w-full p-1.5 text-xs font-mono">
             </div>
-            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="bg-[#0b101b] p-2.5 rounded-xl border border-[#182235] space-y-1.5">
               <label class="flex items-center justify-between cursor-pointer">
                 <span class="text-[11px] text-emerald-400 font-bold" data-i18n="lbl_ctrl_wss">WSS (85%)</span>
                 <input type="checkbox" id="chk-ctrl-wss" checked class="w-3.5 h-3.5 accent-emerald-400 rounded">
               </label>
-              <input id="cfg-ctrl-wss" value="6007" class="w-full rounded-lg p-1.5 text-xs font-mono">
+              <input id="cfg-ctrl-wss" value="6007" class="w-full p-1.5 text-xs font-mono">
             </div>
-            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="bg-[#0b101b] p-2.5 rounded-xl border border-[#182235] space-y-1.5">
               <label class="flex items-center justify-between cursor-pointer">
                 <span class="text-[11px] text-sky-400 font-bold" data-i18n="lbl_ctrl_direct">Direct (75%)</span>
                 <input type="checkbox" id="chk-ctrl-direct" checked class="w-3.5 h-3.5 accent-sky-400 rounded">
               </label>
-              <input id="cfg-ctrl-direct" value="6006" class="w-full rounded-lg p-1.5 text-xs font-mono">
+              <input id="cfg-ctrl-direct" value="6006" class="w-full p-1.5 text-xs font-mono">
             </div>
-            <div class="bg-[#111827] p-2 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="bg-[#0b101b] p-2.5 rounded-xl border border-[#182235] space-y-1.5">
               <label class="flex items-center justify-between cursor-pointer">
                 <span class="text-[11px] text-amber-400 font-bold" data-i18n="lbl_ctrl_l4">L4 Raw (20%)</span>
                 <input type="checkbox" id="chk-ctrl-l4" class="w-3.5 h-3.5 accent-amber-400 rounded">
               </label>
-              <input id="cfg-ctrl-l4" value="6005" class="w-full rounded-lg p-1.5 text-xs font-mono">
+              <input id="cfg-ctrl-l4" value="6005" class="w-full p-1.5 text-xs font-mono">
             </div>
           </div>
         </div>
 
-        <button onclick="saveConfig()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition" style="background: var(--accent);" data-i18n="save_restart">Save & Restart</button>
+        <button onclick="saveConfig()" class="btn-blue w-full py-2.5 text-xs" data-i18n="save_restart">ذخیره و ری‌استارت</button>
       </div>
 
-      <div class="card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <div>
-            <div class="flex items-center gap-1.5">
-              <h3 class="font-bold text-xs sm:text-sm" data-i18n="bbr_title">Google BBR + FQ Acceleration</h3>
-              <button type="button" onclick="showHelpModal('bbr')" class="help-btn">?</button>
-            </div>
-            <div class="text-[11px] font-mono text-slate-400 mt-0.5">
-              CC: <b id="bbr-cc-val" class="text-sky-400">--</b> | Qdisc: <b id="bbr-qdisc-val" class="text-indigo-400">--</b>
-            </div>
+      <div class="card p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-1.5">
+            <h3 class="font-bold text-xs sm:text-sm" data-i18n="bbr_title">شتاب‌دهنده هسته (BBR + FQ)</h3>
+            <button type="button" onclick="showHelpModal('bbr')" class="help-btn">?</button>
+          </div>
+          <div class="text-[11px] font-mono text-slate-400 mt-1" dir="ltr">
+            CC: <b id="bbr-cc-val" class="text-sky-400">--</b> • Qdisc: <b id="bbr-qdisc-val" class="text-indigo-400">--</b>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span id="bbr-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-slate-800 text-slate-300">...</span>
-          <button onclick="enableBBR()" id="btn-enable-bbr" class="px-4 py-2 rounded-xl text-xs font-bold text-black transition" style="background: var(--accent);" data-i18n="btn_bbr">⚡ Enable BBR + FQ</button>
+          <span id="bbr-status-badge" class="px-2.5 py-1 rounded-md text-[11px] font-mono font-bold bg-[#131d31] text-slate-300">...</span>
+          <button onclick="enableBBR()" id="btn-enable-bbr" class="btn-blue px-4 py-2 text-xs" data-i18n="btn_bbr">⚡ فعال‌سازی BBR + FQ</button>
         </div>
       </div>
     </section>
 
-    <!-- VIEW 3: TUNNELS (COMPACT, EYE-FRIENDLY, SINGLE AGENT DROPDOWN) -->
-    <section id="view-tunnels" class="hidden space-y-3">
-      <!-- Compact 2x3 / 3x2 Transport Selector -->
-      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-2.5">
+    <!-- TAB 3: TUNNELS (MASTER -> SINGLE AGENT DROPDOWN) -->
+    <section id="view-tunnels" class="hidden space-y-4">
+      <!-- Transport Engine Selector -->
+      <div class="card p-4 space-y-3">
         <div class="flex items-center justify-between">
-          <span class="font-bold text-xs text-slate-300" data-i18n="step1_method">1. Transport Engine</span>
+          <span class="micro-label" data-i18n="step1_method">۱. انتخاب موتور تانل</span>
           <button type="button" onclick="showHelpModal('stealth')" class="help-btn">?</button>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <!-- WSS -->
-          <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-2.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-1.5 transition">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5" dir="ltr">
+          <div id="method-card-wss" onclick="selectTunnelMethod('wss')" class="p-3 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition">
             <div class="flex items-center justify-between">
-              <span class="font-bold text-xs">WSS</span>
-              <span class="text-[10px] font-mono text-emerald-400 font-bold">85%</span>
+              <span class="font-bold text-xs text-white">WSS</span>
+              <span class="text-[11px] font-mono text-emerald-400 font-bold">85%</span>
             </div>
-            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+            <div class="w-full h-1 bg-[#070b12] rounded-full overflow-hidden">
               <div class="h-full bg-emerald-400 rounded-full" style="width: 85%"></div>
             </div>
           </div>
 
-          <!-- Direct TLS -->
-          <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+          <div id="method-card-direct" onclick="selectTunnelMethod('direct')" class="p-3 rounded-xl border border-[#182235] bg-[#070b12] cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
             <div class="flex items-center justify-between">
-              <span class="font-bold text-xs">Direct TLS</span>
-              <span class="text-[10px] font-mono text-sky-400 font-bold">75%</span>
+              <span class="font-bold text-xs text-slate-200">Direct TLS</span>
+              <span class="text-[11px] font-mono text-sky-400 font-bold">75%</span>
             </div>
-            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+            <div class="w-full h-1 bg-[#0b101b] rounded-full overflow-hidden">
               <div class="h-full bg-sky-400 rounded-full" style="width: 75%"></div>
             </div>
           </div>
 
-          <!-- Port Forward -->
-          <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+          <div id="method-card-forward" onclick="selectTunnelMethod('forward')" class="p-3 rounded-xl border border-[#182235] bg-[#070b12] cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
             <div class="flex items-center justify-between">
-              <span class="font-bold text-xs">Port Forward</span>
-              <span class="text-[10px] font-mono text-amber-400 font-bold">20%</span>
+              <span class="font-bold text-xs text-slate-200">Port Forward</span>
+              <span class="text-[11px] font-mono text-amber-400 font-bold">20%</span>
             </div>
-            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+            <div class="w-full h-1 bg-[#0b101b] rounded-full overflow-hidden">
               <div class="h-full bg-amber-400 rounded-full" style="width: 20%"></div>
             </div>
           </div>
 
-          <!-- gRPC (H2) -->
-          <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition">
+          <div id="method-card-grpc" onclick="selectTunnelMethod('grpc')" class="p-3 rounded-xl border border-[#182235] bg-[#070b12] cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700">
             <div class="flex items-center justify-between">
-              <span class="font-bold text-xs">gRPC (H2)</span>
-              <span class="text-[10px] font-mono text-indigo-400 font-bold">90%</span>
+              <span class="font-bold text-xs text-slate-200">gRPC (H2)</span>
+              <span class="text-[11px] font-mono text-indigo-400 font-bold">90%</span>
             </div>
-            <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+            <div class="w-full h-1 bg-[#0b101b] rounded-full overflow-hidden">
               <div class="h-full bg-indigo-400 rounded-full" style="width: 90%"></div>
             </div>
           </div>
 
-          <!-- Slot 5 -->
-          <div class="p-2.5 rounded-xl border border-dashed border-slate-800/70 bg-[#090d16]/30 opacity-45 flex flex-col justify-between gap-1.5 select-none">
+          <div class="p-3 rounded-xl border border-dashed border-[#182235] bg-[#070b12]/40 opacity-45 flex flex-col justify-between gap-2 select-none">
             <div class="flex items-center justify-between">
               <span class="font-bold text-xs text-slate-500" data-i18n="slot_soon_title">Reserved</span>
               <span class="text-[10px] font-mono text-slate-600">#5</span>
             </div>
-            <div class="w-full h-1 bg-slate-900/50 rounded-full"></div>
+            <div class="w-full h-1 bg-[#0b101b] rounded-full"></div>
           </div>
 
-          <!-- Slot 6 -->
-          <div class="p-2.5 rounded-xl border border-dashed border-slate-800/70 bg-[#090d16]/30 opacity-45 flex flex-col justify-between gap-1.5 select-none">
+          <div class="p-3 rounded-xl border border-dashed border-[#182235] bg-[#070b12]/40 opacity-45 flex flex-col justify-between gap-2 select-none">
             <div class="flex items-center justify-between">
               <span class="font-bold text-xs text-slate-500" data-i18n="slot_soon_title">Reserved</span>
               <span class="text-[10px] font-mono text-slate-600">#6</span>
             </div>
-            <div class="w-full h-1 bg-slate-900/50 rounded-full"></div>
+            <div class="w-full h-1 bg-[#0b101b] rounded-full"></div>
           </div>
         </div>
       </div>
 
-      <!-- Minimal Bridge Form (Master -> Selected Agent Server) -->
-      <div class="card rounded-2xl p-3.5 sm:p-4 space-y-3">
-        <div class="flex justify-between items-center">
+      <!-- Bridge Form Card -->
+      <div class="card p-4 sm:p-5 space-y-4">
+        <div class="flex justify-between items-center border-b border-[#141d2e] pb-2.5">
           <div class="flex items-center gap-2">
-            <h3 class="font-bold text-xs sm:text-sm text-slate-200" data-i18n="new_tunnel">2. Bridge Master to Agent</h3>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#090d16] text-slate-400 border border-slate-800">Master ➔ Agent</span>
+            <span class="micro-label text-slate-200" data-i18n="new_tunnel">۲. اتصال مستر به دیده‌بان</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#10192b] text-sky-400 border border-[#1c2c47]" dir="ltr">Master ➔ Agent</span>
           </div>
-          <button onclick="resetForm()" class="text-[11px] text-slate-400 hover:text-white" data-i18n="reset">Reset</button>
+          <button onclick="resetForm()" class="text-[11px] text-slate-400 hover:text-white" data-i18n="reset">پاکسازی فرم</button>
         </div>
 
         <input type="hidden" id="tun-id">
 
-        <!-- Primary Inputs Row -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div class="col-span-2 sm:col-span-1">
-            <label class="text-[11px] font-bold text-emerald-400 block mb-1" data-i18n="dst_srv">Target Agent Server</label>
-            <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full rounded-xl p-2 text-xs font-semibold"></select>
+            <label class="micro-label block mb-1.5 text-emerald-400" data-i18n="dst_srv">سرور مقصد (دیده‌بان)</label>
+            <select id="tun-dst-srv" onchange="autoUpdateTunnelName()" class="w-full px-3 py-2 text-xs font-semibold"></select>
           </div>
           <div>
-            <label class="text-[11px] text-slate-400 block mb-1" data-i18n="tun_name">Tunnel Name</label>
-            <input id="tun-name" oninput="userEditedName=true" class="w-full rounded-xl p-2 text-xs font-semibold">
+            <label class="micro-label block mb-1.5" data-i18n="tun_name">نام تانل</label>
+            <input id="tun-name" oninput="userEditedName=true" dir="ltr" class="w-full px-3 py-2 text-xs font-semibold text-left">
           </div>
           <div>
-            <label class="text-[11px] text-sky-400 font-semibold block mb-1" data-i18n="tun_port_lbl">Tunnel Port</label>
-            <input id="tunnel-port" value="10201" placeholder="10201" class="w-full rounded-xl p-2 text-xs font-mono">
+            <label class="micro-label block mb-1.5 text-sky-400" data-i18n="tun_port_lbl">پورت تانل</label>
+            <input id="tunnel-port" value="10201" placeholder="10201" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
           <div class="col-span-2 sm:col-span-1">
-            <label class="text-[11px] text-emerald-400 font-semibold block mb-1" data-i18n="inb_port_lbl">Inbound Port(s)</label>
-            <input id="inbound-ports" placeholder="45454, 2053" class="w-full rounded-xl p-2 text-xs font-mono">
+            <label class="micro-label block mb-1.5 text-emerald-400" data-i18n="inb_port_lbl">پورت(های) ورودی</label>
+            <input id="inbound-ports" placeholder="45454, 2053" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
         </div>
 
-        <!-- Secondary Options Row -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="text-[11px] text-amber-400 font-semibold" data-i18n="spd_limit_lbl">Speed Limit</label>
-              <span id="spd-badge" class="text-[10px] font-mono text-slate-400">Unlimited</span>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="micro-label text-amber-400" data-i18n="spd_limit_lbl">محدودیت سرعت</label>
+              <span id="spd-badge" class="text-[10px] font-mono text-slate-400">نامحدود</span>
             </div>
-            <div class="flex items-center bg-[#090d16] border border-slate-800 rounded-xl overflow-hidden">
-              <button type="button" onclick="stepSpeed(-0.5)" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-300">-</button>
+            <div class="flex items-center bg-[#070b12] border border-[#182235] rounded-lg overflow-hidden" dir="ltr">
+              <button type="button" onclick="stepSpeed(-0.5)" class="px-2.5 py-1.5 bg-[#0f1726] hover:bg-slate-800 text-xs font-bold text-slate-300">-</button>
               <input id="tun-speed" type="number" step="0.5" min="0" value="0" oninput="updateSpeedBadge()" class="w-full border-0 text-center p-1.5 text-xs font-mono focus:outline-none">
-              <button type="button" onclick="stepSpeed(0.5)" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-sky-400">+</button>
+              <button type="button" onclick="stepSpeed(0.5)" class="px-2.5 py-1.5 bg-[#0f1726] hover:bg-slate-800 text-xs font-bold text-sky-400">+</button>
             </div>
           </div>
 
           <div id="row-tls-sni-wrap">
-            <div class="flex items-center gap-1 mb-1">
-              <label class="text-[11px] text-slate-300" data-i18n="sni_lbl">TLS SNI Hostname</label>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label" data-i18n="sni_lbl">دامنه TLS SNI</label>
               <button type="button" onclick="showHelpModal('sni')" class="help-btn">?</button>
             </div>
-            <input id="tun-sni" value="www.speedtest.net" class="w-full rounded-xl p-2 text-xs font-mono">
+            <input id="tun-sni" value="www.speedtest.net" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
 
           <div id="row-ws-path">
-            <label class="text-[11px] text-slate-400 block mb-1" data-i18n="wspath_lbl">WS Path</label>
-            <input id="tun-path" value="/ws" class="w-full rounded-xl p-2 text-xs font-mono">
+            <label class="micro-label block mb-1.5" data-i18n="wspath_lbl">مسیر وب‌سوکت</label>
+            <input id="tun-path" value="/ws" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
         </div>
 
-        <!-- Direct TLS Extra Options (Compact) -->
-        <div id="row-direct-opts" class="hidden grid grid-cols-2 gap-2.5 pt-1">
+        <div id="row-direct-opts" class="hidden grid grid-cols-2 gap-3 pt-1">
           <div>
-            <label class="text-[11px] text-sky-300 block mb-1" data-i18n="fp_lbl">TLS Profile</label>
-            <select id="tun-fp" class="w-full rounded-xl p-2 text-xs font-mono">
+            <label class="micro-label block mb-1.5 text-sky-300" data-i18n="fp_lbl">پروفایل TLS</label>
+            <select id="tun-fp" dir="ltr" class="w-full px-3 py-2 text-xs font-mono">
               <option value="chrome">Chrome Modern</option>
               <option value="firefox">Firefox</option>
               <option value="safari">Safari iOS</option>
             </select>
           </div>
           <div>
-            <div class="flex items-center gap-1 mb-1">
-              <label class="text-[11px] text-emerald-300" data-i18n="seg_lbl">ClientHello Frag</label>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label class="micro-label text-emerald-300" data-i18n="seg_lbl">قطعه‌بندی بسته</label>
               <button type="button" onclick="showHelpModal('seg')" class="help-btn">?</button>
             </div>
-            <input id="tun-frag" value="0" placeholder="0 = Off" class="w-full rounded-xl p-2 text-xs font-mono">
+            <input id="tun-frag" value="0" placeholder="0 = Off" dir="ltr" class="w-full px-3 py-2 text-xs font-mono text-left">
           </div>
         </div>
 
-        <!-- Cert Pin (Compact) -->
         <div id="row-cert-pin">
-          <div class="flex items-center gap-1 mb-1">
-            <label class="text-[11px] text-slate-400" data-i18n="cert_pin_lbl">Exit SHA-256 Pin</label>
+          <div class="flex items-center gap-1.5 mb-1.5">
+            <label class="micro-label" data-i18n="cert_pin_lbl">پین گواهی SHA-256</label>
             <button type="button" onclick="showHelpModal('pin')" class="help-btn">?</button>
           </div>
-          <input id="tun-pin" placeholder="Auto-synced from Target Agent" class="w-full rounded-xl p-2 text-xs font-mono">
+          <input id="tun-pin" dir="ltr" placeholder="Auto-synced from Target Agent" class="w-full px-3 py-2 text-xs font-mono text-left">
         </div>
 
-        <button onclick="saveTunnel()" id="btn-save-tunnel" class="w-full text-black font-bold py-2.5 rounded-xl text-xs transition active:scale-[0.99]" style="background: var(--accent);" data-i18n="create">⚡ Establish Tunnel</button>
+        <button onclick="saveTunnel()" id="btn-save-tunnel" class="btn-blue w-full py-2.5 text-xs" data-i18n="create">+ برقراری تانل جدید</button>
       </div>
 
       <!-- Active Tunnels List -->
-      <div class="space-y-2">
-        <h3 class="font-bold text-xs text-slate-400 px-1" data-i18n="active_tunnels">Active Tunnels</h3>
-        <div id="tunnel-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      <div class="border-t border-[#141d2e] pt-4 space-y-2.5">
+        <span class="micro-label px-0.5 block" data-i18n="active_tunnels">تانل‌های فعال</span>
+        <div id="tunnel-list" class="space-y-2.5"></div>
       </div>
     </section>
 
-    <!-- VIEW 4: LOG & TELEMETRY -->
-    <section id="view-logs" class="hidden space-y-3" dir="ltr">
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div class="card rounded-2xl p-3">
-          <div class="text-[10px] text-slate-400 font-semibold">CPU</div>
-          <div id="kpi-cpu" class="text-lg font-bold text-sky-400 font-mono mt-0.5">0.0%</div>
+    <!-- TAB 4: ANALYTICS (MATCHING SCREENSHOT 2 + FULL 24H/7D PING CHART FOR SELECTED SERVER) -->
+    <section id="view-logs" class="hidden space-y-5" dir="ltr">
+      <!-- Minimal System Resource Strip -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="card p-3.5 flex items-center justify-between">
+          <span class="micro-label">CPU</span>
+          <span id="kpi-cpu" class="text-sm sm:text-base font-bold text-sky-400 font-mono">0.0%</span>
         </div>
-        <div class="card rounded-2xl p-3">
-          <div class="text-[10px] text-slate-400 font-semibold">RAM</div>
-          <div id="kpi-ram" class="text-xs font-bold text-indigo-400 font-mono mt-1.5">--%</div>
+        <div class="card p-3.5 flex items-center justify-between">
+          <span class="micro-label">RAM</span>
+          <span id="kpi-ram" class="text-xs sm:text-sm font-bold text-indigo-400 font-mono">--%</span>
         </div>
-        <div class="card rounded-2xl p-3">
-          <div class="text-[10px] text-slate-400 font-semibold">LIVE SPEED</div>
-          <div id="kpi-tp" class="text-xs font-bold text-emerald-400 font-mono mt-1.5">↓ 0.0 | ↑ 0.0 Mbps</div>
-        </div>
-        <div class="card rounded-2xl p-3">
-          <div class="text-[10px] text-slate-400 font-semibold">REACHABLE</div>
-          <div id="kpi-reach" class="text-lg font-bold text-slate-100 font-mono mt-0.5">20 / 20</div>
+        <div class="card p-3.5 flex items-center justify-between">
+          <span class="micro-label">REACHABLE</span>
+          <span id="kpi-reach" class="text-sm sm:text-base font-bold text-emerald-400 font-mono">20 / 20</span>
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        <div class="card rounded-2xl p-3 border-l-2 border-l-sky-400">
-          <div class="text-[11px] font-bold text-sky-400">⚡ TUNNEL TRAFFIC</div>
-          <div id="bw-app" class="text-xs text-slate-200 font-mono mt-1">24h: 0 MB | 7d: 0 MB | 30d: 0 MB</div>
+      <!-- Daily Bandwidth Chart Section (Exact Style of Screenshot 2) -->
+      <div class="space-y-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div class="flex items-center gap-5 text-xs sm:text-sm font-bold">
+            <div class="flex items-center gap-1.5">
+              <span class="text-emerald-400 font-mono">↓</span>
+              <span class="text-slate-200" data-i18n="dl_lbl">Download:</span>
+              <span id="pill-month-rx" class="text-white font-mono">0.0 GB</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-sky-400 font-mono">↑</span>
+              <span class="text-slate-200" data-i18n="ul_lbl">Upload:</span>
+              <span id="pill-month-tx" class="text-white font-mono">0.0 GB</span>
+            </div>
+          </div>
+
+          <div class="range-pill-wrap">
+            <button id="btn-bw-7d" onclick="setUsageRange('7d')" class="range-pill active">7D</button>
+            <button id="btn-bw-30d" onclick="setUsageRange('30d')" class="range-pill">30D</button>
+          </div>
         </div>
-        <div class="card rounded-2xl p-3 border-l-2 border-l-indigo-400">
-          <div class="text-[11px] font-bold text-indigo-400">🖥️ SERVER TRAFFIC</div>
-          <div id="bw-srv" class="text-xs text-slate-200 font-mono mt-1">24h: 0 GB | 7d: 0 GB | 30d: 0 GB</div>
+
+        <div class="card p-4 sm:p-5">
+          <div id="svg-daily-bw" class="w-full h-52"></div>
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        <div class="card rounded-2xl p-3.5 space-y-2">
-          <div class="flex justify-between items-center">
-            <span class="text-xs font-bold text-slate-300">📈 PING</span>
-            <span id="recent-ping-val" class="text-xs font-bold font-mono text-sky-400">-- ms</span>
+      <!-- Big 24H / 7D Ping & Offline History Chart (Selected Server Only) -->
+      <div class="space-y-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <span class="micro-label text-slate-200" data-i18n="ping_hist_title">SELECTED SERVER PING & UPTIME HISTORY</span>
+            <span id="ping-target-srv-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-[#131d31] text-sky-400 border border-[#1f2e4a]">Master</span>
           </div>
-          <div id="svg-recent-ping" class="w-full h-32 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
-        </div>
 
-        <div class="card rounded-2xl p-3.5 space-y-2">
-          <div class="flex justify-between items-center">
-            <span class="text-xs font-bold text-slate-300">📊 THROUGHPUT</span>
-            <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">0.00 Mbps</span>
-          </div>
-          <div id="svg-recent-tp" class="w-full h-32 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
-        </div>
-      </div>
-
-      <div class="card rounded-2xl p-3.5 space-y-2.5">
-        <div class="flex flex-wrap justify-between items-center gap-2">
-          <span class="text-xs font-bold text-sky-400">🕒 UPTIME & PING HISTORY</span>
-          <div class="flex items-center gap-1">
-            <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-sky-500 text-black">24h</button>
-            <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-slate-400">7d</button>
+          <div class="range-pill-wrap">
+            <button id="btn-range-24h" onclick="setHistoryRange('24h')" class="range-pill active">24H</button>
+            <button id="btn-range-7d" onclick="setHistoryRange('7d')" class="range-pill">7D</button>
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-1.5 text-[11px] font-mono">
-          <span id="pill-uptime" class="px-2.5 py-0.5 rounded-full bg-emerald-950/90 text-emerald-400 border border-emerald-800/70">● 100.0%</span>
-          <span id="pill-down" class="px-2.5 py-0.5 rounded-full bg-rose-950/90 text-rose-400 border border-rose-800/70">● Down: 0m</span>
-          <span id="pill-avg" class="px-2.5 py-0.5 rounded-full bg-sky-950/90 text-sky-400 border border-sky-800/70">⚡ Avg: -- ms</span>
-        </div>
-
-        <div id="pill-outage-windows" class="px-2.5 py-1 rounded-xl bg-[#090d16] border border-slate-800 text-[11px] font-mono text-amber-400 truncate">
-          🕒 Outages: None
-        </div>
-
-        <div id="svg-history-ping" class="w-full h-36 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
-      </div>
-
-      <div class="card rounded-2xl p-3.5 space-y-2.5">
-        <div class="flex flex-wrap justify-between items-center gap-2">
-          <span class="text-xs font-bold text-emerald-400">📊 30-DAY USAGE</span>
-          <div class="flex items-center gap-1.5 text-[11px] font-mono">
-            <span id="pill-month-rx" class="px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-400">↓ 0.00 GB</span>
-            <span id="pill-month-tx" class="px-2 py-0.5 rounded bg-indigo-950/90 text-indigo-400">↑ 0.00 GB</span>
+        <div class="card p-4 sm:p-5 space-y-3.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="pill-uptime" class="px-2.5 py-1 rounded-md bg-emerald-950/60 text-emerald-400 border border-emerald-900/60">● Uptime: 100.0%</span>
+              <span id="pill-avg" class="px-2.5 py-1 rounded-md bg-sky-950/60 text-sky-400 border border-sky-900/60">⚡ Avg: -- ms</span>
+              <span id="pill-down" class="px-2.5 py-1 rounded-md bg-rose-950/60 text-rose-400 border border-rose-900/60">● Down: 0m</span>
+            </div>
+            <span id="pill-outage-windows" class="text-[11px] text-slate-400 truncate">Outages: None</span>
           </div>
+
+          <div id="svg-history-ping" class="w-full h-48 bg-[#070b12] rounded-xl overflow-hidden border border-[#141d2e]"></div>
         </div>
-        <div id="svg-daily-bw" class="w-full h-40 bg-[#090d16] rounded-xl overflow-hidden border border-slate-800/70"></div>
       </div>
     </section>
 
-    <!-- COMPACT TERMINAL CONSOLE -->
-    <section dir="ltr" class="w-full text-left">
-      <div class="putty-win rounded-2xl overflow-hidden flex flex-col">
-        <div class="bg-[#0d131f] border-b border-slate-800/80 px-3 py-2 flex items-center justify-between">
-          <div class="flex items-center gap-1.5 truncate">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+    <!-- TERMINAL CONSOLE -->
+    <section dir="ltr" class="w-full text-left pt-1">
+      <div class="putty-win overflow-hidden flex flex-col">
+        <div class="bg-[#0b101b] border-b border-[#182235] px-3.5 py-2 flex items-center justify-between">
+          <div class="flex items-center gap-2 truncate">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
             <span id="putty-title" class="text-[11px] font-bold text-slate-300 truncate">root@Master</span>
+            <span id="top-server-clock" class="text-[10px] font-mono text-slate-500">--:--:--</span>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
-            <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/70">⚡ 10s</button>
-            <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 hover:text-white">📥 Log</button>
-            <button onclick="fetchState()" class="text-xs text-slate-400 hover:text-white px-1">🔄</button>
+            <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#131d31] text-sky-400 border border-[#1f2e4a]">⚡ 10s</button>
+            <button onclick="downloadLogs24h()" class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#0f1726] border border-[#1c283d] text-slate-300 hover:text-white">📥 Log</button>
+            <button onclick="fetchState()" class="text-xs text-slate-400 hover:text-white px-1">↻</button>
             <button onclick="sendCmd('clear')" class="text-[10px] text-slate-400 hover:text-white px-1">clear</button>
-            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-800 text-sky-400">▼</button>
+            <button onclick="toggleMobileConsole()" id="console-toggle-btn" class="text-xs font-bold px-1.5 py-0.5 rounded bg-[#0f1726] text-sky-400">▼</button>
           </div>
         </div>
 
-        <div id="putty-body" class="flex flex-col h-[170px] sm:h-[200px]">
+        <div id="putty-body" class="flex flex-col h-[165px] sm:h-[190px]">
           <div id="putty-box" class="flex-1 p-3 overflow-y-auto text-[11px] text-emerald-400 space-y-0.5 leading-relaxed select-text text-left"></div>
-          <div class="bg-[#090d16] border-t border-slate-800/80 px-3 py-1.5 flex items-center gap-2">
-            <span class="text-[11px] font-bold shrink-0" style="color: var(--accent)">#</span>
-            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none text-left">
-            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 font-semibold">Run</button>
+          <div class="bg-[#070b12] border-t border-[#182235] px-3 py-1.5 flex items-center gap-2">
+            <span class="text-[11px] font-bold shrink-0 text-sky-400">#</span>
+            <input id="putty-input" onkeydown="if(event.key==='Enter') runConsoleInput()" placeholder="help, status, bbr, pin, clear..." class="flex-1 bg-transparent border-0 text-xs text-slate-100 focus:outline-none text-left p-0">
+            <button onclick="runConsoleInput()" class="px-2.5 py-1 rounded bg-[#131d31] hover:bg-[#1c2b47] text-[11px] text-slate-200 font-semibold">Run</button>
           </div>
         </div>
       </div>
@@ -540,19 +519,19 @@
 
   <!-- HELP MODAL -->
   <div id="help-modal" onclick="if(event.target.id==='help-modal') closeHelpModal()" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div id="help-modal-card" class="card max-w-sm w-full rounded-2xl p-4 border border-slate-700 space-y-2.5 shadow-2xl">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+    <div id="help-modal-card" class="card max-w-sm w-full p-4 border border-[#22324d] space-y-2.5 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-[#182235] pb-2">
         <h4 id="help-modal-title" class="text-xs sm:text-sm font-bold text-sky-400">Info</h4>
         <button onclick="closeHelpModal()" class="text-slate-400 hover:text-white font-bold text-base leading-none">✕</button>
       </div>
       <p id="help-modal-body" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></p>
       <div class="pt-1 text-right">
-        <button id="help-modal-btn" onclick="closeHelpModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700">Got it</button>
+        <button id="help-modal-btn" onclick="closeHelpModal()" class="btn-blue px-4 py-1.5 text-xs">متوجه شدم</button>
       </div>
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.7.1"></script>
-  <script src="/app.js?v=2.7.1"></script>
+  <script src="/i18n.js?v=2.7.2"></script>
+  <script src="/app.js?v=2.7.2"></script>
 </body>
 </html>

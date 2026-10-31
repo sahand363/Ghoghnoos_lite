@@ -81,7 +81,7 @@ func (t *throttledWriter) Write(p []byte) (int, error) {
 			t.bucket.bytesSentThisSec = 0
 			t.bucket.lastSecStart = now
 		}
-		windowLimit := t.bucket.bytesLimitPerSec / 4 // 250ms smooth window
+		windowLimit := t.bucket.bytesLimitPerSec / 4
 		if windowLimit < 16384 {
 			windowLimit = 16384
 		}
@@ -247,7 +247,7 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 	defer tlsConn.Close()
 
 	keyBytes := make([]byte, 16)
-	rand.Read(keyBytes)
+	_, _ = rand.Read(keyBytes)
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 
 	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nX-Target-Port: %s\r\n\r\n",
@@ -271,8 +271,8 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
-		br.Read(buf)
-		client.Write(buf)
+		_, _ = br.Read(buf)
+		_, _ = client.Write(buf)
 	}
 
 	mbLimit := parseSpeedLimit(t.SpeedLimit)
@@ -280,8 +280,8 @@ func handleWSSClientConn(client net.Conn, t Tunnel, targetPort string) {
 	rxW := newThrottledWriter(client, &appRxBytes, mbLimit)
 
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(txW, client); done <- struct{}{} }()
-	go func() { io.Copy(rxW, tlsConn); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(txW, client); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(rxW, tlsConn); done <- struct{}{} }()
 	<-done
 }
 
@@ -296,7 +296,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 
 	parts := strings.Fields(firstLine)
 	if len(parts) < 2 || parts[1] != t.WSPath {
-		conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>200 OK</h1></body></html>"))
+		_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>200 OK</h1></body></html>"))
 		return
 	}
 
@@ -319,7 +319,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 				if json.Unmarshal(decoded, &hb) == nil {
 					rep := processIncomingEnroll(hb)
 					b, _ := json.Marshal(rep)
-					conn.Write(append(b, '\n'))
+					_, _ = conn.Write(append(b, '\n'))
 					return
 				}
 			}
@@ -327,7 +327,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	}
 
 	if strings.HasPrefix(targetPort, "probe:") {
-		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
+		_, _ = conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
 		return
 	}
 
@@ -337,11 +337,11 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	}
 	defer target.Close()
 
-	conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
+	_, _ = conn.Write([]byte(fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", computeWSAccept(wsKey))))
 	if br.Buffered() > 0 {
 		buf := make([]byte, br.Buffered())
-		br.Read(buf)
-		target.Write(buf)
+		_, _ = br.Read(buf)
+		_, _ = target.Write(buf)
 	}
 
 	mbLimit := parseSpeedLimit(t.SpeedLimit)
@@ -349,7 +349,7 @@ func handleWSSServerConn(conn net.Conn, t Tunnel, defaultPort string) {
 	rxW := newThrottledWriter(conn, &appTxBytes, mbLimit)
 
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(txW, conn); done <- struct{}{} }()
-	go func() { io.Copy(rxW, target); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(txW, conn); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(rxW, target); done <- struct{}{} }()
 	<-done
 }

@@ -37,15 +37,16 @@
     .range-pill-wrap { background-color: #0b101b; border: 1px solid #182235; border-radius: 0.6rem; padding: 2px; display: inline-flex; gap: 2px; }
     .range-pill { padding: 4px 10px; border-radius: 0.45rem; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #64748b; transition: all 0.15s; }
     .range-pill.active { background-color: #162236; color: #f8fafc; }
+    .digital-clock-box { background: linear-gradient(180deg, #0d1526 0%, #070b14 100%); border: 1px solid #1e2d47; box-shadow: inset 0 1px 6px rgba(0,0,0,0.7), 0 0 12px rgba(56, 189, 248, 0.08); }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
-  <!-- TOP NAVIGATION BAR (RTL BY DEFAULT, SEGMENTED PILL STYLE) -->
+  <!-- TOP NAVIGATION BAR (RTL BY DEFAULT, PROMINENT DIGITAL CLOCK + SEGMENTED PILL MENU) -->
   <header class="w-full bg-[#060911]/95 backdrop-blur-md border-b border-[#141d2e] sticky top-0 z-50">
     <div class="max-w-4xl w-full mx-auto px-3 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5">
 
-      <!-- Segmented Navigation Pill (Starts Right-to-Left in RTL) -->
+      <!-- Segmented Navigation Pill (Right-to-Left in RTL) -->
       <nav class="nav-pill-wrap flex items-center gap-1 order-1">
         <button onclick="setTab('servers', true)" id="tab-servers" class="tab-btn active-tab px-3.5 py-1.5 text-xs font-semibold flex items-center gap-2">
           <svg class="w-3.5 h-3.5 text-sky-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="17" r="1" fill="currentColor"/></svg>
@@ -61,9 +62,17 @@
         </button>
       </nav>
 
-      <!-- Action Controls (Server Selector, Update, Lang, Nut Config Icon, Logout) -->
-      <div class="flex items-center gap-1.5 order-2" dir="ltr">
-        <div class="flex items-center bg-[#0b101b] border border-[#182235] rounded-lg px-2.5 py-1.5">
+      <!-- Prominent Digital Server Clock & Action Controls -->
+      <div class="flex flex-wrap items-center gap-2 order-2" dir="ltr">
+        <!-- BIG NUMERIC DIGITAL SERVER CLOCK -->
+        <div class="digital-clock-box rounded-xl px-3 py-1 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+          <span id="top-server-clock" class="font-mono text-sm sm:text-base font-bold tracking-widest text-sky-400">--:--:--</span>
+          <span id="clock-tz-label" class="text-[10px] font-mono text-slate-400 uppercase hidden sm:inline">UTC</span>
+        </div>
+
+        <!-- Server Selector Dropdown -->
+        <div class="flex items-center bg-[#0b101b] border border-[#182235] rounded-xl px-2.5 py-1.5">
           <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5"></span>
           <select id="top-server-select" onchange="changeSelectedServer(this.value)" class="bg-transparent border-0 text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[95px] sm:max-w-[130px] truncate p-0">
             <option value="local">Master</option>
@@ -88,7 +97,6 @@
 
     <!-- TAB 1: SERVERS -->
     <section id="view-servers" class="space-y-5">
-      <!-- Top Enrollment & Probe Card -->
       <div class="card p-4 sm:p-5 space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
           <div class="sm:col-span-4">
@@ -114,7 +122,6 @@
           </div>
         </div>
 
-        <!-- Compact One-Liner Preview Row -->
         <div class="flex items-center gap-2 bg-[#070b12] border border-[#141d2e] rounded-lg px-3 py-2" dir="ltr">
           <span class="text-[11px] font-mono text-emerald-400 truncate flex-1 select-all" id="enroll-cmd-box">Loading...</span>
           <button type="button" onclick="rotateEnrollToken()" class="text-[11px] font-mono text-slate-400 hover:text-sky-400 shrink-0 flex items-center gap-1">
@@ -123,7 +130,6 @@
           <button type="button" onclick="showHelpModal('enroll')" class="help-btn">?</button>
         </div>
 
-        <!-- Step 2: Compact Forward Probe Row -->
         <div class="pt-3 border-t border-[#141d2e] flex flex-col sm:flex-row sm:items-center gap-2.5">
           <div class="flex items-center gap-1.5 shrink-0">
             <span class="micro-label text-emerald-400" data-i18n="rv_title">۲. کاوشگر مستقیم مستر (Listen-Only)</span>
@@ -138,7 +144,6 @@
         </div>
       </div>
 
-      <!-- Divider & Registered Agents Header -->
       <div class="border-t border-[#141d2e] pt-4 space-y-3">
         <div class="flex items-center justify-between px-0.5">
           <div class="flex items-center gap-2">
@@ -148,7 +153,6 @@
           <span id="app-version-badge" class="text-[11px] font-mono text-slate-500">v2.7.0</span>
         </div>
 
-        <!-- Horizontal Server Rows (Matching Screenshot 1) -->
         <div class="space-y-2.5" id="server-cards-list"></div>
       </div>
     </section>
@@ -252,7 +256,6 @@
 
     <!-- TAB 3: TUNNELS (MASTER -> SINGLE AGENT DROPDOWN) -->
     <section id="view-tunnels" class="hidden space-y-4">
-      <!-- Transport Engine Selector -->
       <div class="card p-4 space-y-3">
         <div class="flex items-center justify-between">
           <span class="micro-label" data-i18n="step1_method">۱. انتخاب موتور تانل</span>
@@ -318,7 +321,6 @@
         </div>
       </div>
 
-      <!-- Bridge Form Card -->
       <div class="card p-4 sm:p-5 space-y-4">
         <div class="flex justify-between items-center border-b border-[#141d2e] pb-2.5">
           <div class="flex items-center gap-2">
@@ -405,16 +407,15 @@
         <button onclick="saveTunnel()" id="btn-save-tunnel" class="btn-blue w-full py-2.5 text-xs" data-i18n="create">+ برقراری تانل جدید</button>
       </div>
 
-      <!-- Active Tunnels List -->
       <div class="border-t border-[#141d2e] pt-4 space-y-2.5">
         <span class="micro-label px-0.5 block" data-i18n="active_tunnels">تانل‌های فعال</span>
         <div id="tunnel-list" class="space-y-2.5"></div>
       </div>
     </section>
 
-    <!-- TAB 4: ANALYTICS (MATCHING SCREENSHOT 2 + FULL 24H/7D PING CHART FOR SELECTED SERVER) -->
+    <!-- TAB 4: ANALYTICS (SERVER-SPECIFIC CHARTS: 7D/30D USAGE, FULL-WIDTH 30M SPEED, 24H/7D PING) -->
     <section id="view-logs" class="hidden space-y-5" dir="ltr">
-      <!-- Minimal System Resource Strip -->
+      <!-- Minimal System Resource Strip for Selected Server -->
       <div class="grid grid-cols-3 gap-3">
         <div class="card p-3.5 flex items-center justify-between">
           <span class="micro-label">CPU</span>
@@ -430,18 +431,18 @@
         </div>
       </div>
 
-      <!-- Daily Bandwidth Chart Section (Exact Style of Screenshot 2) -->
+      <!-- 1. Daily Bandwidth Chart Section (Exact Style of Screenshot 2) -->
       <div class="space-y-2.5">
         <div class="flex flex-wrap items-center justify-between gap-2 px-1">
           <div class="flex items-center gap-5 text-xs sm:text-sm font-bold">
             <div class="flex items-center gap-1.5">
               <span class="text-emerald-400 font-mono">↓</span>
-              <span class="text-slate-200" data-i18n="dl_lbl">Download:</span>
+              <span class="text-slate-200" data-i18n="dl_lbl">دانلود:</span>
               <span id="pill-month-rx" class="text-white font-mono">0.0 GB</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="text-sky-400 font-mono">↑</span>
-              <span class="text-slate-200" data-i18n="ul_lbl">Upload:</span>
+              <span class="text-slate-200" data-i18n="ul_lbl">آپلود:</span>
               <span id="pill-month-tx" class="text-white font-mono">0.0 GB</span>
             </div>
           </div>
@@ -457,11 +458,32 @@
         </div>
       </div>
 
-      <!-- Big 24H / 7D Ping & Offline History Chart (Selected Server Only) -->
+      <!-- 2. Full-Width 30-Minute Live Internet Speed / Throughput Chart -->
+      <div class="space-y-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div class="flex items-center gap-2">
+            <span class="micro-label text-slate-200" data-i18n="tp_chart_title">سرعت و پهنای باند لحظه‌ای سرور (۳۰ دقیقه اخیر)</span>
+            <span id="tp-target-srv-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-[#131d31] text-indigo-400 border border-[#1f2e4a]">Master</span>
+          </div>
+          <span id="recent-tp-val" class="text-xs font-bold font-mono text-indigo-400">↓ 0.00 Mbps | ↑ 0.00 Mbps (0.00 MB/s)</span>
+        </div>
+
+        <div class="card p-4 sm:p-5 space-y-2">
+          <div id="svg-recent-tp" class="w-full h-48 bg-[#070b12] rounded-xl overflow-hidden border border-[#141d2e]"></div>
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+            <span>-30m</span>
+            <span>-20m</span>
+            <span>-10m</span>
+            <span class="text-indigo-400 font-bold">Now</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Full-Width 24H / 7D Ping & Uptime History Chart (Selected Server Only) -->
       <div class="space-y-2.5">
         <div class="flex flex-wrap items-center justify-between gap-2 px-1">
           <div class="flex flex-wrap items-center gap-2.5">
-            <span class="micro-label text-slate-200" data-i18n="ping_hist_title">SELECTED SERVER PING & UPTIME HISTORY</span>
+            <span class="micro-label text-slate-200" data-i18n="ping_hist_title">تاریخچه پینگ و آپتایم سرور انتخاب‌شده</span>
             <span id="ping-target-srv-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-[#131d31] text-sky-400 border border-[#1f2e4a]">Master</span>
           </div>
 
@@ -493,7 +515,6 @@
           <div class="flex items-center gap-2 truncate">
             <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
             <span id="putty-title" class="text-[11px] font-bold text-slate-300 truncate">root@Master</span>
-            <span id="top-server-clock" class="text-[10px] font-mono text-slate-500">--:--:--</span>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <button id="btn-poll-rate" onclick="togglePollRate()" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#131d31] text-sky-400 border border-[#1f2e4a]">⚡ 10s</button>
@@ -531,7 +552,7 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=2.7.2"></script>
-  <script src="/app.js?v=2.7.2"></script>
+  <script src="/i18n.js?v=2.7.3"></script>
+  <script src="/app.js?v=2.7.3"></script>
 </body>
 </html>

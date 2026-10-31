@@ -3,7 +3,6 @@ let currentTheme = 'cyan';
 let currentTab = 'servers';
 let selectedServer = 'local';
 let selectedMethod = 'wss';
-let deployMode = 'ssh';
 let enrollToken = '';
 let masterIP = '';
 let ctrlL4 = '6005';
@@ -18,7 +17,6 @@ let sysMetrics = {};
 let pingResults = {};
 let initialLoaded = false;
 let userEditedName = false;
-let userEditedSrvName = false;
 let userEditedEnrollName = false;
 let consoleCollapsed = false;
 let historyRange = '24h';
@@ -36,8 +34,6 @@ function getNextDefaultServerName() {
 
 function syncDefaultServerNames() {
   const nextName = getNextDefaultServerName();
-  const srvIn = el('srv-name');
-  if (srvIn && !userEditedSrvName) srvIn.placeholder = nextName;
   const enrIn = el('enroll-node-name');
   if (enrIn && !userEditedEnrollName) enrIn.value = nextName;
   updateEnrollCommandUI();
@@ -85,24 +81,6 @@ async function triggerSelfUpdate(targetId) {
   setTimeout(() => { if (srvId === 'local') window.location.reload(); else fetchState(); }, 4500);
 }
 
-function setDeployMode(mode) {
-  deployMode = mode;
-  const bSsh = el('btn-mode-ssh'), bEnr = el('btn-mode-enroll');
-  const boxSsh = el('box-deploy-ssh'), boxEnr = el('box-deploy-enroll');
-  if (mode === 'enroll') {
-    if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
-    if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
-    boxSsh?.classList.add('hidden');
-    boxEnr?.classList.remove('hidden');
-    syncDefaultServerNames();
-  } else {
-    if (bSsh) bSsh.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition';
-    if (bEnr) bEnr.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
-    boxSsh?.classList.remove('hidden');
-    boxEnr?.classList.add('hidden');
-  }
-}
-
 function updateEnrollCommandUI() {
   const addrIn = el('enroll-master-addr');
   const defaultSpec = `${masterIP || window.location.hostname}:${ctrlL4}:${ctrlDirect}:${ctrlWSS}:${ctrlGRPC}`;
@@ -132,27 +110,37 @@ function copyTextSilent(text) {
   });
 }
 
+async function rotateEnrollToken() {
+  try {
+    const res = await fetch('/api/enroll/token', { method: 'POST' });
+    const data = await res.json();
+    if (data.enroll_token) {
+      enrollToken = data.enroll_token;
+      updateEnrollCommandUI();
+    }
+  } catch (e) {}
+}
+
 async function copyEnrollCommand() {
   const cmd = el('enroll-cmd-box')?.innerText || '';
   if (!cmd) return;
   await copyTextSilent(cmd);
+  await rotateEnrollToken();
   const btn = el('btn-copy-enroll');
   if (btn) {
-    const oldText = btn.innerText;
     const oldBg = btn.style.background;
     btn.style.background = '#10b981';
-    btn.innerText = lang === 'fa' ? '✅ کپی شد! در ترمینال سرور دیده‌بان پیست کنید' : '✅ Copied to Clipboard!';
+    btn.innerText = lang === 'fa'
+      ? '✅ کپی شد و توکن امنیتی برای دفعه بعد تغییر کرد!'
+      : '✅ Copied to Clipboard & Token Rotated!';
     setTimeout(() => {
       btn.style.background = oldBg || 'var(--accent)';
-      btn.innerText = oldText;
+      const map = (typeof dict !== 'undefined' && (dict[lang] || dict.en)) ? (dict[lang] || dict.en) : null;
+      btn.innerText = map && map.btn_copy_enroll
+        ? map.btn_copy_enroll
+        : '📋 Copy Reverse Enrollment One-Liner (Auto-Rotates Token)';
     }, 2500);
   }
-}
-
-async function rotateEnrollToken() {
-  const res = await fetch('/api/enroll/token', { method: 'POST' });
-  const data = await res.json();
-  if (data.enroll_token) { enrollToken = data.enroll_token; updateEnrollCommandUI(); }
 }
 
 async function startRendezvousFromBox() {
@@ -278,25 +266,6 @@ async function savePrefsToServer() {
 }
 
 async function enableBBR() { await fetch('/api/bbr?server_id=' + selectedServer, { method: 'POST' }); fetchState(); }
-
-async function addAndDeployServer() {
-  const payload = {
-    name: (el('srv-name')?.value || '').trim() || getNextDefaultServerName(),
-    ip: (el('srv-ip')?.value || '').trim(),
-    ssh_port: (el('srv-port')?.value || '').trim() || '22',
-    ssh_user: (el('srv-user')?.value || '').trim() || 'root',
-    ssh_pass: el('srv-pass')?.value || ''
-  };
-  if (!payload.ip) return alert('Please enter Server IP');
-  userEditedSrvName = false;
-  if (el('srv-name')) el('srv-name').value = '';
-  if (el('srv-ip')) el('srv-ip').value = '';
-  if (el('srv-pass')) el('srv-pass').value = '';
-  await fetch('/api/servers', { method: 'POST', body: JSON.stringify(payload) });
-  fetchState();
-}
-
-async function redeployServer(id) { await fetch('/api/servers/deploy?id=' + id, { method: 'POST' }); fetchState(); }
 
 async function deleteServer(id) {
   if (!confirm('Remove this server AND completely uninstall Sentinel from the remote host?')) return;
@@ -567,7 +536,6 @@ function renderServers() {
       <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
       ${probeBtn}
       <button id="btn-upd-${s.id}" onclick="triggerSelfUpdate('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Update Server Binary from GitHub">⬆️ Update</button>
-      <button onclick="redeployServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/70 hover:bg-sky-900 text-xs font-semibold">🔄 SSH</button>
       <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">🌐 Info</a></div>
       ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
   }).join(''));

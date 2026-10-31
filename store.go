@@ -119,7 +119,6 @@ type ConfigReq struct {
 	CtrlMethods string `json:"ctrl_methods"`
 }
 
-// Shared Per-Tunnel Token Bucket so multi-stream speedtests cannot bypass SpeedLimit
 type SharedRateLimiter struct {
 	mu         sync.Mutex
 	rateBps    float64
@@ -167,7 +166,7 @@ func (l *SharedRateLimiter) WaitBytes(n int) {
 	elapsed := now.Sub(l.lastUpdate).Seconds()
 	if elapsed > 0 {
 		l.tokens += elapsed * l.rateBps
-		maxBurst := l.rateBps * 0.25 // 250ms max burst window
+		maxBurst := l.rateBps * 0.25
 		if maxBurst < 65536 {
 			maxBurst = 65536
 		}
@@ -426,7 +425,7 @@ func loadDBFromDisk(port string) {
 		db.Prefs.Theme = "cyan"
 	}
 	if db.Prefs.Lang == "" {
-		db.Prefs.Lang = "en"
+		db.Prefs.Lang = "fa"
 	}
 	if db.Prefs.ActiveTab == "" {
 		db.Prefs.ActiveTab = "servers"

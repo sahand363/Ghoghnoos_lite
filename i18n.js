@@ -29,6 +29,7 @@ const dict = {
     create: '+ برقراری تانل جدید',
     active_tunnels: 'تانل‌های فعال',
     dl_lbl: 'دانلود:', ul_lbl: 'آپلود:',
+    tp_chart_title: 'سرعت و پهنای باند لحظه‌ای سرور (۳۰ دقیقه اخیر)',
     ping_hist_title: 'تاریخچه پینگ و آپتایم سرور انتخاب‌شده'
   },
   en: {
@@ -61,6 +62,7 @@ const dict = {
     create: '+ Establish Tunnel',
     active_tunnels: 'ACTIVE TUNNELS',
     dl_lbl: 'Download:', ul_lbl: 'Upload:',
+    tp_chart_title: 'LIVE SERVER INTERNET SPEED (LAST 30 MINUTES)',
     ping_hist_title: 'SELECTED SERVER PING & UPTIME HISTORY'
   }
 };

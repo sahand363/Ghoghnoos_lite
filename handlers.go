@@ -19,12 +19,24 @@ func buildPingSummary(all []PingPoint, targetSrvID, rangeStr string) map[string]
 	if rangeStr == "7d" {
 		rangeSec = 7 * 86400
 	}
+
 	var srvHist []PingPoint
 	for _, p := range all {
-		if targetSrvID == "" || targetSrvID == "local" || p.ServerID == "" || p.ServerID == targetSrvID {
-			srvHist = append(srvHist, p)
+		if targetSrvID != "" && targetSrvID != "local" {
+			if p.ServerID == targetSrvID {
+				srvHist = append(srvHist, p)
+			}
+		} else {
+			if p.ServerID == "" || p.ServerID == "local" {
+				srvHist = append(srvHist, p)
+			}
 		}
 	}
+	// If Master ("local") is selected and all tunnels target remote agents, show Master's outbound tunnel pings
+	if (targetSrvID == "" || targetSrvID == "local") && len(srvHist) == 0 {
+		srvHist = all
+	}
+
 	last20 := srvHist
 	if len(last20) > 20 {
 		last20 = last20[len(last20)-20:]
@@ -85,10 +97,32 @@ func buildPingSummary(all []PingPoint, targetSrvID, rangeStr string) map[string]
 	if len(filtered) > 0 {
 		uptimePct = fmt.Sprintf("%.1f", float64(okCnt)*100.0/float64(len(filtered)))
 	}
-	chartPts := filtered
-	if len(chartPts) > 90 {
-		chartPts = chartPts[len(chartPts)-90:]
+
+	// Evenly downsample across the entire 24h / 7d window while preserving any offline failure points
+	var chartPts []PingPoint
+	maxPts := 120
+	if len(filtered) <= maxPts {
+		chartPts = filtered
+	} else {
+		step := float64(len(filtered)-1) / float64(maxPts-1)
+		for i := 0; i < maxPts; i++ {
+			idx := int(float64(i) * step)
+			pt := filtered[idx]
+			// Check if any point in this bucket failed so outages are never hidden by downsampling
+			nextIdx := int(float64(i+1) * step)
+			if nextIdx > len(filtered) {
+				nextIdx = len(filtered)
+			}
+			for j := idx; j < nextIdx; j++ {
+				if !filtered[j].OK {
+					pt = filtered[j]
+					break
+				}
+			}
+			chartPts = append(chartPts, pt)
+		}
 	}
+
 	return map[string]interface{}{
 		"reach_str":    reachStr,
 		"uptime_pct":   uptimePct,

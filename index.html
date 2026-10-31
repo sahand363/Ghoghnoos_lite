@@ -39,7 +39,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <span class="font-bold tracking-wide text-xs sm:text-sm leading-none">Ghoghnoos Tunnel</span>
-            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.6.0</span>
+            <span id="app-version-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/80 font-bold">v2.7.0</span>
           </div>
           <span class="text-[10px] text-slate-400 font-mono hidden sm:inline">4-Engine Stealth Relay</span>
         </div>
@@ -96,50 +96,18 @@
 
     <div class="w-full">
 
-      <!-- TAB 1: SERVERS -->
+      <!-- TAB 1: SERVERS (REVERSE ENROLLMENT & BIDIRECTIONAL RENDEZVOUS ONLY) -->
       <section id="view-servers" class="space-y-4 sm:space-y-5">
         <div class="card rounded-2xl p-4 sm:p-6 space-y-4">
           <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
             <div>
               <h3 class="font-bold text-sm sm:text-base" data-i18n="add_srv_title">Connect Remote Server & Deploy Sentinel</h3>
-              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Choose Direct SSH Push or Bidirectional Rendezvous (when SSH is filtered).</p>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="add_srv_sub">Enroll remote Sentinel nodes via Reverse Dial-In or Bidirectional Rendezvous (Token auto-rotates on copy).</p>
             </div>
-            <div class="flex items-center gap-1.5 bg-[#080d14] p-1 rounded-xl border border-slate-800">
-              <button type="button" id="btn-mode-ssh" onclick="setDeployMode('ssh')" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black transition" data-i18n="mode_ssh_btn">🚀 Method A: SSH Push</button>
-              <button type="button" id="btn-mode-enroll" onclick="setDeployMode('enroll')" class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition" data-i18n="mode_enroll_btn">🔑 Method B: Reverse / Rendezvous</button>
-            </div>
+            <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 font-mono">🔑 Reverse / Rendezvous</span>
           </div>
 
-          <!-- METHOD A: DIRECT SSH PUSH -->
-          <div id="box-deploy-ssh" class="space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_name">Server Name</label>
-                <input id="srv-name" oninput="userEditedSrvName=true" placeholder="Server-2" class="w-full rounded-lg p-2.5 text-xs">
-              </div>
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_ip">Server IP Address</label>
-                <input id="srv-ip" placeholder="e.g. 203.0.113.10" class="w-full rounded-lg p-2.5 text-xs font-mono">
-              </div>
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_port">SSH Port</label>
-                <input id="srv-port" value="22" placeholder="22" class="w-full rounded-lg p-2.5 text-xs font-mono">
-              </div>
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_user">SSH Username</label>
-                <input id="srv-user" value="root" placeholder="root" class="w-full rounded-lg p-2.5 text-xs">
-              </div>
-              <div>
-                <label class="text-xs text-slate-400 block mb-1" data-i18n="srv_pass">SSH Password</label>
-                <input id="srv-pass" type="password" placeholder="••••••••••••" class="w-full rounded-lg p-2.5 text-xs">
-              </div>
-            </div>
-
-            <button onclick="addAndDeployServer()" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_deploy">🚀 Connect via SSH & Deploy Sentinel (0% ➔ 100%)</button>
-          </div>
-
-          <!-- METHOD B: REVERSE DIAL-IN & BIDIRECTIONAL RENDEZVOUS -->
-          <div id="box-deploy-enroll" class="hidden space-y-4">
+          <div id="box-deploy-enroll" class="space-y-4">
             <div class="bg-[#080d14] p-3.5 rounded-xl border border-sky-500/30 space-y-2">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5 text-xs font-bold text-sky-400">
@@ -170,7 +138,7 @@
               <div class="bg-[#05080d] border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400 break-all select-all text-left" dir="ltr" id="enroll-cmd-box">Loading token...</div>
             </div>
 
-            <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy Reverse Enrollment One-Liner Command</button>
+            <button type="button" onclick="copyEnrollCommand()" id="btn-copy-enroll" class="w-full text-black font-bold py-2.5 rounded-xl text-xs sm:text-sm transition" style="background: var(--accent);" data-i18n="btn_copy_enroll">📋 Copy Reverse Enrollment One-Liner (Auto-Rotates Token)</button>
 
             <!-- STEP 2: MASTER FORWARD RENDEZVOUS PROBER -->
             <div class="bg-[#080d14] p-3.5 rounded-xl border border-emerald-500/30 space-y-3 pt-3">

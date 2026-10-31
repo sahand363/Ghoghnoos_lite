@@ -49,11 +49,11 @@ function updatePollRateUI() {
   const btn = el('btn-poll-rate');
   if (!btn) return;
   if (pollIntervalMs === 10000) {
-    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/80 hover:scale-105 transition';
-    btn.innerText = '⚡ 10s Live';
+    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800/70';
+    btn.innerText = '⚡ 10s';
   } else {
-    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800/80 hover:scale-105 transition';
-    btn.innerText = '🐢 5m Eco';
+    btn.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800/70';
+    btn.innerText = '🐢 5m';
   }
 }
 
@@ -72,8 +72,8 @@ async function triggerSelfUpdate(targetId) {
   const srvId = targetId || selectedServer;
   const btn = el(targetId ? `btn-upd-${targetId}` : 'btn-self-update');
   if (btn) {
-    btn.className = 'px-2.5 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse';
-    btn.innerHTML = '⏳ Updating...';
+    btn.className = 'px-2 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse';
+    btn.innerHTML = '⏳';
   }
   try {
     await fetch('/api/update?server_id=' + srvId, { method: 'POST' });
@@ -130,22 +130,18 @@ async function copyEnrollCommand() {
   if (btn) {
     const oldBg = btn.style.background;
     btn.style.background = '#10b981';
-    btn.innerText = lang === 'fa'
-      ? '✅ کپی شد و توکن امنیتی برای دفعه بعد تغییر کرد!'
-      : '✅ Copied to Clipboard & Token Rotated!';
+    btn.innerText = lang === 'fa' ? '✅ کپی شد و توکن تغییر کرد!' : '✅ Copied & Token Rotated!';
     setTimeout(() => {
       btn.style.background = oldBg || 'var(--accent)';
       const map = (typeof dict !== 'undefined' && (dict[lang] || dict.en)) ? (dict[lang] || dict.en) : null;
-      btn.innerText = map && map.btn_copy_enroll
-        ? map.btn_copy_enroll
-        : '📋 Copy Reverse Enrollment One-Liner (Auto-Rotates Token)';
-    }, 2500);
+      btn.innerText = map && map.btn_copy_enroll ? map.btn_copy_enroll : '📋 Copy One-Liner (Auto-Rotates Token)';
+    }, 2200);
   }
 }
 
 async function startRendezvousFromBox() {
   const ip = (el('rv-target-ip')?.value || '').trim();
-  if (!ip) return alert('Please enter the Remote Sentinel IP Address');
+  if (!ip) return alert('Enter the Remote Agent IP Address');
   const name = (el('enroll-node-name')?.value || getNextDefaultServerName()).trim();
   if (el('rv-target-ip')) el('rv-target-ip').value = '';
   userEditedEnrollName = false;
@@ -167,55 +163,45 @@ function stepSpeed(delta) {
 
 function updateSpeedBadge() {
   const val = parseFloat(el('tun-speed')?.value) || 0;
-  setText('spd-badge', val <= 0 ? (lang === 'fa' ? 'نامحدود' : 'Unlimited') : `${val} MB/s (${(val * 8).toFixed(0)} Mbps)`);
+  setText('spd-badge', val <= 0 ? (lang === 'fa' ? 'نامحدود' : 'Unlimited') : `${val} MB/s`);
 }
 
 function selectTunnelMethod(m) {
   if (m === 'spoof' || m === 'tls') m = 'direct';
   selectedMethod = m || 'wss';
   ['wss', 'direct', 'forward', 'grpc'].forEach(k => {
-    const card = el('method-card-' + k), badge = el('badge-method-' + k);
+    const card = el('method-card-' + k);
+    if (!card) return;
     if (k === selectedMethod) {
-      if (card) card.className = 'p-3.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-2 transition';
-      if (badge) { badge.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800'; badge.innerText = 'SELECTED'; }
+      card.className = 'p-2.5 rounded-xl accent-border cursor-pointer flex flex-col justify-between gap-1.5 transition';
     } else {
-      if (card) card.className = 'p-3.5 rounded-xl border border-slate-800 bg-[#080d14]/80 cursor-pointer flex flex-col justify-between gap-2 transition hover:border-slate-700';
-      if (badge) { badge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400'; badge.innerText = 'READY'; }
+      card.className = 'p-2.5 rounded-xl border border-slate-800 bg-[#090d16]/70 cursor-pointer flex flex-col justify-between gap-1.5 transition';
     }
   });
   const rSniWrap = el('row-tls-sni-wrap');
   const rWsPath = el('row-ws-path');
   const rDirect = el('row-direct-opts');
-  const rForward = el('row-forward-opts');
-  const rGrpc = el('row-grpc-opts');
   const rPin = el('row-cert-pin');
 
   if (selectedMethod === 'forward') {
     rSniWrap?.classList.add('hidden');
+    rWsPath?.classList.add('hidden');
     rDirect?.classList.add('hidden');
-    rForward?.classList.remove('hidden');
-    rGrpc?.classList.add('hidden');
     rPin?.classList.add('hidden');
   } else if (selectedMethod === 'direct') {
     rSniWrap?.classList.remove('hidden');
     rWsPath?.classList.add('hidden');
     rDirect?.classList.remove('hidden');
-    rForward?.classList.add('hidden');
-    rGrpc?.classList.add('hidden');
     rPin?.classList.remove('hidden');
   } else if (selectedMethod === 'grpc') {
     rSniWrap?.classList.remove('hidden');
     rWsPath?.classList.add('hidden');
     rDirect?.classList.add('hidden');
-    rForward?.classList.add('hidden');
-    rGrpc?.classList.remove('hidden');
     rPin?.classList.remove('hidden');
   } else {
     rSniWrap?.classList.remove('hidden');
     rWsPath?.classList.remove('hidden');
     rDirect?.classList.add('hidden');
-    rForward?.classList.add('hidden');
-    rGrpc?.classList.add('hidden');
     rPin?.classList.remove('hidden');
   }
 }
@@ -227,13 +213,19 @@ function toggleMobileConsole() {
 }
 
 function setTab(t, persist) {
+  // Clicking the nut icon again returns to Servers tab
+  if (t === 'config' && currentTab === 'config' && persist) {
+    t = 'servers';
+  }
   currentTab = t;
   ['servers', 'config', 'tunnels', 'logs'].forEach(id => {
     el('view-' + id)?.classList.add('hidden');
     el('tab-' + id)?.classList.remove('active-tab');
+    el('mob-tab-' + id)?.classList.remove('active-tab');
   });
   el('view-' + t)?.classList.remove('hidden');
   el('tab-' + t)?.classList.add('active-tab');
+  el('mob-tab-' + t)?.classList.add('active-tab');
   if (persist) {
     savePrefsToServer();
     if (t === 'logs') fetchState();
@@ -242,16 +234,16 @@ function setTab(t, persist) {
 
 function setHistoryRange(r) {
   historyRange = r;
-  if (el('btn-range-24h')) el('btn-range-24h').className = r === '24h' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
-  if (el('btn-range-7d')) el('btn-range-7d').className = r === '7d' ? 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-black' : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400';
+  if (el('btn-range-24h')) el('btn-range-24h').className = r === '24h' ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-sky-500 text-black' : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-slate-400';
+  if (el('btn-range-7d')) el('btn-range-7d').className = r === '7d' ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-sky-500 text-black' : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-slate-400';
   fetchState();
 }
 
 function autoUpdateTunnelName() {
-  const nameIn = el('tun-name'), srcIn = el('tun-src-srv'), dstIn = el('tun-dst-srv');
-  if (!nameIn || !srcIn || !dstIn || (userEditedName && nameIn.value.trim() !== '')) return;
-  const srcObj = currentServers.find(s => s.id === srcIn.value), dstObj = currentServers.find(s => s.id === dstIn.value);
-  nameIn.value = `${srcObj ? srcObj.name.split(' ')[0] : 'Relay'}-to-${dstObj ? dstObj.name.split(' ')[0] : 'Exit'}`;
+  const nameIn = el('tun-name'), dstIn = el('tun-dst-srv');
+  if (!nameIn || !dstIn || (userEditedName && nameIn.value.trim() !== '')) return;
+  const dstObj = currentServers.find(s => s.id === dstIn.value);
+  nameIn.value = `Master-to-${dstObj ? dstObj.name.split(' ')[0] : 'Agent'}`;
 }
 
 function changeSelectedServer(srvId) {
@@ -268,7 +260,7 @@ async function savePrefsToServer() {
 async function enableBBR() { await fetch('/api/bbr?server_id=' + selectedServer, { method: 'POST' }); fetchState(); }
 
 async function deleteServer(id) {
-  if (!confirm('Remove this server AND completely uninstall Sentinel from the remote host?')) return;
+  if (!confirm('Remove this server AND uninstall Agent from the remote host?')) return;
   await fetch('/api/servers?id=' + id, { method: 'DELETE' });
   fetchState();
 }
@@ -307,7 +299,6 @@ function editTunnel(id) {
   selectTunnelMethod(t.method || 'wss');
   if (el('tun-id')) el('tun-id').value = t.id;
   if (el('tun-name')) el('tun-name').value = t.name || '';
-  if (t.source_server && el('tun-src-srv')) el('tun-src-srv').value = t.source_server;
   if (t.target_server && el('tun-dst-srv')) el('tun-dst-srv').value = t.target_server;
   if (el('tunnel-port')) el('tunnel-port').value = t.tunnel_port || '10201';
   if (el('inbound-ports')) el('inbound-ports').value = t.inbound_ports || '';
@@ -323,11 +314,11 @@ function editTunnel(id) {
 async function deleteTunnel(id) { await fetch('/api/tunnel?id=' + id, { method: 'DELETE' }); fetchState(); }
 
 async function pingTunnel(id) {
-  pingResults[id] = 'Testing...';
+  pingResults[id] = '...';
   renderTunnels();
   const res = await fetch('/api/ping?id=' + id);
   const data = await res.json();
-  pingResults[id] = data.ok ? `✅ ${data.ms} ms (OK)` : `❌ ${data.error || 'Failed'}`;
+  pingResults[id] = data.ok ? `✅ ${data.ms}ms` : `❌ ${data.error || 'Err'}`;
   renderTunnels();
   fetchState();
 }
@@ -340,14 +331,21 @@ async function saveTunnel() {
   let pathVal = (el('tun-path')?.value || '').trim() || '/ws';
   if (!pathVal.startsWith('/')) pathVal = '/' + pathVal;
   const cleanInbounds = cleanPortsInput(el('inbound-ports')?.value || '');
-  if (!cleanInbounds) return alert('Please enter at least one Inbound Port (e.g. 45454)');
+  if (!cleanInbounds) return alert('Enter at least one Inbound Port (e.g. 45454)');
   const payload = {
-    id: el('tun-id')?.value || '', name: (el('tun-name')?.value || '').trim() || 'Bridge', method: selectedMethod,
-    source_server: el('tun-src-srv')?.value || 'local', target_server: el('tun-dst-srv')?.value || 'local',
-    tunnel_port: cleanPortsInput(el('tunnel-port')?.value || '') || '10201', inbound_ports: cleanInbounds,
-    speed_limit: String(parseFloat(el('tun-speed')?.value) || 0), sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
-    fingerprint: el('tun-fp')?.value || 'chrome', frag_size: (el('tun-frag')?.value || '').trim() || '0',
-    ws_path: pathVal, cert_pin: (el('tun-pin')?.value || '').trim()
+    id: el('tun-id')?.value || '',
+    name: (el('tun-name')?.value || '').trim() || 'Bridge',
+    method: selectedMethod,
+    source_server: 'local', // Always Master
+    target_server: el('tun-dst-srv')?.value || 'local',
+    tunnel_port: cleanPortsInput(el('tunnel-port')?.value || '') || '10201',
+    inbound_ports: cleanInbounds,
+    speed_limit: String(parseFloat(el('tun-speed')?.value) || 0),
+    sni: (el('tun-sni')?.value || '').trim() || 'www.speedtest.net',
+    fingerprint: el('tun-fp')?.value || 'chrome',
+    frag_size: (el('tun-frag')?.value || '').trim() || '0',
+    ws_path: pathVal,
+    cert_pin: (el('tun-pin')?.value || '').trim()
   };
   await fetch('/api/tunnel', { method: 'POST', body: JSON.stringify(payload) });
   resetForm();
@@ -365,7 +363,7 @@ async function saveConfig() {
   if (el('chk-ctrl-wss')?.checked) methods.push('wss');
   if (el('chk-ctrl-direct')?.checked) methods.push('direct');
   if (el('chk-ctrl-l4')?.checked) methods.push('forward');
-  if (methods.length === 0) return alert('Please keep at least one Control Transport method checked!');
+  if (methods.length === 0) return alert('Keep at least one Control Port checked!');
   const ctrl_methods = methods.join(',');
 
   await fetch('/api/config?server_id=' + selectedServer, {
@@ -373,7 +371,7 @@ async function saveConfig() {
     body: JSON.stringify({ port, path, ctrl_l4, ctrl_direct, ctrl_wss, ctrl_grpc, ctrl_methods })
   });
   if (selectedServer === 'local') setTimeout(() => { window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}/${path}/`; }, 2000);
-  else alert('Remote Sentinel configuration updated!');
+  else alert('Agent configuration updated!');
 }
 
 function buildSVGChart(values, unit, strokeColor, gradId) {
@@ -385,14 +383,14 @@ function buildSVGChart(values, unit, strokeColor, gradId) {
   const pts = clean.map((v, idx) => `${(padL + (idx / (clean.length - 1)) * plotW).toFixed(1)},${(padT + plotH - ((v / maxVal) * plotH)).toFixed(1)}`).join(' ');
   const area = `${padL},${padT + plotH} ${pts} ${padL + plotW},${padT + plotH}`;
   return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
-    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.42"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.02"/></linearGradient></defs>
+    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.38"/><stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.02"/></linearGradient></defs>
     <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
     <text x="6" y="${padT + 4}" fill="#64748b" font-size="10" font-family="monospace">${topVal} ${unit}</text>
     <text x="6" y="${padT + plotH / 2 + 4}" fill="#64748b" font-size="10" font-family="monospace">${midVal} ${unit}</text>
     <text x="6" y="${padT + plotH + 3}" fill="#64748b" font-size="10" font-family="monospace">0 ${unit}</text>
-    <polygon points="${area}" fill="url(#${gradId})"/><polyline fill="none" stroke="${strokeColor}" stroke-width="2.4" points="${pts}"/></svg>`;
+    <polygon points="${area}" fill="url(#${gradId})"/><polyline fill="none" stroke="${strokeColor}" stroke-width="2.2" points="${pts}"/></svg>`;
 }
 
 function fmtShortTime(ts) {
@@ -414,8 +412,8 @@ function buildHistorySVGChart(points) {
   list.forEach((p, idx) => {
     if (!p.ok) {
       const cx = padL + idx * stepW, bw = Math.max(stepW * 1.15, 7), bx = Math.max(padL, cx - bw / 2);
-      redBars += `<rect x="${bx.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${plotH}" fill="rgba(244,63,94,0.28)"/>`;
-      redBars += `<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${padT + plotH}" stroke="#f43f5e" stroke-width="1.3" stroke-opacity="0.75"/>`;
+      redBars += `<rect x="${bx.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${plotH}" fill="rgba(244,63,94,0.25)"/>`;
+      redBars += `<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${padT + plotH}" stroke="#f43f5e" stroke-width="1.2" stroke-opacity="0.7"/>`;
     }
   });
 
@@ -424,7 +422,7 @@ function buildHistorySVGChart(points) {
   const tStart = fmtShortTime(list[0].ts), tMid = fmtShortTime(list[Math.floor(list.length / 2)].ts), tEnd = fmtShortTime(list[list.length - 1].ts);
 
   return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
-    <defs><linearGradient id="gradHist" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#38bdf8" stop-opacity="0.40"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/></linearGradient></defs>
+    <defs><linearGradient id="gradHist" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#38bdf8" stop-opacity="0.38"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/></linearGradient></defs>
     <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH / 2}" x2="${w - padR}" y2="${padT + plotH / 2}" stroke="#1e293b" stroke-dasharray="3,3"/>
     <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
@@ -446,8 +444,8 @@ function buildDailyBWChart(dailyUsage) {
     totRxMB += (d.rx_mb || 0);
     totTxMB += (d.tx_mb || 0);
   });
-  setText('pill-month-rx', `↓ 30d Rx: ${(totRxMB / 1024).toFixed(2)} GB`);
-  setText('pill-month-tx', `↑ 30d Tx: ${(totTxMB / 1024).toFixed(2)} GB`);
+  setText('pill-month-rx', `↓ ${(totRxMB / 1024).toFixed(2)} GB`);
+  setText('pill-month-tx', `↑ ${(totTxMB / 1024).toFixed(2)} GB`);
 
   const days = [];
   const now = new Date();
@@ -476,7 +474,7 @@ function buildDailyBWChart(dailyUsage) {
     const yTx = padT + plotH - hTx;
     bars += `<rect x="${xBase.toFixed(1)}" y="${yRx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hRx.toFixed(1)}" rx="1.5" fill="#10b981"/>`;
     bars += `<rect x="${(xBase + barW + 1.5).toFixed(1)}" y="${yTx.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTx.toFixed(1)}" rx="1.5" fill="#818cf8"/>`;
-    if (idx % 2 === 0 || idx === 29) {
+    if (idx % 3 === 0 || idx === 29) {
       bars += `<text x="${(xBase + barW).toFixed(1)}" y="${h - 6}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">${d.label}</text>`;
     }
   });
@@ -492,82 +490,95 @@ function buildDailyBWChart(dailyUsage) {
 }
 
 function renderServers() {
-  const topSel = el('top-server-select'), srcSel = el('tun-src-srv'), dstSel = el('tun-dst-srv');
-  if (topSel && srcSel && dstSel) {
-    const prevSrc = srcSel.value, prevDst = dstSel.value;
-    const optsHTML = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
-    if (topSel.innerHTML !== optsHTML) { topSel.innerHTML = optsHTML; srcSel.innerHTML = optsHTML; dstSel.innerHTML = optsHTML; }
+  const topSel = el('top-server-select'), dstSel = el('tun-dst-srv');
+  if (topSel) {
+    const allOpts = currentServers.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
+    if (topSel.innerHTML !== allOpts) topSel.innerHTML = allOpts;
     topSel.value = selectedServer;
-    if (prevSrc) srcSel.value = prevSrc;
-    if (prevDst) dstSel.value = prevDst;
-    else if (currentServers.length > 1) dstSel.value = currentServers[currentServers.length - 1].id;
+  }
+  if (dstSel) {
+    const prevDst = dstSel.value;
+    const remoteServers = currentServers.filter(s => !s.is_local);
+    const targetList = remoteServers.length > 0 ? remoteServers : currentServers;
+    const dstOpts = targetList.map(s => `<option value="${s.id}">${s.name} (${s.ip})</option>`).join('');
+    if (dstSel.innerHTML !== dstOpts) dstSel.innerHTML = dstOpts;
+    if (prevDst && targetList.some(s => s.id === prevDst)) dstSel.value = prevDst;
+    else if (targetList.length > 0) dstSel.value = targetList[targetList.length - 1].id;
   }
   syncDefaultServerNames();
   if (el('tun-name') && !el('tun-name').value) autoUpdateTunnelName();
   const activeSrv = currentServers.find(s => s.id === selectedServer) || currentServers[0];
   if (activeSrv) {
-    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})${activeSrv.via_method ? ` [via ${activeSrv.via_method}]` : ''}`);
-    setText('cfg-target-badge', `${activeSrv.name} (${activeSrv.ip})`);
+    setText('putty-title', `root@${activeSrv.name} (${activeSrv.ip})${activeSrv.via_method ? ` [${activeSrv.via_method}]` : ''}`);
+    setText('cfg-target-badge', `${activeSrv.name}`);
   }
   const cc = sysMetrics.bbr_status || 'cubic', qd = sysMetrics.qdisc || 'fq_codel';
   setText('bbr-cc-val', cc.toUpperCase()); setText('bbr-qdisc-val', qd.toUpperCase());
   const bbrBadge = el('bbr-status-badge');
   if (bbrBadge) {
-    bbrBadge.className = cc === 'bbr' ? 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800' : 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
-    bbrBadge.innerText = cc === 'bbr' ? '● BBR Active (Optimized)' : `● ${cc.toUpperCase()} (Not BBR)`;
+    bbrBadge.className = cc === 'bbr' ? 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800' : 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800';
+    bbrBadge.innerText = cc === 'bbr' ? '● BBR Active' : `● ${cc.toUpperCase()}`;
   }
-  const roleWord = lang === 'fa' ? 'دیده‌بان' : 'Sentinel';
+  const roleWord = lang === 'fa' ? 'دیده‌بان' : 'Agent';
   setHTML('server-cards-list', currentServers.map(s => {
-    const isOnline = s.status === 'Online', badgeClass = isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400';
-    const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/70 font-mono">🔗 VIA ${s.via_method}</span>` : '';
-    const verBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-sky-400 border border-slate-700 font-mono">${s.version || 'v2.7.0'}</span>`;
+    const isOnline = s.status === 'Online', dotColor = isOnline ? 'bg-emerald-400' : 'bg-amber-400';
+    const viaBadge = (!s.is_local && s.via_method) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/90 text-sky-400 border border-sky-800/60 font-mono">${s.via_method}</span>` : '';
+    const verBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-[#090d16] text-slate-400 border border-slate-800 font-mono">${s.version || 'v2.7.0'}</span>`;
     const probeBtn = !s.is_local
       ? (s.probing
-          ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/70 hover:bg-amber-900 text-xs font-semibold animate-pulse">⏸ Probing...</button>`
-          : `<button onclick="toggleServerProbe('${s.id}', false)" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Start Master Forward Rendezvous Probe">▶ Probe</button>`)
+          ? `<button onclick="toggleServerProbe('${s.id}', true)" class="px-2 py-1 rounded-lg bg-amber-950 text-amber-400 border border-amber-800/60 text-[11px] font-semibold animate-pulse">⏸</button>`
+          : `<button onclick="toggleServerProbe('${s.id}', false)" class="px-2 py-1 rounded-lg bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 text-[11px] font-semibold" title="Probe Agent">▶</button>`)
       : '';
-    return `<div class="card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 ${s.id === selectedServer ? 'accent-border' : ''}">
-      <div class="flex justify-between items-start"><div><div class="flex flex-wrap items-center gap-1.5"><h4 class="font-bold text-sm sm:text-base">${s.name}</h4>
-      ${s.is_local ? `<span class="text-[10px] px-2 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">${roleWord}</span>`}${verBadge}${viaBadge}</div>
-      <div class="text-xs font-mono text-slate-400 mt-1" dir="ltr">IP: <b class="text-slate-200">${s.ip}</b> | Port: <b>${s.panel_port || '6001'}</b></div></div>
-      <span class="px-2.5 py-1 rounded-full text-xs ${badgeClass}">● ${s.status}</span></div>
-      <div class="text-[11px] font-mono text-slate-400 bg-[#080d14] p-2.5 rounded-xl border border-slate-800/80 truncate" dir="ltr">Pin: <span class="text-emerald-400">${s.cert_pin ? s.cert_pin.slice(0, 26) + '...' : 'Pending...'}</span></div>
-      <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/60"><div class="flex flex-wrap items-center gap-1.5">
-      <button onclick="changeSelectedServer('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓ Active' : 'Select'}</button>
-      ${probeBtn}
-      <button id="btn-upd-${s.id}" onclick="triggerSelfUpdate('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/70 hover:bg-emerald-900 text-xs font-semibold" title="Update Server Binary from GitHub">⬆️ Update</button>
-      <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">🌐 Info</a></div>
-      ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Uninstall & Remove" class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}</div></div>`;
+    return `<div class="card rounded-2xl p-3.5 flex flex-col justify-between gap-2.5 ${s.id === selectedServer ? 'accent-border' : ''}">
+      <div class="flex justify-between items-start gap-2">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full ${dotColor} shrink-0"></span>
+            <h4 class="font-bold text-xs sm:text-sm truncate">${s.name}</h4>
+            ${s.is_local ? `<span class="text-[10px] px-1.5 py-0.5 rounded font-bold" style="background: var(--accent-glow); color: var(--accent);">Master</span>` : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${roleWord}</span>`}
+            ${verBadge}${viaBadge}
+          </div>
+          <div class="text-[11px] font-mono text-slate-400 mt-1" dir="ltr">${s.ip}:${s.panel_port || '6001'}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <button onclick="changeSelectedServer('${s.id}')" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-[11px] font-semibold" style="color: var(--accent)">${s.id === selectedServer ? '✓' : 'Select'}</button>
+          ${probeBtn}
+          <button id="btn-upd-${s.id}" onclick="triggerSelfUpdate('${s.id}')" class="px-2 py-1 rounded-lg bg-slate-800/90 text-emerald-400 hover:bg-slate-700 text-[11px]" title="Update">⬆️</button>
+          <a href="http://${s.ip}:${s.panel_port || '6001'}/sentinel-info" target="_blank" class="px-2 py-1 rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 text-[11px]" title="Node Info">🌐</a>
+          ${!s.is_local ? `<button onclick="deleteServer('${s.id}')" title="Remove" class="px-1.5 py-1 text-xs text-rose-400 hover:text-rose-300">🗑️</button>` : ''}
+        </div>
+      </div>
+      <div class="text-[10px] font-mono text-slate-500 bg-[#090d16] px-2.5 py-1.5 rounded-lg border border-slate-800/70 truncate" dir="ltr">Pin: <span class="text-emerald-400/90">${s.cert_pin ? s.cert_pin.slice(0, 28) + '...' : 'Pending...'}</span></div>
+    </div>`;
   }).join(''));
 }
 
 function renderTunnels() {
   setHTML('tunnel-list', currentTunnels.map(t => {
-    const srcSrv = currentServers.find(s => s.id === t.source_server), dstSrv = currentServers.find(s => s.id === t.target_server);
-    let mBadge = '🌐 WSS', stealthBadge = '🛡️ 85%';
-    if (t.method === 'direct' || t.method === 'spoof') { mBadge = '⚡ DIRECT-TLS'; stealthBadge = '🛡️ 75%'; }
-    if (t.method === 'forward') { mBadge = '🔄 FORWARD'; stealthBadge = '🛡️ 20%'; }
-    if (t.method === 'grpc') { mBadge = '🚀 gRPC (H2)'; stealthBadge = '🛡️ 90%'; }
+    const dstSrv = currentServers.find(s => s.id === t.target_server);
+    let mBadge = 'WSS 85%';
+    if (t.method === 'direct' || t.method === 'spoof') mBadge = 'DIRECT 75%';
+    if (t.method === 'forward') mBadge = 'L4 20%';
+    if (t.method === 'grpc') mBadge = 'gRPC 90%';
     const spdTxt = (t.speed_limit && parseFloat(t.speed_limit) > 0) ? `${t.speed_limit} MB/s` : 'Unlimited';
-    return `<div class="card p-4 sm:p-5 rounded-2xl flex flex-col justify-between gap-3" dir="ltr">
-      <div class="flex flex-wrap justify-between items-center gap-2">
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="px-2 py-0.5 rounded-lg text-xs font-bold" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
-          <span class="px-2 py-0.5 rounded-lg text-[11px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">${stealthBadge}</span>
-          <span class="font-bold text-sm sm:text-base text-slate-100">${t.name}</span>
-          <span class="text-xs text-slate-400 font-mono bg-[#080d14] px-2 py-0.5 rounded border border-slate-800">${srcSrv ? srcSrv.name : 'Relay'} ➔ ${dstSrv ? dstSrv.name : 'Exit'}</span>
+    return `<div class="card p-3.5 rounded-2xl flex flex-col justify-between gap-2.5" dir="ltr">
+      <div class="flex justify-between items-center gap-2">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold font-mono shrink-0" style="background: var(--accent-glow); color: var(--accent);">${mBadge}</span>
+          <span class="font-bold text-xs sm:text-sm text-slate-100 truncate">${t.name}</span>
+          <span class="text-[10px] text-slate-400 font-mono bg-[#090d16] px-1.5 py-0.5 rounded border border-slate-800 shrink-0">➔ ${dstSrv ? dstSrv.name : 'Agent'}</span>
         </div>
-        <div class="flex items-center gap-1.5">
-          <button onclick="pingTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 hover:bg-emerald-900 text-xs font-mono font-semibold">${pingResults[t.id] || '⚡ Ping / Test'}</button>
-          <button onclick="editTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">✏️</button>
-          <button onclick="deleteTunnel('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs">🗑️</button>
+        <div class="flex items-center gap-1 shrink-0">
+          <button onclick="pingTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-emerald-950/80 text-emerald-400 border border-emerald-800/70 text-[11px] font-mono font-semibold">${pingResults[t.id] || '⚡ Ping'}</button>
+          <button onclick="editTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px]">✏️</button>
+          <button onclick="deleteTunnel('${t.id}')" class="px-2 py-1 rounded-lg bg-rose-950/80 text-rose-400 text-[11px]">🗑️</button>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-400 pt-2.5 border-t border-slate-800/70 font-mono">
-        <div class="truncate">Tunnel: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
-        <div class="truncate">Inbounds: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
-        <div class="truncate">Speed: <b class="text-amber-400">${spdTxt}</b></div>
-        <div class="truncate">SNI: <b class="text-slate-200">${t.method === 'forward' ? 'L4 Pass' : t.sni}</b></div>
+      <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-400 pt-2 border-t border-slate-800/70 font-mono">
+        <div class="truncate">Exit: <b class="text-sky-300">${t.remote_addr || (':' + t.tunnel_port)}</b></div>
+        <div class="truncate">Ports: <b class="text-emerald-400">[${t.inbound_ports}]</b></div>
+        <div class="truncate">Limit: <b class="text-amber-400">${spdTxt}</b></div>
+        <div class="truncate">SNI: <b class="text-slate-300">${t.method === 'forward' ? 'Raw L4' : t.sni}</b></div>
       </div>
     </div>`;
   }).join(''));
@@ -577,10 +588,10 @@ function renderPingAnalytics() {
   if (!el('kpi-cpu') || currentTab !== 'logs') return;
   const cpu = sysMetrics.cpu_pct || 0, ramUsed = sysMetrics.ram_used_mb || 0, ramTot = sysMetrics.ram_total_mb || 1024, ramPct = sysMetrics.ram_pct || 0;
   const rxMbps = sysMetrics.live_rx_mbps || 0, txMbps = sysMetrics.live_tx_mbps || 0, appMB = sysMetrics.app_total_mb || 0, srvGB = sysMetrics.srv_total_gb || 0;
-  setText('kpi-cpu', `${cpu.toFixed(1)}%`); setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot} MB)`); setHTML('kpi-tp', `↓ ${rxMbps.toFixed(2)} Mbps | ↑ ${txMbps.toFixed(2)} Mbps`);
+  setText('kpi-cpu', `${cpu.toFixed(1)}%`); setText('kpi-ram', `${ramPct}% (${ramUsed}/${ramTot}M)`); setHTML('kpi-tp', `↓ ${rxMbps.toFixed(1)} | ↑ ${txMbps.toFixed(1)} Mbps`);
   setText('bw-app', `24h: ${appMB} MB | 7d: ${appMB} MB | 30d: ${appMB} MB`); setText('bw-srv', `24h: ${srvGB} GB | 7d: ${srvGB} GB | 30d: ${srvGB} GB`);
   const totMbps = rxMbps + txMbps;
-  setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps | ${(totMbps / 8).toFixed(2)} MB/s`);
+  setText('recent-tp-val', `${totMbps.toFixed(2)} Mbps (${(totMbps / 8).toFixed(2)} MB/s)`);
   setHTML('svg-recent-tp', buildSVGChart(sysMetrics.tp_history || [0.1, 0.2, 0.15, 0.3], 'Mbps', '#818cf8', 'gradTp'));
   setHTML('svg-daily-bw', buildDailyBWChart(sysMetrics.daily_usage || []));
 
@@ -590,11 +601,11 @@ function renderPingAnalytics() {
   const recentPings = pingSummary.recent_pings || [];
   setHTML('svg-recent-ping', buildSVGChart(recentPings.length ? recentPings : [52, 50, 48, 51, 50], 'ms', '#38bdf8', 'gradPing'));
   const fails = pingSummary.fails || 0;
-  setText('pill-uptime', `● Online Uptime: ${pingSummary.uptime_pct || '100.0'}%`);
-  setText('pill-down', `● Total Offline Time: ${fails * 10}m (${fails} checks)`);
-  setText('pill-avg', `⚡ Avg Ping: ${pingSummary.avg_ms || 50} ms`);
+  setText('pill-uptime', `● ${pingSummary.uptime_pct || '100.0'}%`);
+  setText('pill-down', `● Down: ${fails * 10}m`);
+  setText('pill-avg', `⚡ Avg: ${pingSummary.avg_ms || 50} ms`);
   const wins = pingSummary.windows || [];
-  setText('pill-outage-windows', wins.length ? `🕒 Outage Windows: ${wins.join(' | ')}` : `🕒 Outage Windows: None — 100% Continuous Uptime`);
+  setText('pill-outage-windows', wins.length ? `🕒 Outages: ${wins.join(' | ')}` : `🕒 Outages: None — 100% Continuous Uptime`);
   setHTML('svg-history-ping', buildHistorySVGChart(pingSummary.chart_points || []));
 }
 
@@ -605,13 +616,13 @@ async function fetchState() {
     const data = await res.json();
     if (data.version) setText('app-version-badge', data.version);
     const updBtn = el('btn-self-update');
-    if (updBtn && !updBtn.innerText.includes('Updating')) {
+    if (updBtn && !updBtn.innerText.includes('⏳')) {
       if (data.update_available) {
-        updBtn.className = 'px-2.5 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse flex items-center gap-1';
-        updBtn.innerHTML = '<span>🔥</span><span class="hidden sm:inline">Update Ready!</span>';
+        updBtn.className = 'px-2 py-1 rounded-lg bg-amber-500 text-black text-xs font-bold animate-pulse';
+        updBtn.innerHTML = '🔥';
       } else {
-        updBtn.className = 'px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/80 text-xs font-bold hover:bg-emerald-900 transition flex items-center gap-1';
-        updBtn.innerHTML = '<span>⬆️</span><span class="hidden sm:inline">Update</span>';
+        updBtn.className = 'px-2 py-1 rounded-lg bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 text-xs font-bold hover:bg-emerald-900 transition';
+        updBtn.innerHTML = '⬆️';
       }
     }
     if (data.server_time) setText('top-server-clock', data.server_time);
@@ -642,7 +653,6 @@ async function fetchState() {
     if (el('cfg-port') && !el('cfg-port').value) {
       el('cfg-port').value = data.panel_port || '6001';
       if (el('cfg-path')) el('cfg-path').value = data.panel_path || '';
-      if (el('cfg-user') && data.panel_user) el('cfg-user').value = data.panel_user;
       if (el('cfg-ctrl-l4')) el('cfg-ctrl-l4').value = ctrlL4;
       if (el('cfg-ctrl-direct')) el('cfg-ctrl-direct').value = ctrlDirect;
       if (el('cfg-ctrl-wss')) el('cfg-ctrl-wss').value = ctrlWSS;

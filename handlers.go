@@ -667,7 +667,6 @@ func registerRoutes(port, panelPath string) {
 		if !replaced {
 			db.Tunnels = append(db.Tunnels, t)
 		}
-		tok := getServerAuthToken(dstCopy)
 		srcTok := getServerAuthToken(srcCopy)
 		saveDBLocked()
 		mu.Unlock()
